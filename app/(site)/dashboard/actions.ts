@@ -31,13 +31,58 @@ export async function createGroup(_state: DashState, formData: FormData): Promis
 
 export async function addGroupMember(_state: DashState, formData: FormData): Promise<DashState> {
   const groupId = String(formData.get("groupId") ?? "");
-  const phone = normalizePhone(String(formData.get("phone") ?? ""));
+  const by = String(formData.get("by") ?? "phone");
+  const contact = String(formData.get("contact") ?? "").trim();
   if (!groupId) return { error: "Choose a group first." };
-  if (!phone) return { error: "Enter the phone number they used to sign up." };
+
+  const phone = by === "email" ? null : normalizePhone(contact);
+  const email = by === "email" ? contact.toLowerCase() : null;
+  if (by === "email" && !email?.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+    return { error: "Enter the email they used to sign up." };
+  }
+  if (by !== "email" && !phone) return { error: "Enter the phone number they used to sign up." };
 
   const { supabase, user } = await requireUser();
-  const { error } = await supabase.rpc("add_group_member", { target_group: groupId, member_phone: phone });
+  const { error } = await supabase.rpc(
+    "add_group_member",
+    by === "email" ? { target_group: groupId, member_email: email } : { target_group: groupId, member_phone: phone },
+  );
+  if (error?.message.includes("Could not find the function")) {
+    return { error: "Email add needs the latest database function. Run supabase/add-member-by-email.sql in the Supabase SQL editor." };
+  }
   if (error) return { error: error.message };
   updateTag(`dashboard-${user.id}`);
   redirect(`/dashboard?group=${groupId}`);
+}
+
+export async function exitGroup(_state: DashState, formData: FormData): Promise<DashState> {
+  const groupId = String(formData.get("groupId") ?? "");
+  if (!groupId) return { error: "Choose a group first." };
+
+  const { supabase, user } = await requireUser();
+  const { data: membership, error: readError } = await supabase
+    .from("group_members")
+    .select("role")
+    .eq("group_id", groupId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (readError) return { error: readError.message };
+  if (!membership) return { error: "You are not in that group." };
+
+  if (membership.role === "owner") {
+    const { error, count } = await supabase.from("groups").delete({ count: "exact" }).eq("id", groupId);
+    if (error) return { error: error.message };
+    if (!count) return { error: "Only the owner can delete this group." };
+  } else {
+    const { error, count } = await supabase
+      .from("group_members")
+      .delete({ count: "exact" })
+      .eq("group_id", groupId)
+      .eq("user_id", user.id);
+    if (error) return { error: error.message };
+    if (!count) return { error: "Leaving a group needs the latest database policy. Run supabase/leave-group.sql in the Supabase SQL editor." };
+  }
+
+  updateTag(`dashboard-${user.id}`);
+  redirect("/dashboard");
 }
