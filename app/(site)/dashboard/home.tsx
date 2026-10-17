@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useSearchParams } from "next/navigation";
 import { signOut } from "../auth/actions";
 import { addGroupMember, createGroup } from "./actions";
 import type { DashboardData } from "./types";
@@ -11,7 +12,8 @@ const money = (cents: number) => usd.format(cents / 100);
 export function DashboardHome({ data }: { data: DashboardData }) {
   const [createState, createAction, createPending] = useActionState(createGroup, undefined);
   const [addState, addAction, addPending] = useActionState(addGroupMember, undefined);
-  const group = data.groups.find((entry) => entry.id === data.selectedGroupId) ?? null;
+  const selected = useSearchParams().get("group");
+  const group = data.groups.find((entry) => entry.id === selected) ?? data.groups[0] ?? null;
   const members = data.members.filter((member) => member.groupId === group?.id);
   const items = data.items.filter((item) => item.groupId === group?.id);
   const totals = data.totals.filter((total) => total.groupId === group?.id);

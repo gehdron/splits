@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { connection } from "next/server";
 import { redirect } from "next/navigation";
 import { supabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
@@ -21,7 +20,6 @@ export default function DashboardPage({ searchParams }: { searchParams: Promise<
 }
 
 async function DashboardGate({ searchParams }: { searchParams: Promise<{ group?: string }> }) {
-  await connection();
   if (!supabaseConfigured()) {
     redirect("/login");
   }
@@ -31,6 +29,6 @@ async function DashboardGate({ searchParams }: { searchParams: Promise<{ group?:
   if (error || !data.user) redirect("/login");
 
   const { group } = await searchParams;
-  const dashboard = await loadDashboard(data.user.id, data.user.email ?? "", group ?? null);
+  const dashboard = await loadDashboard(data.user.id, data.user.email ?? "");
   return <DashboardHome data={dashboard} />;
 }

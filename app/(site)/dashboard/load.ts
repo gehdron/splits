@@ -16,7 +16,7 @@ function oneProfile(value: ProfileEmbed): { display_name: string; phone: string 
   return Array.isArray(value) ? (value[0] ?? null) : value;
 }
 
-export async function loadDashboard(userId: string, email: string, selected: string | null): Promise<DashboardData> {
+export async function loadDashboard(userId: string, email: string): Promise<DashboardData> {
   const supabase = await createClient();
   const empty: DashboardData = {
     me: { id: userId, name: "Splits member", email, phone: "" },
@@ -118,6 +118,5 @@ export async function loadDashboard(userId: string, email: string, selected: str
     else totals.push({ groupId: row.group_id, userId: row.user_id, name: row.name, totalCents: row.total_cents });
   }
 
-  const selectedGroupId = groups.some((group) => group.id === selected) ? selected : groups[0]?.id ?? null;
-  return { ...empty, groups, members, items, totals, selectedGroupId, loadError: null };
+  return { ...empty, groups, members, items, totals, selectedGroupId: groups[0]?.id ?? null, loadError: null };
 }
