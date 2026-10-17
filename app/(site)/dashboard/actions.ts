@@ -19,10 +19,14 @@ export async function createGroup(_state: DashState, formData: FormData): Promis
   if (name.length < 2) return { error: "Name the group." };
 
   const { supabase, user } = await requireUser();
-  const { data, error } = await supabase.from("groups").insert({ name, created_by: user.id }).select("id").single();
+  // Returning the new row also has to pass the read policy. That policy only
+  // sees members, and the owner row is added by a trigger after the insert,
+  // so Postgres rejects the whole statement. The id is chosen here instead.
+  const id = crypto.randomUUID();
+  const { error } = await supabase.from("groups").insert({ id, name, created_by: user.id });
   if (error) return { error: error.message };
   updateTag(`dashboard-${user.id}`);
-  redirect(`/dashboard?group=${data.id}`);
+  redirect(`/dashboard?group=${id}`);
 }
 
 export async function addGroupMember(_state: DashState, formData: FormData): Promise<DashState> {

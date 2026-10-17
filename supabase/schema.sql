@@ -297,7 +297,7 @@ create policy "update your profile"
 
 create policy "read groups you belong to"
   on public.groups for select to authenticated
-  using (public.is_group_member(id));
+  using (created_by = auth.uid() or public.is_group_member(id));
 
 create policy "create a group"
   on public.groups for insert to authenticated
