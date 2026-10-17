@@ -1,6 +1,9 @@
-import { pathToFileURL } from "node:url";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { ApiError, Photon } from "@photon-ai/api";
+import { isSummaryRequest, parseCommitments, renderConfirmation, renderSummary, type Commitment } from "./commitments.ts";
+import { loadLedger, saveLedger } from "./ledger.ts";
 
 type Config = { key: string; project: string; platform: "imessage" | "email"; agent: string; sender: string };
 
@@ -27,10 +30,18 @@ export function configuration(): Config {
 type Page = Awaited<ReturnType<Photon["projects"]["listMessages"]>>;
 type Item = Page["items"][number];
 
-// The client validates every response against the contract, so these checks
-// are the walkthrough's own rules: the right conversation, sender, and text.
-// A match returns the reply's inputs.
-function matching(m: Item, c: Config, startedAt: number): { id: string; spaceId: string; senderId: string } | undefined {
+type Inbound = { id: string; spaceId: string; senderId: string; senderHandle: string; text: string };
+
+function plainText(m: Item, c: Config): string | undefined {
+  const content = m.content;
+  if (content.type === "text" && content.format === "plain") return content.text.trim();
+  if (c.platform !== "email" || content.type !== "group") return undefined;
+  const plain = content.parts.flatMap((part) => (part.type === "text" && part.format === "plain" ? [part] : []));
+  return plain.length === 1 ? plain[0].text.trim() : undefined;
+}
+
+// Direct iMessage only. A shared line cannot send in a group.
+function inbound(m: Item, c: Config, startedAt: number): Inbound | undefined {
   if (m.platform !== c.platform || m.status !== "received") return undefined;
   if (Date.parse(m.createdAt) < startedAt) return undefined;
   if (m.sentBy.platform !== c.platform || m.receivedBy?.platform !== c.platform || m.space.platform !== c.platform) return undefined;
@@ -38,22 +49,33 @@ function matching(m: Item, c: Config, startedAt: number): { id: string; spaceId:
   if (m.receivedBy.kind !== "agent" || m.receivedBy.handle !== c.agent) return undefined;
   if (m.sentBy.id === m.receivedBy.id) return undefined;
   if (c.platform === "imessage" && m.space.kind !== "direct") return undefined;
-  const found = { id: m.id, spaceId: m.space.id, senderId: m.receivedBy.id };
-  const content = m.content;
-  if (content.type === "text") {
-    return content.format === "plain" && content.text.trim() === "ping" ? found : undefined;
-  }
-  if (c.platform !== "email" || content.type !== "group") return undefined;
-  const plain = content.parts.flatMap((part) => (part.type === "text" && part.format === "plain" ? [part] : []));
-  return plain.length === 1 && plain[0].text.trim() === "ping" ? found : undefined;
+  const text = plainText(m, c);
+  if (!text) return undefined;
+  return { id: m.id, spaceId: m.space.id, senderId: m.receivedBy.id, senderHandle: m.sentBy.handle, text };
 }
 
-export async function run(c: Config, windowMs = 120_000, pollMs = 2_000) {
+const ledgerPath = join(dirname(fileURLToPath(import.meta.url)), "data", "ledger.json");
+
+function replyFor(message: Inbound, commitments: Commitment[]): string | undefined {
+  if (isSummaryRequest(message.text)) {
+    return renderSummary(commitments.filter((item) => item.spaceId === message.spaceId), message.senderHandle);
+  }
+  const parsed = parseCommitments(message.text, message.senderHandle);
+  if (parsed.length === 0) return undefined;
+  const at = new Date().toISOString();
+  for (const item of parsed) {
+    commitments.push({ ...item, messageId: message.id, spaceId: message.spaceId, at });
+  }
+  return renderConfirmation(parsed, message.senderHandle);
+}
+
+export async function run(c: Config, pollMs = 2_000) {
   const photon = new Photon({ headers: { Authorization: `Bearer ${c.key}` } });
+  const ledger = loadLedger(ledgerPath);
   const startedAt = Date.now();
-  const deadline = startedAt + windowMs;
   const createdSince = new Date(startedAt - 5_000).toISOString();
-  console.log("Ready. Waiting for the configured test sender.");
+  const seen = new Set(ledger.commitments.map((item) => item.messageId));
+  console.log("Ready. Text what someone will buy, or text summary. Direct chat only.");
   while (true) {
     let pageToken: string | undefined;
     do {
@@ -62,24 +84,25 @@ export async function run(c: Config, windowMs = 120_000, pollMs = 2_000) {
         query: { createdSince, direction: "received", order: "asc", pageSize: 100, platform: c.platform, ...(pageToken ? { pageToken } : {}) },
       });
       for (const m of page.items) {
-        const found = matching(m, c, startedAt);
-        if (!found) continue;
+        const message = inbound(m, c, startedAt);
+        if (!message || seen.has(message.id)) continue;
+        seen.add(message.id);
+        const reply = replyFor(message, ledger.commitments);
+        if (!reply) continue;
+        saveLedger(ledgerPath, ledger);
         await photon.projects.sendMessage({
           path: { id: c.project },
-          headers: { "idempotency-key": `first-agent-reply:${found.id}` },
+          headers: { "idempotency-key": `commitment:${message.id}` },
           body: {
-            spaceId: found.spaceId, senderId: found.senderId,
-            // A shared iMessage Space rejects threaded replies with 409 SPACE_NOT_SENDABLE.
-            ...(c.platform === "email" ? { parentMessageId: found.id } : {}),
-            content: { type: "text", format: "plain", text: "Hello from your Photon agent!" },
+            spaceId: message.spaceId, senderId: message.senderId,
+            ...(c.platform === "email" ? { parentMessageId: message.id } : {}),
+            content: { type: "text", format: "plain", text: reply },
           },
         });
-        console.log("Reply accepted for asynchronous dispatch; delivery is not confirmed.");
-        return;
+        console.log(reply);
       }
       pageToken = page.nextPageToken;
     } while (pageToken);
-    if (Date.now() + pollMs > deadline) throw new Error("No matching ping found before the deadline.");
     await sleep(pollMs);
   }
 }
