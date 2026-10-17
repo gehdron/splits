@@ -8,6 +8,15 @@ import type {
   AiReceiptItem,
   AiReceiptTotals,
 } from "@/app/receipt-types";
+import {
+  calculateReceiptSplits,
+  formatCents,
+} from "@/app/split-calculations";
+import type {
+  ReceiptAssignment,
+  SplitAssistantResult,
+  SplitInstructionMessage,
+} from "@/app/split-types";
 
 type DetectedWord = {
   text: string;
@@ -50,6 +59,33 @@ function isAiParsedReceipt(value: unknown): value is AiParsedReceipt {
     typeof totals.tip === "string" &&
     "total" in totals &&
     typeof totals.total === "string"
+  );
+}
+
+function isSplitAssistantResult(value: unknown): value is SplitAssistantResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "reply" in value &&
+    typeof value.reply === "string" &&
+    "clarification" in value &&
+    typeof value.clarification === "string" &&
+    "assignments" in value &&
+    Array.isArray(value.assignments) &&
+    value.assignments.every(
+      (assignment: unknown) =>
+        typeof assignment === "object" &&
+        assignment !== null &&
+        "itemIndex" in assignment &&
+        typeof assignment.itemIndex === "number" &&
+        Number.isInteger(assignment.itemIndex) &&
+        "people" in assignment &&
+        Array.isArray(assignment.people) &&
+        assignment.people.every(
+          (person: unknown) =>
+            typeof person === "string" && person.trim().length > 0
+        )
+    )
   );
 }
 
@@ -100,7 +136,19 @@ export default function ReceiptScanner() {
   const [aiParsing, setAiParsing] = useState(false);
   const [aiParsed, setAiParsed] = useState(false);
   const [aiError, setAiError] = useState("");
+  const [splitAssistantOpen, setSplitAssistantOpen] = useState(false);
+  const [splitMessages, setSplitMessages] = useState<SplitInstructionMessage[]>([]);
+  const [splitMessage, setSplitMessage] = useState("");
+  const [splitAssignments, setSplitAssignments] = useState<ReceiptAssignment[]>([]);
+  const [splitParsing, setSplitParsing] = useState(false);
+  const [splitError, setSplitError] = useState("");
   const [frameSize, setFrameSize] = useState({ width: 0, height: 0 });
+
+  const splitCalculation = calculateReceiptSplits(
+    receiptRows,
+    receiptTotals,
+    splitAssignments
+  );
 
   async function startCamera(
     facingMode: CameraFacingMode = cameraFacingMode,
@@ -148,6 +196,11 @@ export default function ReceiptScanner() {
       setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
       setAiParsed(false);
       setAiError("");
+      setSplitAssistantOpen(false);
+      setSplitMessages([]);
+      setSplitAssignments([]);
+      setSplitMessage("");
+      setSplitError("");
       setFrameSize({ width: 0, height: 0 });
       setStatus(
         cameras.length < 2
@@ -382,6 +435,11 @@ export default function ReceiptScanner() {
       setReceiptRows([]);
       setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
       setAiParsed(false);
+      setSplitAssistantOpen(false);
+      setSplitMessages([]);
+      setSplitAssignments([]);
+      setSplitMessage("");
+      setSplitError("");
 
       const image = new Image();
       image.src = imageUrl;
@@ -598,6 +656,10 @@ export default function ReceiptScanner() {
       setReceiptRows(result.items);
       setReceiptTotals(result.totals);
       setAiParsed(true);
+      setSplitMessages([]);
+      setSplitAssignments([]);
+      setSplitMessage("");
+      setSplitError("");
       setStatus("AI parsed the receipt. Review and edit the results as needed.");
     } catch (error) {
       console.error(error);
@@ -611,6 +673,64 @@ export default function ReceiptScanner() {
     }
   }
 
+  async function sendSplitMessage(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const content = splitMessage.trim();
+    if (!content || splitParsing || !aiParsed) return;
+
+    setSplitParsing(true);
+    setSplitError("");
+    const messages = [
+      ...splitMessages.slice(-(20 - 1)),
+      { role: "user" as const, content },
+    ];
+    try {
+      const response = await fetch("/api/split-receipt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: receiptRows,
+          totals: receiptTotals,
+          assignments: splitAssignments,
+          messages,
+        }),
+      });
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        const message =
+          typeof result === "object" &&
+          result !== null &&
+          "error" in result &&
+          typeof result.error === "string"
+            ? result.error
+            : "The split assistant could not process that message.";
+        throw new Error(message);
+      }
+      if (!isSplitAssistantResult(result)) {
+        throw new Error("The split assistant returned an unexpected result.");
+      }
+
+      const assistantReply = result.clarification
+        ? `${result.reply} ${result.clarification}`
+        : result.reply;
+      setSplitAssignments(result.assignments);
+      setSplitMessages([
+        ...messages,
+        { role: "assistant", content: assistantReply },
+      ]);
+      setSplitMessage("");
+    } catch (error) {
+      console.error(error);
+      setSplitError(
+        error instanceof Error
+          ? error.message
+          : "The split assistant could not process that message."
+      );
+    } finally {
+      setSplitParsing(false);
+    }
+  }
+
   function retake() {
     setFrozenImage(null);
     setExtractedText("");
@@ -618,6 +738,11 @@ export default function ReceiptScanner() {
     setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
     setAiParsed(false);
     setAiError("");
+    setSplitAssistantOpen(false);
+    setSplitMessages([]);
+    setSplitAssignments([]);
+    setSplitMessage("");
+    setSplitError("");
     setProgress(0);
     void startCamera();
   }
@@ -893,6 +1018,164 @@ export default function ReceiptScanner() {
                 </div>
               </div>
             </>
+          )}
+          {aiParsed && receiptRows.length > 0 && (
+            <div className="space-y-3 border-t pt-3">
+              <button
+                type="button"
+                aria-expanded={splitAssistantOpen}
+                onClick={() => setSplitAssistantOpen((open) => !open)}
+                className="min-h-12 w-full rounded-lg border px-4 py-3 text-left font-semibold sm:w-auto"
+              >
+                {splitAssistantOpen ? "Hide split chat" : "Split items with chat"}
+              </button>
+              {splitAssistantOpen && (
+                <div className="space-y-4 rounded-lg bg-gray-50 p-3 sm:p-4">
+                  <div>
+                    <h3 className="font-semibold">Split items with chat</h3>
+                    <p className="mt-1 text-sm text-gray-600">
+                      Tell the assistant who had each item. For example:
+                      “Sandy gets the burger, John gets the fries, and Bob and
+                      Joe split the pizza.” Shared items are divided equally.
+                      Tax and tip are allocated in proportion to each person’s
+                      share of the item subtotal.
+                    </p>
+                  </div>
+
+                  <div
+                    aria-live="polite"
+                    className="max-h-64 space-y-3 overflow-y-auto rounded-lg border bg-white p-3"
+                  >
+                    {splitMessages.length === 0 && (
+                      <p className="text-sm text-gray-600">
+                        Start by naming the person or people for an item. If an
+                        item is unclear, the assistant will ask you to clarify.
+                      </p>
+                    )}
+                    {splitMessages.map((message, index) => (
+                      <div
+                        key={`${index}-${message.role}`}
+                        className={`max-w-[90%] break-words rounded-lg px-3 py-2 text-sm ${
+                          message.role === "user"
+                            ? "ml-auto bg-blue-100 text-blue-950"
+                            : "bg-gray-100 text-gray-900"
+                        }`}
+                      >
+                        <div className="mb-1 text-xs font-semibold">
+                          {message.role === "user" ? "You" : "Split assistant"}
+                        </div>
+                        {message.content}
+                      </div>
+                    ))}
+                    {splitParsing && (
+                      <p className="text-sm text-gray-500" role="status">
+                        Checking the receipt items...
+                      </p>
+                    )}
+                  </div>
+
+                  <form onSubmit={sendSplitMessage} className="space-y-2">
+                    <label htmlFor="split-instruction" className="sr-only">
+                      Describe how to split the receipt items
+                    </label>
+                    <textarea
+                      id="split-instruction"
+                      value={splitMessage}
+                      onChange={(event) => setSplitMessage(event.target.value)}
+                      placeholder="e.g. Sandy gets the burger; Bob and Joe split the pizza"
+                      rows={3}
+                      maxLength={1000}
+                      className="w-full min-w-0 rounded-lg border p-3 text-base"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!splitMessage.trim() || splitParsing}
+                      className="min-h-12 w-full rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                    >
+                      {splitParsing ? "Splitting..." : "Send"}
+                    </button>
+                  </form>
+
+                  {splitError && (
+                    <p role="alert" className="text-sm text-red-700">
+                      {splitError}
+                    </p>
+                  )}
+
+                  {splitAssignments.length > 0 && (
+                    <div className="space-y-3 border-t pt-3">
+                      <h4 className="font-semibold">Current split</h4>
+                      <ul className="space-y-2 text-sm">
+                        {splitCalculation.lines
+                          .map((line) => (
+                            <li
+                              key={line.itemIndex}
+                              className="flex flex-col gap-1 border-b pb-2 sm:flex-row sm:justify-between"
+                            >
+                              <span className="break-words">
+                                {line.description}
+                              </span>
+                              <span className="sm:text-right">
+                                {line.amountCents === null
+                                  ? "Amount needs review"
+                                  : line.shares.length > 0
+                                    ? line.shares
+                                        .map(
+                                          (share) =>
+                                            `${share.person}: ${formatCents(share.amountCents)}`
+                                        )
+                                        .join(" · ")
+                                    : "Unassigned"}
+                              </span>
+                            </li>
+                          ))}
+                      </ul>
+
+                      <h4 className="font-semibold">Each person owes</h4>
+                      <ul className="space-y-2 text-sm">
+                        {splitCalculation.people.map((person) => (
+                          <li
+                            key={person.person}
+                            className="flex flex-col gap-1 border-b pb-2 sm:flex-row sm:justify-between"
+                          >
+                            <span>{person.person}</span>
+                            <span className="sm:text-right">
+                              Items {formatCents(person.itemsCents)}
+                              {person.taxCents > 0 &&
+                                ` · Tax ${formatCents(person.taxCents)}`}
+                              {person.tipCents > 0 &&
+                                ` · Tip ${formatCents(person.tipCents)}`}
+                              {` · Total ${formatCents(person.itemsCents + person.taxCents + person.tipCents)}`}
+                            </span>
+                          </li>
+                        ))}
+                        {(splitCalculation.unassignedCents > 0 ||
+                          splitCalculation.unassignedTaxCents > 0 ||
+                          splitCalculation.unassignedTipCents > 0) && (
+                          <li className="flex flex-col gap-1 text-gray-600 sm:flex-row sm:justify-between">
+                            <span>Unassigned</span>
+                            <span className="sm:text-right">
+                              Items {formatCents(splitCalculation.unassignedCents)}
+                              {splitCalculation.unassignedTaxCents > 0 &&
+                                ` · Tax ${formatCents(splitCalculation.unassignedTaxCents)}`}
+                              {splitCalculation.unassignedTipCents > 0 &&
+                                ` · Tip ${formatCents(splitCalculation.unassignedTipCents)}`}
+                            </span>
+                          </li>
+                        )}
+                      </ul>
+                      {!splitCalculation.canAllocateTaxAndTip && (
+                        <p className="text-sm text-amber-800">
+                          Some item amounts could not be read as numbers, so
+                          tax and tip cannot be allocated reliably. Review the
+                          item amounts above.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
           <div className="flex flex-wrap items-center gap-3">
             <button

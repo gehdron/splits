@@ -41,6 +41,12 @@ extracted text to Gemini 3.8 Flash; the photo is sent only when you select this
 button and must be 8 MB or smaller. AI parsing requires a Gemini API key and
 may incur API charges depending on your account and usage. OCR extraction and
 the raw text remain available without an API key.
+
+After AI parsing, select **Split items with chat** to assign receipt items
+using natural-language instructions. Shared items are split equally; parsed
+tax and tip are allocated proportionally to each person's share of the item
+amounts. Any unassigned items keep their associated tax and tip under
+**Unassigned** until they are assigned.
 The scanner currently performs OCR and displays editable text; it does not yet
 identify structured fields such as the merchant, line items, or total.
 

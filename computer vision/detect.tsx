@@ -777,7 +777,7 @@ export default function ReceiptScanner() {
         <section className="space-y-3 rounded-xl border p-4">
           <h2 className="text-xl font-semibold">Receipt text</h2>
           <p className="text-sm text-gray-600">
-            OCR extracts the printed text. Select <strong>Parse with AI</strong>
+            OCR extracts the printed text. Select <strong>Parse with AI </strong>
             to send the photo and extracted text to Gemini for organizing into
             items and totals. Review the results against the original receipt.
           </p>
