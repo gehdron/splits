@@ -25,21 +25,32 @@ export async function updateSession(request: NextRequest) {
   // Refresh the session. Nothing else should run before getClaims().
   const { data } = await supabase.auth.getClaims();
   const signedIn = Boolean(data?.claims);
+  const path = request.nextUrl.pathname;
 
-  if (!signedIn && request.nextUrl.pathname.startsWith("/account")) {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/login";
-    redirectUrl.search = "";
-    const redirectResponse = NextResponse.redirect(redirectUrl);
-    supabaseResponse.cookies.getAll().forEach((cookie) => {
-      redirectResponse.cookies.set(cookie);
-    });
-    for (const header of ["cache-control", "expires", "pragma"]) {
-      const value = supabaseResponse.headers.get(header);
-      if (value) redirectResponse.headers.set(header, value);
-    }
-    return redirectResponse;
+  if (signedIn && (path === "/login" || path === "/signup")) {
+    return redirectWithSession(request, supabaseResponse, "/dashboard");
+  }
+
+  const needsAuth = path === "/dashboard" || path.startsWith("/dashboard/") || path === "/account" || path.startsWith("/account/");
+  if (!signedIn && needsAuth) {
+    const next = path.startsWith("/account") ? "/account" : "/dashboard";
+    return redirectWithSession(request, supabaseResponse, "/login", next);
   }
 
   return supabaseResponse;
+}
+
+function redirectWithSession(request: NextRequest, supabaseResponse: NextResponse, pathname: string, next?: string) {
+  const redirectUrl = request.nextUrl.clone();
+  redirectUrl.pathname = pathname;
+  redirectUrl.search = next ? `?next=${encodeURIComponent(next)}` : "";
+  const redirectResponse = NextResponse.redirect(redirectUrl);
+  supabaseResponse.cookies.getAll().forEach((cookie) => {
+    redirectResponse.cookies.set(cookie);
+  });
+  for (const header of ["cache-control", "expires", "pragma"]) {
+    const value = supabaseResponse.headers.get(header);
+    if (value) redirectResponse.headers.set(header, value);
+  }
+  return redirectResponse;
 }
