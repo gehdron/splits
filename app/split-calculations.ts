@@ -15,6 +15,13 @@ export type PersonSplitTotal = {
   tipCents: number;
 };
 
+export type TipSplitMode = "proportional" | "manual" | "disabled";
+
+export type TipSplitOptions = {
+  mode?: TipSplitMode;
+  manualAmounts?: Record<string, string>;
+};
+
 export type SplitCalculation = {
   lines: SplitLineResult[];
   people: PersonSplitTotal[];
@@ -22,6 +29,7 @@ export type SplitCalculation = {
   unassignedTaxCents: number;
   unassignedTipCents: number;
   canAllocateTaxAndTip: boolean;
+  manualTipNeedsReview: boolean;
 };
 
 function parseCents(value: string): number | null {
@@ -69,8 +77,10 @@ function addProportionalCents(
 export function calculateReceiptSplits(
   items: AiReceiptItem[],
   receiptTotals: AiReceiptTotals,
-  assignments: ReceiptAssignment[]
+  assignments: ReceiptAssignment[],
+  tipOptions: TipSplitOptions = {}
 ): SplitCalculation {
+  const tipMode = tipOptions.mode ?? "proportional";
   const assignmentByIndex = new Map(
     assignments.map((assignment) => [assignment.itemIndex, assignment.people])
   );
@@ -133,10 +143,26 @@ export function calculateReceiptSplits(
   const tipAllocations = new Map<string, number>();
   const taxCents = parseCents(receiptTotals.tax);
   const tipCents = parseCents(receiptTotals.tip);
+  const manualTipNeedsReview =
+    tipMode === "manual" &&
+    Object.values(tipOptions.manualAmounts ?? {}).some((value) => {
+      if (value.trim() === "") return false;
+      const amount = parseCents(value);
+      return amount === null || amount < 0;
+    });
 
   if (canAllocateTaxAndTip) {
     if (taxCents !== null) addProportionalCents(taxCents, allWeights, taxAllocations);
-    if (tipCents !== null) addProportionalCents(tipCents, allWeights, tipAllocations);
+    if (tipMode === "proportional" && tipCents !== null) {
+      addProportionalCents(tipCents, allWeights, tipAllocations);
+    } else if (tipMode === "manual") {
+      for (const key of [...people.keys(), "__unassigned__"]) {
+        const value = tipOptions.manualAmounts?.[key] ?? "0";
+        const amount = value.trim() === "" ? 0 : parseCents(value);
+        if (amount === null || amount < 0) continue;
+        tipAllocations.set(key, amount);
+      }
+    }
   }
 
   for (const [key, person] of people) {
@@ -151,6 +177,7 @@ export function calculateReceiptSplits(
     unassignedTaxCents: taxAllocations.get("__unassigned__") ?? 0,
     unassignedTipCents: tipAllocations.get("__unassigned__") ?? 0,
     canAllocateTaxAndTip,
+    manualTipNeedsReview,
   };
 }
 
