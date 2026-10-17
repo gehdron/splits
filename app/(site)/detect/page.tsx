@@ -607,19 +607,21 @@ export default function ReceiptScanner() {
   }, []);
 
   return (
-    <main className="mx-auto max-w-2xl space-y-5 p-6">
-      <h1 className="text-3xl font-bold">Splits Receipt Scanner</h1>
-      <p className="text-gray-600">
+    <main className="mx-auto min-h-svh w-full max-w-2xl space-y-5 overflow-x-hidden px-4 py-5 font-sans sm:px-6 sm:py-6">
+      <h1 className="text-2xl font-bold sm:text-3xl">
+        Splits Receipt Scanner
+      </h1>
+      <p className="text-sm text-gray-600 sm:text-base">
         Fit the receipt inside the on-screen guide, keep it flat and well lit,
         then freeze the image to extract its text.
       </p>
 
-      <div className="relative overflow-hidden rounded-xl bg-black">
+      <div className="relative w-full min-w-0 overflow-hidden rounded-xl bg-black">
         {frozenImage ? (
           <img
             src={frozenImage}
             alt="Frozen receipt"
-            className="max-h-[65vh] w-full object-contain"
+            className="block max-h-[65dvh] min-h-48 w-full object-contain sm:max-h-[70vh] sm:min-h-64"
           />
         ) : (
           <video
@@ -627,7 +629,7 @@ export default function ReceiptScanner() {
             autoPlay
             playsInline
             muted
-            className="max-h-[65vh] min-h-64 w-full object-contain"
+            className="block max-h-[65dvh] min-h-48 w-full object-contain sm:max-h-[70vh] sm:min-h-64"
           />
         )}
         {detectedWords.length > 0 && frameSize.width > 0 && (
@@ -690,15 +692,15 @@ export default function ReceiptScanner() {
 
       <canvas ref={canvasRef} className="hidden" />
 
-      <p role="status" className="text-sm text-gray-600">
+      <p role="status" className="break-words text-sm text-gray-600">
         {status}
       </p>
 
-      <div className="flex flex-wrap gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
         {!cameraOn && !frozenImage && (
           <button
             onClick={() => void startCamera()}
-            className="rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white"
+            className="col-span-2 min-h-12 min-w-0 rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white sm:col-span-1 sm:text-base"
           >
             Open camera
           </button>
@@ -708,14 +710,14 @@ export default function ReceiptScanner() {
           <>
             <button
               onClick={freezeFrame}
-              className="rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white"
+              className="col-span-2 min-h-12 min-w-0 rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white sm:col-span-1 sm:text-base"
             >
               Freeze frame
             </button>
             <button
               onClick={() => void flipCamera()}
               disabled={switchingCamera}
-              className="rounded-lg border px-4 py-3 disabled:opacity-50"
+              className="min-h-12 min-w-0 rounded-lg border px-3 py-3 text-sm disabled:opacity-50 sm:px-4 sm:text-base"
               aria-label="Switch camera"
             >
               {switchingCamera
@@ -724,7 +726,7 @@ export default function ReceiptScanner() {
             </button>
             <button
               onClick={stopCamera}
-              className="rounded-lg border px-4 py-3"
+              className="min-h-12 min-w-0 rounded-lg border px-3 py-3 text-sm sm:px-4 sm:text-base"
             >
               Stop camera
             </button>
@@ -735,13 +737,13 @@ export default function ReceiptScanner() {
           <>
             <button
               onClick={extractText}
-              className="rounded-lg bg-green-600 px-4 py-3 font-semibold text-white"
+              className="min-h-12 min-w-0 rounded-lg bg-green-600 px-4 py-3 text-sm font-semibold text-white sm:text-base"
             >
               Extract text
             </button>
             <button
               onClick={retake}
-              className="rounded-lg border px-4 py-3"
+              className="min-h-12 min-w-0 rounded-lg border px-4 py-3 text-sm sm:text-base"
             >
               Retake
             </button>
@@ -757,7 +759,7 @@ export default function ReceiptScanner() {
       )}
 
       {extractedText && (
-        <section className="space-y-3 rounded-xl border p-4">
+        <section className="min-w-0 space-y-3 rounded-xl border p-3 sm:p-4">
           <h2 className="text-xl font-semibold">Receipt text</h2>
           <p className="text-sm text-gray-600">
             OCR extracts the printed text. Select <strong>Parse with AI</strong>
@@ -766,8 +768,8 @@ export default function ReceiptScanner() {
           </p>
           {aiParsed && (
             <>
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-left text-sm">
+              <div className="max-w-full overflow-x-auto">
+                <table className="w-full min-w-[28rem] border-collapse text-left text-sm">
                   <thead>
                     <tr className="border-b">
                       <th scope="col" className="w-20 px-2 py-2 font-semibold">
@@ -799,7 +801,7 @@ export default function ReceiptScanner() {
                                 )
                               )
                             }
-                            className="w-full rounded border px-2 py-1"
+                            className="w-full min-w-0 rounded border px-2 py-2 text-base"
                             aria-label={`Quantity for row ${index + 1}`}
                           />
                         </td>
@@ -815,7 +817,7 @@ export default function ReceiptScanner() {
                                 )
                               )
                             }
-                            className="w-full rounded border px-2 py-1"
+                            className="w-full min-w-0 rounded border px-2 py-2 text-base"
                             aria-label={`Description for row ${index + 1}`}
                           />
                         </td>
@@ -831,7 +833,7 @@ export default function ReceiptScanner() {
                                 )
                               )
                             }
-                            className="w-full rounded border px-2 py-1 text-right"
+                            className="w-full min-w-0 rounded border px-2 py-2 text-right text-base"
                             aria-label={`Amount for row ${index + 1}`}
                           />
                         </td>
@@ -861,7 +863,7 @@ export default function ReceiptScanner() {
                             [field]: event.target.value,
                           }))
                         }
-                        className="w-full rounded border px-2 py-1"
+                        className="w-full min-w-0 rounded border px-2 py-2 text-base"
                         aria-label={label}
                       />
                     </label>
@@ -897,7 +899,7 @@ export default function ReceiptScanner() {
               setAiParsed(false);
             }}
             rows={12}
-            className="w-full rounded-lg border p-3 font-mono text-sm"
+            className="w-full min-w-0 rounded-lg border p-3 font-mono text-base sm:text-sm"
             aria-label="Edit extracted receipt text"
           />
         </section>

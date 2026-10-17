@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { fontClassNames } from "./_components/fonts";
+import "../(app)/globals.css";
 
 export const metadata: Metadata = {
   icons: {
@@ -15,7 +16,7 @@ export const viewport: Viewport = {
 
 export default function SiteLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={fontClassNames}>
+    <html lang="en" className={`${fontClassNames} site-theme`}>
       <body>{children}</body>
     </html>
   );
