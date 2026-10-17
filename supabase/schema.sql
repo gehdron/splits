@@ -5,7 +5,7 @@
 -- The browser uses the publishable key, so row level security applies there.
 --
 -- A signed-in user sees items only after they are a member of that item's group.
--- Creating a group adds the creator. Everyone else is added by the group owner, by phone.
+-- Creating a group adds the creator. Everyone else is added by the group owner, by phone or email.
 
 create extension if not exists pgcrypto;
 
@@ -235,9 +235,13 @@ as $$
   );
 $$;
 
--- Owners add an existing account by the phone number from sign-up.
+-- Owners add an existing account by the phone or email from sign-up.
 -- There is no insert policy on group_members, so users cannot add themselves.
-create function public.add_group_member(target_group uuid, member_phone text)
+create function public.add_group_member(
+  target_group uuid,
+  member_phone text default null,
+  member_email text default null
+)
 returns uuid
 language plpgsql
 security definer
@@ -246,18 +250,24 @@ as $$
 declare
   found_user uuid;
   new_member uuid;
+  clean_email text := nullif(lower(trim(member_email)), '');
 begin
   if not public.is_group_owner(target_group) then
     raise exception 'Only a group owner can add members';
   end if;
 
-  if member_phone is null or member_phone !~ '^\+[1-9][0-9]{9,14}$' then
-    raise exception 'Enter a phone number in international format';
-  end if;
-
-  select id into found_user from public.profiles where phone = member_phone;
-  if found_user is null then
-    raise exception 'No account uses that phone number';
+  if member_phone is not null and btrim(member_phone) <> '' and member_phone ~ '^\+[1-9][0-9]{9,14}$' then
+    select id into found_user from public.profiles where phone = member_phone;
+    if found_user is null then
+      raise exception 'No account uses that phone number';
+    end if;
+  elsif clean_email is not null and clean_email ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then
+    select id into found_user from auth.users where lower(email) = clean_email;
+    if found_user is null then
+      raise exception 'No account uses that email';
+    end if;
+  else
+    raise exception 'Enter the phone number or email they used to sign up';
   end if;
 
   insert into public.group_members (group_id, user_id, role)
@@ -297,7 +307,7 @@ create policy "update your profile"
 
 create policy "read groups you belong to"
   on public.groups for select to authenticated
-  using (public.is_group_member(id));
+  using (created_by = auth.uid() or public.is_group_member(id));
 
 create policy "create a group"
   on public.groups for insert to authenticated
@@ -319,6 +329,10 @@ create policy "read members of your groups"
 create policy "owners remove members"
   on public.group_members for delete to authenticated
   using (public.is_group_owner(group_id) and role = 'member');
+
+create policy "members leave a group"
+  on public.group_members for delete to authenticated
+  using (user_id = auth.uid() and role = 'member');
 
 create policy "read lists in your groups"
   on public.lists for select to authenticated
@@ -466,11 +480,11 @@ revoke all on function public.add_owner_member() from public, anon, authenticate
 revoke all on function public.claim_matches_group() from public, anon, authenticated;
 revoke all on function public.is_group_member(uuid) from public, anon;
 revoke all on function public.is_group_owner(uuid) from public, anon;
-revoke all on function public.add_group_member(uuid, text) from public, anon;
+revoke all on function public.add_group_member(uuid, text, text) from public, anon;
 
 grant execute on function public.is_group_member(uuid) to authenticated;
 grant execute on function public.is_group_owner(uuid) to authenticated;
-grant execute on function public.add_group_member(uuid, text) to authenticated;
+grant execute on function public.add_group_member(uuid, text, text) to authenticated;
 
 grant select, update on public.profiles to authenticated;
 grant select, insert, update, delete on public.groups to authenticated;

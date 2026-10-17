@@ -1,9 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { signOut } from "../auth/actions";
-import { addGroupMember, createGroup } from "./actions";
+import { addGroupMember, createGroup, exitGroup } from "./actions";
 import type { DashboardData } from "./types";
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
@@ -12,6 +12,9 @@ const money = (cents: number) => usd.format(cents / 100);
 export function DashboardHome({ data }: { data: DashboardData }) {
   const [createState, createAction, createPending] = useActionState(createGroup, undefined);
   const [addState, addAction, addPending] = useActionState(addGroupMember, undefined);
+  const [exitState, exitAction, exitPending] = useActionState(exitGroup, undefined);
+  const [addBy, setAddBy] = useState<"phone" | "email">("phone");
+  const [armedGroup, setArmedGroup] = useState<string | null>(null);
   const selected = useSearchParams().get("group");
   const group = data.groups.find((entry) => entry.id === selected) ?? data.groups[0] ?? null;
   const members = data.members.filter((member) => member.groupId === group?.id);
@@ -69,6 +72,23 @@ export function DashboardHome({ data }: { data: DashboardData }) {
           <>
             <h1>{group.name}</h1>
             <p>{group.role === "owner" ? "You own this group." : "You are a member of this group."}</p>
+            {armedGroup === group.id ? (
+              <form className="row" action={exitAction}>
+                <input type="hidden" name="groupId" value={group.id} />
+                <p>{group.role === "owner" ? "Delete this group for everyone?" : "Leave this group?"}</p>
+                {exitState?.error ? <p className="err">{exitState.error}</p> : null}
+                <button type="submit" disabled={exitPending}>
+                  {exitPending ? "Working…" : group.role === "owner" ? "Delete group" : "Leave group"}
+                </button>
+                <button type="button" className="quiet" onClick={() => setArmedGroup(null)}>
+                  Cancel
+                </button>
+              </form>
+            ) : (
+              <button type="button" className="quiet" onClick={() => setArmedGroup(group.id)}>
+                {group.role === "owner" ? "Delete group" : "Leave group"}
+              </button>
+            )}
             <p>{mine ? `Your share is ${money(mine.totalCents)}.` : "You have not claimed anything in this group."}</p>
 
             <section>
@@ -84,9 +104,24 @@ export function DashboardHome({ data }: { data: DashboardData }) {
               {group.role === "owner" ? (
                 <form action={addAction}>
                   <input type="hidden" name="groupId" value={group.id} />
+                  <input type="hidden" name="by" value={addBy} />
+                  <div className="pick" role="group" aria-label="Add by">
+                    <button type="button" aria-pressed={addBy === "phone"} onClick={() => setAddBy("phone")}>
+                      Phone
+                    </button>
+                    <button type="button" aria-pressed={addBy === "email"} onClick={() => setAddBy("email")}>
+                      Email
+                    </button>
+                  </div>
                   <label>
-                    Add someone by phone
-                    <input name="phone" type="tel" autoComplete="tel" required />
+                    {addBy === "phone" ? "Phone number" : "Email"}
+                    <input
+                      key={addBy}
+                      name="contact"
+                      type={addBy === "phone" ? "tel" : "email"}
+                      autoComplete={addBy === "phone" ? "tel" : "email"}
+                      required
+                    />
                   </label>
                   {addState?.error ? <p className="err">{addState.error}</p> : null}
                   <button type="submit" disabled={addPending}>

@@ -64,6 +64,22 @@
   gap: 10px;
   margin: 16px 0 28px;
 }
+.dash form.row {
+  grid-template-columns: auto auto;
+  align-items: center;
+  width: fit-content;
+}
+.dash form.row p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.dash button.quiet {
+  width: fit-content;
+  padding: 0 16px;
+  background: transparent;
+  color: var(--ink);
+  border: 1.5px solid var(--line);
+}
 .dash label {
   display: grid;
   gap: 6px;
@@ -91,6 +107,28 @@
 }
 .dash button:disabled {
   cursor: wait;
+}
+.dash .pick {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: #ece8ff;
+}
+.dash .pick button {
+  min-height: 44px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+}
+.dash .pick button[aria-pressed="true"] {
+  background: #fff;
+}
+.dash .pick button:focus-visible,
+.dash input:focus-visible {
+  outline: 3px solid var(--vio);
+  outline-offset: 3px;
 }
 .dash .you {
   display: grid;
