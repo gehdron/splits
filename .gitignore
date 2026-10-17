@@ -40,3 +40,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# purchase commitments recorded from iMessage
+/photon/data/
+
+# shared list written by the app and the iMessage agent
+/data/

@@ -41,3 +41,17 @@ extracted text to Gemini 3.8 Flash; the photo is sent only when you select this
 button and must be 8 MB or smaller. AI parsing requires a Gemini API key and
 may incur API charges depending on your account and usage. OCR extraction and
 the raw text remain available without an API key.
+The scanner currently performs OCR and displays editable text; it does not yet
+identify structured fields such as the merchant, line items, or total.
+
+## Routes
+
+| Route | What it is |
+| --- | --- |
+| `/` | Marketing site home (`app/(site)/page.tsx`) |
+| `/payment-complete` | Shown after a friend pays. Fill it with `?friend=Maya&event=Dinner&amount=24.50&method=Apple%20Pay` |
+| `/scan` | Receipt scanner (moved from `/`) |
+| `/list` | Shared list |
+| any other URL | 404 page (`app/global-not-found.tsx`) |
+
+The marketing pages live in `app/(site)` with their own layout and CSS, separate from the scanner's Tailwind layout in `app/(app)`.
