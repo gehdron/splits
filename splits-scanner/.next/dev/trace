@@ -20,3 +20,4 @@
 [{"name":"turbopack-compaction","duration":204000,"timestamp":191859810978,"id":53,"parentId":3,"tags":{"bytes_written":8312297,"bytes_deleted":9983849},"startTime":1792276825625,"traceId":"5616b5672428929d"}]
 [{"name":"compile-path","duration":475025,"timestamp":193539510727,"id":55,"parentId":1,"tags":{"trigger":"proxy"},"startTime":1792278505324,"traceId":"5616b5672428929d"}]
 [{"name":"turbopack-persistence","duration":217000,"timestamp":193541724598,"id":56,"parentId":3,"tags":{"reason":"idle timeout","snapshot_duration_ms":116.3022,"persist_duration_ms":101.2254,"task_count":161,"bytes_written":76237,"bytes_deleted":0},"startTime":1792278507538,"traceId":"5616b5672428929d"}]
+[{"name":"compile-path","duration":104803,"timestamp":194021272424,"id":58,"parentId":1,"tags":{"trigger":"proxy"},"startTime":1792278987086,"traceId":"5616b5672428929d"}]
