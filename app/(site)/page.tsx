@@ -20,7 +20,7 @@ const EMAIL = "hello@example.com";
 
 const steps = [
   { title: "Scan the receipt", body: "Take a photo. Splits lists every item with the tax and tip." },
-  { title: "Claim your items", body: "Friends tap what they ordered. Shared plates split evenly." },
+  { title: "Assign it", body: "Assign each item to the friend who ordered it. Shared plates split evenly between the people who share them." },
   { title: "Pay by link", body: "Each person gets a checkout link by text, with Apple Pay or card." },
 ];
 
@@ -58,11 +58,11 @@ export default function Home() {
           <div className="hero-in">
             <div>
               <h1>
-                <span className="ln"><span className="ri" style={{ animationDelay: "80ms" }}>No more chasing</span></span>
-                <span className="ln"><span className="ri" style={{ animationDelay: "180ms" }}>friends for $14.</span></span>
+                <span className="ln"><span className="ri" style={{ animationDelay: "80ms" }}>Splitting costs,</span></span>
+                <span className="ln"><span className="ri" style={{ animationDelay: "180ms" }}>made simple.</span></span>
               </h1>
               <p className="sub fade" style={{ animationDelay: "420ms" }}>
-                Snap the receipt, let everyone claim their items, and send each person a link to pay their share with Apple Pay or a card. Nobody needs to install anything.
+                Scan the receipt, assign each item to a friend, and they tap to pay their share with Apple Pay or a card.
               </p>
               <div
                 className="cta fade"
@@ -116,7 +116,7 @@ export default function Home() {
       <section className="statement">
         <div className="wrap">
           <p>
-            Splits reads the receipt, <span className="mk m1">lets everyone claim what they ate</span>, and texts each person <span className="mk m2">a link to pay</span>. They tap, they pay with Apple Pay or a card, and you’re done. <span className="mk m3">No app, no account, no chasing.</span>
+            Scan the receipt and <span className="mk m1">assign each item to a friend</span>. Everyone gets a link and <span className="mk m2">pays with Apple Pay or a card</span>. Roommates get <span className="mk m3">one group chat and one shared list</span>, so future bills are already set up.
           </p>
         </div>
       </section>
