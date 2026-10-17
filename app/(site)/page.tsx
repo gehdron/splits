@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   openGraph: { type: "website", title, description },
 };
 
-const APP_URL = "https://app.example.com";
+const APP_URL = "/signup";
 const EMAIL = "hello@example.com";
 
 const steps = [
@@ -45,7 +45,8 @@ export default function Home() {
               <a href="#how">How it works</a>
               <a href="#pay">Apple Pay</a>
               <a href="#faq">FAQ</a>
-              <a className="btn btn-a" href={APP_URL}>Try Splits</a>
+              <a className="signin" href="/login">Sign in</a>
+              <a className="btn btn-a" href={APP_URL}>Create account</a>
             </nav>
           </header>
         </div>
@@ -68,7 +69,7 @@ export default function Home() {
                 className="cta fade"
                 style={{ animationDelay: "520ms", flexDirection: "column", alignItems: "flex-start", gap: 18 }}
               >
-                <a className="btn btn-a" href={APP_URL}>Try Splits</a>
+                <a className="btn btn-a" href={APP_URL}>Create account</a>
                 <a className="textlink" href="#how">See how it works</a>
               </div>
               <ul className="perks fade" style={{ animationDelay: "640ms" }}>
@@ -189,7 +190,7 @@ export default function Home() {
                 <div className="bub mo">Done. I’ll try it.</div>
               </div>
               <div className="tform">
-                <a className="btn btn-a" href={APP_URL}>Try Splits</a>
+                <a className="btn btn-a" href={APP_URL}>Create account</a>
                 <p className="micro">
                   Questions first? <a href={`mailto:${EMAIL}`}>Email us</a>. We reply within 2 business days.
                 </p>
@@ -212,7 +213,7 @@ export default function Home() {
         </div>
         <div className="sign" aria-hidden="true"><span className="sa">Spl</span><span className="sb">its</span></div>
       </section>
-      <div className="sc"><a className="btn btn-a" href={APP_URL}>Try Splits</a></div>
+      <div className="sc"><a className="btn btn-a" href={APP_URL}>Create account</a></div>
     </div>
   );
 }

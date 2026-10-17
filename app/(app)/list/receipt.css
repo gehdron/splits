@@ -1,0 +1,164 @@
+/* Receipt look for /list. Scoped to .rc-* classes so nothing else is affected. */
+
+.rc-page {
+  min-height: 100vh;
+  padding: 28px 14px 64px;
+  background-color: #f1e7d6;
+  background-image: radial-gradient(rgba(90, 60, 20, 0.07) 1px, transparent 1px);
+  background-size: 16px 16px;
+  color: #1f1a14;
+}
+
+.rc-paper {
+  position: relative;
+  max-width: 26rem;
+  margin: 18px auto;
+  padding: 30px 22px 34px;
+  color: #1f1a14;
+  font-family: var(--font-geist-mono), ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  background-color: #fffdf6;
+  /* faint paper grain */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .35 0 0 0 0 .25 0 0 0 0 .1 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  filter: drop-shadow(0 10px 14px rgba(70, 45, 10, 0.22));
+}
+
+/* torn zigzag edges, top and bottom */
+.rc-paper::before,
+.rc-paper::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 10px;
+  background-repeat: repeat-x;
+  background-size: 20px 10px;
+}
+.rc-paper::before {
+  top: -9px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='10' viewBox='0 0 20 10'%3E%3Cpolygon points='0,10 20,10 10,0' fill='%23fffdf6'/%3E%3C/svg%3E");
+}
+.rc-paper::after {
+  bottom: -9px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='10' viewBox='0 0 20 10'%3E%3Cpolygon points='0,0 20,0 10,10' fill='%23fffdf6'/%3E%3C/svg%3E");
+}
+
+.rc-dash {
+  border: 0;
+  border-top: 2px dashed rgba(31, 26, 20, 0.35);
+  margin: 16px 0;
+}
+
+/* "NAME ........ $9.99" rows */
+.rc-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.rc-leader {
+  flex: 1;
+  min-width: 12px;
+  border-bottom: 2px dotted rgba(31, 26, 20, 0.35);
+  transform: translateY(-3px);
+}
+
+/* underlined fields that look like lines on a form */
+.rc-field {
+  width: 100%;
+  background: transparent;
+  color: #1f1a14;
+  border: 0;
+  border-bottom: 2px solid rgba(31, 26, 20, 0.5);
+  padding: 6px 2px;
+  font: inherit;
+  outline: none;
+  border-radius: 0;
+}
+.rc-field::placeholder {
+  color: rgba(31, 26, 20, 0.4);
+}
+.rc-field:focus {
+  border-bottom-color: #e4572e;
+}
+
+/* little stamp-style buttons */
+.rc-btn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #1f1a14;
+  background: transparent;
+  border: 2px solid #1f1a14;
+  border-radius: 4px;
+  padding: 4px 9px;
+  cursor: pointer;
+  transform: rotate(-1.5deg);
+  transition: transform 0.1s, background 0.1s;
+}
+.rc-btn:hover {
+  background: #ffe27a;
+  transform: rotate(0deg) scale(1.04);
+}
+.rc-btn:active {
+  transform: scale(0.96);
+}
+.rc-btn-solid {
+  background: #1f1a14;
+  color: #fffdf6;
+}
+.rc-btn-solid:hover {
+  background: #e4572e;
+  color: #fffdf6;
+}
+
+.rc-x {
+  background: none;
+  border: 0;
+  color: rgba(31, 26, 20, 0.35);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.rc-x:hover {
+  color: #e4572e;
+}
+
+/* colored name tags */
+.rc-tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1f1a14;
+}
+
+/* sticky-note style message */
+.rc-note {
+  background: #ffe27a;
+  color: #1f1a14;
+  border-radius: 3px;
+  padding: 8px 10px;
+  font-size: 13px;
+  transform: rotate(-0.8deg);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.12);
+}
+
+/* barcode at the bottom */
+.rc-barcode {
+  height: 44px;
+  margin: 18px auto 6px;
+  width: 82%;
+  background: repeating-linear-gradient(
+    90deg,
+    #1f1a14 0 2px,
+    transparent 2px 4px,
+    #1f1a14 4px 5px,
+    transparent 5px 9px,
+    #1f1a14 9px 12px,
+    transparent 12px 14px,
+    #1f1a14 14px 15px,
+    transparent 15px 19px
+  );
+}
