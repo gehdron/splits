@@ -20,7 +20,7 @@ type DB = { lists: Map<string, List>; items: Map<string, Item> };
 type Saved = { lists: [string, List][]; items: [string, Item][] };
 
 function storePath(): string {
-  return process.env.SPLITS_STORE_PATH ?? join(process.cwd(), "data", "store.json");
+  return join(process.cwd(), "data", "store.json");
 }
 
 function load(): DB {

@@ -1,6 +1,8 @@
+import { connection } from "next/server";
 import { createList, listAll } from "@/lib/store";
 
 export async function GET() {
+  await connection();
   return Response.json(listAll());
 }
 
