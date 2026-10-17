@@ -11,6 +11,7 @@ import type {
 import {
   calculateReceiptSplits,
   formatCents,
+  type TipSplitMode,
 } from "@/app/split-calculations";
 import type {
   ReceiptAssignment,
@@ -142,13 +143,42 @@ export default function ReceiptScanner() {
   const [splitAssignments, setSplitAssignments] = useState<ReceiptAssignment[]>([]);
   const [splitParsing, setSplitParsing] = useState(false);
   const [splitError, setSplitError] = useState("");
+  const [tipOptionsOpen, setTipOptionsOpen] = useState(false);
+  const [tipSplitMode, setTipSplitMode] =
+    useState<TipSplitMode>("proportional");
+  const [manualTipAmounts, setManualTipAmounts] = useState<
+    Record<string, string>
+  >({});
   const [frameSize, setFrameSize] = useState({ width: 0, height: 0 });
 
-  const splitCalculation = calculateReceiptSplits(
+  const proportionalTipCalculation = calculateReceiptSplits(
     receiptRows,
     receiptTotals,
     splitAssignments
   );
+  const splitCalculation = calculateReceiptSplits(
+    receiptRows,
+    receiptTotals,
+    splitAssignments,
+    { mode: tipSplitMode, manualAmounts: manualTipAmounts }
+  );
+
+  function selectTipSplitMode(mode: TipSplitMode) {
+    if (mode === "manual" && tipSplitMode !== "manual") {
+      setManualTipAmounts({
+        ...Object.fromEntries(
+          proportionalTipCalculation.people.map((person) => [
+            person.person.toLowerCase(),
+            (person.tipCents / 100).toFixed(2),
+          ])
+        ),
+        __unassigned__: (
+          proportionalTipCalculation.unassignedTipCents / 100
+        ).toFixed(2),
+      });
+    }
+    setTipSplitMode(mode);
+  }
 
   async function startCamera(
     facingMode: CameraFacingMode = cameraFacingMode,
@@ -660,6 +690,9 @@ export default function ReceiptScanner() {
       setSplitAssignments([]);
       setSplitMessage("");
       setSplitError("");
+      setTipOptionsOpen(false);
+      setTipSplitMode("proportional");
+      setManualTipAmounts({});
       setStatus("AI parsed the receipt. Review and edit the results as needed.");
     } catch (error) {
       console.error(error);
@@ -1131,6 +1164,116 @@ export default function ReceiptScanner() {
                           ))}
                       </ul>
 
+                      <div className="space-y-3 border-t pt-3">
+                        <button
+                          type="button"
+                          aria-expanded={tipOptionsOpen}
+                          onClick={() => setTipOptionsOpen((open) => !open)}
+                          className="min-h-11 rounded-lg border px-3 py-2 text-left font-semibold"
+                        >
+                          {tipOptionsOpen ? "Hide tip options" : "Tip options"}
+                          {` · ${
+                            tipSplitMode === "proportional"
+                              ? "Split proportionally"
+                              : tipSplitMode === "manual"
+                                ? "Custom per person"
+                                : "Not included"
+                          }`}
+                        </button>
+                        {tipOptionsOpen && (
+                          <div className="space-y-3 rounded-lg border bg-white p-3">
+                            <p className="text-sm text-gray-600">
+                              Tax remains proportional. Choose how the tip is
+                              handled.
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {(
+                                [
+                                  ["proportional", "Split proportionally"],
+                                  ["manual", "Set each person’s tip"],
+                                  ["disabled", "Don’t split tip"],
+                                ] as const
+                              ).map(([mode, label]) => (
+                                <button
+                                  key={mode}
+                                  type="button"
+                                  aria-pressed={tipSplitMode === mode}
+                                  onClick={() => selectTipSplitMode(mode)}
+                                  className={`min-h-10 rounded-lg border px-3 py-2 text-sm font-medium ${
+                                    tipSplitMode === mode
+                                      ? "border-blue-700 bg-blue-50 text-blue-900"
+                                      : "bg-white"
+                                  }`}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                            {tipSplitMode === "manual" && (
+                              <div className="space-y-2">
+                                <p className="text-sm text-gray-600">
+                                  Enter each person’s tip amount. These amounts
+                                  replace the receipt tip allocation.
+                                </p>
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                  {splitCalculation.people.map((person) => {
+                                    const key = person.person.toLowerCase();
+                                    return (
+                                      <label
+                                        key={key}
+                                        className="flex items-center justify-between gap-3 text-sm"
+                                      >
+                                        <span>{person.person}</span>
+                                        <input
+                                          type="text"
+                                          inputMode="decimal"
+                                          value={manualTipAmounts[key] ?? "0.00"}
+                                          onChange={(event) =>
+                                            setManualTipAmounts((amounts) => ({
+                                              ...amounts,
+                                              [key]: event.target.value,
+                                            }))
+                                          }
+                                          className="w-28 rounded border px-2 py-2 text-right text-base"
+                                          aria-label={`${person.person} tip amount`}
+                                        />
+                                      </label>
+                                    );
+                                  })}
+                                  {splitCalculation.unassignedCents > 0 && (
+                                    <label className="flex items-center justify-between gap-3 text-sm">
+                                      <span>Unassigned items</span>
+                                      <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={
+                                          manualTipAmounts.__unassigned__ ??
+                                          "0.00"
+                                        }
+                                        onChange={(event) =>
+                                          setManualTipAmounts((amounts) => ({
+                                            ...amounts,
+                                            __unassigned__: event.target.value,
+                                          }))
+                                        }
+                                        className="w-28 rounded border px-2 py-2 text-right text-base"
+                                        aria-label="Unassigned items tip amount"
+                                      />
+                                    </label>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            {tipSplitMode === "disabled" && (
+                              <p className="text-sm text-gray-600">
+                                The receipt tip will not be included in anyone’s
+                                total.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
                       <h4 className="font-semibold">Each person owes</h4>
                       <ul className="space-y-2 text-sm">
                         {splitCalculation.people.map((person) => (
@@ -1169,6 +1312,12 @@ export default function ReceiptScanner() {
                           Some item amounts could not be read as numbers, so
                           tax and tip cannot be allocated reliably. Review the
                           item amounts above.
+                        </p>
+                      )}
+                      {splitCalculation.manualTipNeedsReview && (
+                        <p className="text-sm text-amber-800" role="alert">
+                          Enter a valid non-negative amount for each tip share.
+                          Invalid amounts are not included in the totals.
                         </p>
                       )}
                     </div>

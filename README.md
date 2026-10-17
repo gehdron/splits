@@ -44,9 +44,11 @@ the raw text remain available without an API key.
 
 After AI parsing, select **Split items with chat** to assign receipt items
 using natural-language instructions. Shared items are split equally; parsed
-tax and tip are allocated proportionally to each person's share of the item
-amounts. Any unassigned items keep their associated tax and tip under
-**Unassigned** until they are assigned.
+tax is allocated proportionally to each person's share of the item amounts.
+Open **Tip options** to split the receipt tip proportionally, set a custom tip
+amount for each person, or leave the tip out of split totals. Any unassigned
+items keep their associated tax and tip under **Unassigned** until they are
+assigned.
 The scanner currently performs OCR and displays editable text; it does not yet
 identify structured fields such as the merchant, line items, or total.
 
