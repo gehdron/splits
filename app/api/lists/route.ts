@@ -1,4 +1,8 @@
-import { createList } from "@/lib/store";
+import { createList, listAll } from "@/lib/store";
+
+export async function GET() {
+  return Response.json(listAll());
+}
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));

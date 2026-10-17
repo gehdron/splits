@@ -28,6 +28,12 @@ export default function ListPage() {
       setMe(localStorage.getItem("splits-name") ?? "");
       const id = new URLSearchParams(window.location.search).get("id");
       if (id) return setListId(id);
+      const existing = await fetch("/api/lists");
+      const lists: { id: string }[] = await existing.json();
+      if (lists[0]) {
+        window.history.replaceState(null, "", `/list?id=${lists[0].id}`);
+        return setListId(lists[0].id);
+      }
       const res = await fetch("/api/lists", { method: "POST", body: JSON.stringify({ name: "Shared list" }) });
       const list = await res.json();
       window.history.replaceState(null, "", `/list?id=${list.id}`);

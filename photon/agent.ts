@@ -2,8 +2,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { ApiError, Photon } from "@photon-ai/api";
-import { isSummaryRequest, parseCommitments, renderConfirmation, renderSummary, type Commitment } from "./commitments.ts";
+import { isSummaryRequest, parseCommitments, renderConfirmation, renderSummary, type Commitment, type ParsedCommitment } from "./commitments.ts";
 import { loadLedger, saveLedger } from "./ledger.ts";
+import { defaultList, recordPurchase } from "../lib/store.ts";
 
 type Config = { key: string; project: string; platform: "imessage" | "email"; agent: string; sender: string };
 
@@ -64,6 +65,19 @@ function inbound(m: Item, c: Config, startedAt: number): Inbound | undefined {
 
 const ledgerPath = join(dirname(fileURLToPath(import.meta.url)), "data", "ledger.json");
 
+function priceCents(amount?: string): number {
+  if (!amount) return 0;
+  const dollars = Number(amount.replace(/[^0-9.]/g, ""));
+  return Number.isFinite(dollars) ? Math.round(dollars * 100) : 0;
+}
+
+function savePurchases(parsed: ParsedCommitment[]): void {
+  const listId = defaultList().id;
+  for (const item of parsed) {
+    recordPurchase(listId, { name: item.item, priceCents: priceCents(item.amount), person: item.who });
+  }
+}
+
 function replyFor(message: Inbound, commitments: Commitment[]): string | undefined {
   if (isSummaryRequest(message.text)) {
     return renderSummary(commitments.filter((item) => item.spaceId === message.spaceId), message.senderHandle);
@@ -74,6 +88,7 @@ function replyFor(message: Inbound, commitments: Commitment[]): string | undefin
   for (const item of parsed) {
     commitments.push({ ...item, messageId: message.id, spaceId: message.spaceId, at });
   }
+  savePurchases(parsed);
   return renderConfirmation(parsed, message.senderHandle);
 }
 
