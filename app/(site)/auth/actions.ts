@@ -2,20 +2,13 @@
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { normalizePhone } from "@/lib/phone";
 import { supabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
 
 export type AuthState = { error?: string; message?: string } | undefined;
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function normalizePhone(raw: string): string | null {
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  if (raw.trim().startsWith("+") && /^\+[1-9]\d{9,14}$/.test(`+${digits}`)) return `+${digits}`;
-  return null;
-}
 
 async function siteOrigin() {
   const headerList = await headers();
@@ -28,7 +21,7 @@ async function siteOrigin() {
 
 function safeNext(value: FormDataEntryValue | null) {
   const next = String(value ?? "");
-  if (!next.startsWith("/") || next.startsWith("//") || next.includes("\\")) return "/account";
+  if (!next.startsWith("/") || next.startsWith("//") || next.includes("\\")) return "/dashboard";
   return next;
 }
 
@@ -52,7 +45,7 @@ export async function signUp(_state: AuthState, formData: FormData): Promise<Aut
     password,
     options: {
       data: { name, phone },
-      emailRedirectTo: `${origin}/auth/callback?next=/account`,
+      emailRedirectTo: `${origin}/auth/callback?next=/dashboard`,
     },
   });
 
@@ -63,7 +56,7 @@ export async function signUp(_state: AuthState, formData: FormData): Promise<Aut
     return { error: error.message };
   }
 
-  if (data.session) redirect("/account");
+  if (data.session) redirect("/dashboard");
   return { message: "Check your email for a link to finish creating your account." };
 }
 
