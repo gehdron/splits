@@ -9,6 +9,7 @@ import type {
   AiReceiptTotals,
 } from "@/app/receipt-types";
 import {
+  calculateReceiptTotal,
   calculateReceiptSplits,
   formatCents,
   type TipSplitMode,
@@ -134,6 +135,7 @@ export default function ReceiptScanner() {
     tip: "",
     total: "",
   });
+  const [receiptTotalEdited, setReceiptTotalEdited] = useState(false);
   const [aiParsing, setAiParsing] = useState(false);
   const [aiParsed, setAiParsed] = useState(false);
   const [aiError, setAiError] = useState("");
@@ -162,19 +164,31 @@ export default function ReceiptScanner() {
     splitAssignments,
     { mode: tipSplitMode, manualAmounts: manualTipAmounts }
   );
+  const displayedReceiptTotal = receiptTotalEdited
+    ? calculateReceiptTotal(receiptTotals)
+    : receiptTotals.total;
 
   function selectTipSplitMode(mode: TipSplitMode) {
     if (mode === "manual" && tipSplitMode !== "manual") {
-      setManualTipAmounts({
-        ...Object.fromEntries(
-          proportionalTipCalculation.people.map((person) => [
-            person.person.toLowerCase(),
-            (person.tipCents / 100).toFixed(2),
-          ])
-        ),
-        __unassigned__: (
-          proportionalTipCalculation.unassignedTipCents / 100
-        ).toFixed(2),
+      setManualTipAmounts((currentAmounts) => {
+        const amounts = {
+          ...currentAmounts,
+          ...Object.fromEntries(
+            proportionalTipCalculation.people.map((person) => [
+              person.person.toLowerCase(),
+              currentAmounts[person.person.toLowerCase()] ??
+                (person.tipCents / 100).toFixed(2),
+            ])
+          ),
+        };
+        if (proportionalTipCalculation.unassignedCents > 0) {
+          amounts.__unassigned__ =
+            currentAmounts.__unassigned__ ??
+            (proportionalTipCalculation.unassignedTipCents / 100).toFixed(2);
+        } else {
+          delete amounts.__unassigned__;
+        }
+        return amounts;
       });
     }
     setTipSplitMode(mode);
@@ -224,6 +238,7 @@ export default function ReceiptScanner() {
       setDetectedWords([]);
       setReceiptRows([]);
       setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
+      setReceiptTotalEdited(false);
       setAiParsed(false);
       setAiError("");
       setSplitAssistantOpen(false);
@@ -325,6 +340,7 @@ export default function ReceiptScanner() {
     setExtractedText("");
     setReceiptRows([]);
     setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
+    setReceiptTotalEdited(false);
     setStatus("Image frozen. Finding text and drawing its boxes...");
     stopCamera();
     void readImage(imageUrl);
@@ -464,6 +480,7 @@ export default function ReceiptScanner() {
       setAiError("");
       setReceiptRows([]);
       setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
+      setReceiptTotalEdited(false);
       setAiParsed(false);
       setSplitAssistantOpen(false);
       setSplitMessages([]);
@@ -685,6 +702,7 @@ export default function ReceiptScanner() {
 
       setReceiptRows(result.items);
       setReceiptTotals(result.totals);
+      setReceiptTotalEdited(false);
       setAiParsed(true);
       setSplitMessages([]);
       setSplitAssignments([]);
@@ -769,6 +787,7 @@ export default function ReceiptScanner() {
     setExtractedText("");
     setReceiptRows([]);
     setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
+    setReceiptTotalEdited(false);
     setAiParsed(false);
     setAiError("");
     setSplitAssistantOpen(false);
@@ -1036,19 +1055,34 @@ export default function ReceiptScanner() {
                     <label key={field} className="space-y-1 text-sm">
                       <span className="block">{label}</span>
                       <input
-                        value={receiptTotals[field]}
-                        onChange={(event) =>
-                          setReceiptTotals((currentTotals) => ({
-                            ...currentTotals,
-                            [field]: event.target.value,
-                          }))
+                        value={
+                          field === "total"
+                            ? displayedReceiptTotal
+                            : receiptTotals[field]
                         }
-                        className="w-full min-w-0 rounded border px-2 py-2 text-base"
+                        readOnly={field === "total"}
+                        onChange={
+                          field === "total"
+                            ? undefined
+                            : (event) => {
+                                setReceiptTotalEdited(true);
+                                setReceiptTotals((currentTotals) => ({
+                                  ...currentTotals,
+                                  [field]: event.target.value,
+                                }));
+                              }
+                        }
+                        className={`w-full min-w-0 rounded border px-2 py-2 text-base ${
+                          field === "total" ? "bg-gray-100" : ""
+                        }`}
                         aria-label={label}
                       />
                     </label>
                   ))}
                 </div>
+                <p className="text-xs text-gray-600">
+                  Total updates from subtotal, tax, and tip when you edit them.
+                </p>
               </div>
             </>
           )}
@@ -1163,8 +1197,10 @@ export default function ReceiptScanner() {
                             </li>
                           ))}
                       </ul>
+                    </div>
+                  )}
 
-                      <div className="space-y-3 border-t pt-3">
+                  <div className="space-y-3 border-t pt-3">
                         <button
                           type="button"
                           aria-expanded={tipOptionsOpen}
@@ -1216,6 +1252,12 @@ export default function ReceiptScanner() {
                                   replace the receipt tip allocation.
                                 </p>
                                 <div className="grid gap-2 sm:grid-cols-2">
+                                  {splitCalculation.people.length === 0 && (
+                                    <p className="text-sm text-gray-600 sm:col-span-2">
+                                      Assign receipt items in the chat to set
+                                      each person’s tip.
+                                    </p>
+                                  )}
                                   {splitCalculation.people.map((person) => {
                                     const key = person.person.toLowerCase();
                                     return (
@@ -1227,7 +1269,16 @@ export default function ReceiptScanner() {
                                         <input
                                           type="text"
                                           inputMode="decimal"
-                                          value={manualTipAmounts[key] ?? "0.00"}
+                                          value={
+                                            manualTipAmounts[key] ??
+                                            ((
+                                              proportionalTipCalculation.people.find(
+                                                (entry) =>
+                                                  entry.person.toLowerCase() ===
+                                                  key
+                                              )?.tipCents ?? 0
+                                            ) / 100).toFixed(2)
+                                          }
                                           onChange={(event) =>
                                             setManualTipAmounts((amounts) => ({
                                               ...amounts,
@@ -1248,7 +1299,10 @@ export default function ReceiptScanner() {
                                         inputMode="decimal"
                                         value={
                                           manualTipAmounts.__unassigned__ ??
-                                          "0.00"
+                                          (
+                                            proportionalTipCalculation.unassignedTipCents /
+                                            100
+                                          ).toFixed(2)
                                         }
                                         onChange={(event) =>
                                           setManualTipAmounts((amounts) => ({
@@ -1272,8 +1326,10 @@ export default function ReceiptScanner() {
                             )}
                           </div>
                         )}
-                      </div>
+                  </div>
 
+                  {splitAssignments.length > 0 && (
+                    <div className="space-y-3 border-t pt-3">
                       <h4 className="font-semibold">Each person owes</h4>
                       <ul className="space-y-2 text-sm">
                         {splitCalculation.people.map((person) => (

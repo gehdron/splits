@@ -49,6 +49,8 @@ Open **Tip options** to split the receipt tip proportionally, set a custom tip
 amount for each person, or leave the tip out of split totals. Any unassigned
 items keep their associated tax and tip under **Unassigned** until they are
 assigned.
+After editing the receipt subtotal, tax, or tip, the displayed receipt total
+updates automatically as their sum.
 The scanner currently performs OCR and displays editable text; it does not yet
 identify structured fields such as the merchant, line items, or total.
 

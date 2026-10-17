@@ -143,9 +143,14 @@ export function calculateReceiptSplits(
   const tipAllocations = new Map<string, number>();
   const taxCents = parseCents(receiptTotals.tax);
   const tipCents = parseCents(receiptTotals.tip);
+  const manualTipKeys = [
+    ...people.keys(),
+    ...(unassignedCents > 0 ? ["__unassigned__"] : []),
+  ];
   const manualTipNeedsReview =
     tipMode === "manual" &&
-    Object.values(tipOptions.manualAmounts ?? {}).some((value) => {
+    manualTipKeys.some((key) => {
+      const value = tipOptions.manualAmounts?.[key] ?? "";
       if (value.trim() === "") return false;
       const amount = parseCents(value);
       return amount === null || amount < 0;
@@ -156,8 +161,14 @@ export function calculateReceiptSplits(
     if (tipMode === "proportional" && tipCents !== null) {
       addProportionalCents(tipCents, allWeights, tipAllocations);
     } else if (tipMode === "manual") {
-      for (const key of [...people.keys(), "__unassigned__"]) {
-        const value = tipOptions.manualAmounts?.[key] ?? "0";
+      const proportionalTipDefaults = new Map<string, number>();
+      if (tipCents !== null) {
+        addProportionalCents(tipCents, allWeights, proportionalTipDefaults);
+      }
+      for (const key of manualTipKeys) {
+        const value =
+          tipOptions.manualAmounts?.[key] ??
+          ((proportionalTipDefaults.get(key) ?? 0) / 100).toFixed(2);
         const amount = value.trim() === "" ? 0 : parseCents(value);
         if (amount === null || amount < 0) continue;
         tipAllocations.set(key, amount);
@@ -183,4 +194,19 @@ export function calculateReceiptSplits(
 
 export function formatCents(amountCents: number) {
   return `$${(amountCents / 100).toFixed(2)}`;
+}
+
+export function calculateReceiptTotal(totals: AiReceiptTotals) {
+  const amounts = [totals.subtotal, totals.tax, totals.tip];
+  if (amounts.every((amount) => amount.trim() === "")) return "";
+
+  let totalCents = 0;
+  for (const amount of amounts) {
+    if (amount.trim() === "") continue;
+    const cents = parseCents(amount);
+    if (cents === null) return "";
+    totalCents += cents;
+  }
+
+  return formatCents(totalCents);
 }
