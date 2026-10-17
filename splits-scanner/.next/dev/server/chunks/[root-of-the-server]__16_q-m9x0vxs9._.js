@@ -67,25 +67,34 @@ async function updateSession(request) {
     // Refresh the session. Nothing else should run before getClaims().
     const { data } = await supabase.auth.getClaims();
     const signedIn = Boolean(data?.claims);
-    if (!signedIn && request.nextUrl.pathname.startsWith("/account")) {
-        const redirectUrl = request.nextUrl.clone();
-        redirectUrl.pathname = "/login";
-        redirectUrl.search = "";
-        const redirectResponse = __TURBOPACK__imported__module__$5b$project$5d2f$splits$2d$scanner$2f$node_modules$2f$next$2f$server$2e$js__$5b$middleware$5d$__$28$ecmascript$29$__["NextResponse"].redirect(redirectUrl);
-        supabaseResponse.cookies.getAll().forEach((cookie)=>{
-            redirectResponse.cookies.set(cookie);
-        });
-        for (const header of [
-            "cache-control",
-            "expires",
-            "pragma"
-        ]){
-            const value = supabaseResponse.headers.get(header);
-            if (value) redirectResponse.headers.set(header, value);
-        }
-        return redirectResponse;
+    const path = request.nextUrl.pathname;
+    if (signedIn && (path === "/login" || path === "/signup")) {
+        return redirectWithSession(request, supabaseResponse, "/dashboard");
+    }
+    const needsAuth = path === "/dashboard" || path.startsWith("/dashboard/") || path === "/account" || path.startsWith("/account/");
+    if (!signedIn && needsAuth) {
+        const next = path.startsWith("/account") ? "/account" : "/dashboard";
+        return redirectWithSession(request, supabaseResponse, "/login", next);
     }
     return supabaseResponse;
+}
+function redirectWithSession(request, supabaseResponse, pathname, next) {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = pathname;
+    redirectUrl.search = next ? `?next=${encodeURIComponent(next)}` : "";
+    const redirectResponse = __TURBOPACK__imported__module__$5b$project$5d2f$splits$2d$scanner$2f$node_modules$2f$next$2f$server$2e$js__$5b$middleware$5d$__$28$ecmascript$29$__["NextResponse"].redirect(redirectUrl);
+    supabaseResponse.cookies.getAll().forEach((cookie)=>{
+        redirectResponse.cookies.set(cookie);
+    });
+    for (const header of [
+        "cache-control",
+        "expires",
+        "pragma"
+    ]){
+        const value = supabaseResponse.headers.get(header);
+        if (value) redirectResponse.headers.set(header, value);
+    }
+    return redirectResponse;
 }
 }),
 "[project]/proxy.ts [middleware] (ecmascript)", ((__turbopack_context__) => {
