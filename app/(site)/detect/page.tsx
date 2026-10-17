@@ -109,6 +109,16 @@ export default function ReceiptScanner() {
     let stream: MediaStream | null = null;
 
     try {
+      if (!window.isSecureContext) {
+        setStatus("Camera access requires a secure HTTPS connection.");
+        return;
+      }
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setStatus("This browser does not support camera access.");
+        return;
+      }
+
       setStatus("Opening camera...");
 
       stream = await navigator.mediaDevices.getUserMedia({
@@ -147,10 +157,22 @@ export default function ReceiptScanner() {
     } catch (error) {
       console.error(error);
       stream?.getTracks().forEach((track) => track.stop());
+      const errorName =
+        error instanceof DOMException ? error.name : "UnknownError";
+      const cameraErrorMessage =
+        errorName === "NotAllowedError" || errorName === "SecurityError"
+          ? "Camera access is blocked for this site. In Android Chrome, tap the icon by the address bar, open Permissions, set Camera to Allow, and reload. Also check Android Settings > Apps > Chrome > Permissions > Camera."
+          : errorName === "NotFoundError"
+            ? "No camera was found on this device."
+            : errorName === "NotReadableError"
+              ? "The camera is busy or unavailable. Close other apps using it and try again."
+              : "Could not access the camera. Check browser permissions and try again.";
       setStatus(
-        deviceId
+        deviceId &&
+          errorName !== "NotAllowedError" &&
+          errorName !== "SecurityError"
           ? "Could not switch cameras. Try reopening the camera."
-          : "Could not access the camera. Allow camera permission and try again."
+          : cameraErrorMessage
       );
     }
   }
