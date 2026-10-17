@@ -32,12 +32,20 @@ type Item = Page["items"][number];
 
 type Inbound = { id: string; spaceId: string; senderId: string; senderHandle: string; text: string };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 function plainText(m: Item, c: Config): string | undefined {
-  const content = m.content;
-  if (content.type === "text" && content.format === "plain") return content.text.trim();
-  if (c.platform !== "email" || content.type !== "group") return undefined;
-  const plain = content.parts.flatMap((part) => (part.type === "text" && part.format === "plain" ? [part] : []));
-  return plain.length === 1 ? plain[0].text.trim() : undefined;
+  const content: unknown = m.content;
+  if (!isRecord(content)) return undefined;
+  if (content.type === "text" && content.format === "plain" && typeof content.text === "string") return content.text.trim();
+  if (c.platform !== "email" || content.type !== "group" || !Array.isArray(content.parts)) return undefined;
+  const plain = content.parts.flatMap((part) => {
+    if (!isRecord(part) || part.type !== "text" || part.format !== "plain" || typeof part.text !== "string") return [];
+    return [part.text];
+  });
+  return plain.length === 1 ? plain[0].trim() : undefined;
 }
 
 // Direct iMessage only. A shared line cannot send in a group.
