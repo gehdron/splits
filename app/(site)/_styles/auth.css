@@ -1,0 +1,77 @@
+.p2 .auth {
+  max-width: 440px;
+  margin: 0 auto;
+  padding: 64px 0 120px;
+}
+.p2 .auth h1 {
+  font-size: clamp(40px, 6vw, 56px);
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+}
+.p2 .auth .lead {
+  margin: 16px 0 0;
+  color: var(--mut);
+  font-size: 18px;
+}
+.p2 .auth form {
+  display: grid;
+  gap: 16px;
+  margin-top: 32px;
+}
+.p2 .auth label {
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.p2 .auth input {
+  width: 100%;
+}
+.p2 .auth .btn {
+  width: 100%;
+  margin-top: 8px;
+}
+.p2 .auth .note,
+.p2 .auth .err,
+.p2 .auth .ok {
+  margin: 0;
+  font-size: 15px;
+}
+.p2 .auth .note {
+  color: var(--mut);
+}
+.p2 .auth .err {
+  color: #9b1c1c;
+  font-weight: 700;
+}
+.p2 .auth .ok {
+  color: #0a6e4c;
+  font-weight: 700;
+}
+.p2 .auth .who {
+  margin-top: 28px;
+  padding: 20px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.p2 .auth .who strong,
+.p2 .auth .who span {
+  display: block;
+}
+.p2 .auth .who strong {
+  font-family: var(--font-outfit), sans-serif;
+  font-size: 22px;
+}
+.p2 .auth .switch {
+  margin: 18px 0 0;
+  color: var(--mut);
+}
+.p2 .auth .switch a {
+  font-weight: 700;
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+  text-decoration-color: var(--vio);
+}

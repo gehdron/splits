@@ -237,7 +237,7 @@ body{margin:0}
 .p2 .tab.on{box-shadow:inset 0 -3px 0 var(--vio)}
 .p2 .stage{padding:28px}
 .p2 section.sec,.p2 .statement{padding:72px 0}
-.p2 .links a:not(.btn){display:none}
+.p2 .links a:not(.btn):not(.signin){display:none}
 }
 
 /* static-site state classes (replace the canvas template state) */
