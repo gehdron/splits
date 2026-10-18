@@ -68,6 +68,11 @@ export function Board({ data }: { data: DashboardData }) {
   const [friendBy, setFriendBy] = useState<"phone" | "email">("phone");
   const [chargeFilter, setChargeFilter] = useState<"all" | "none" | "split">("all");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [namingList, setNamingList] = useState(false);
+  const [listName, setListName] = useState("");
+  const [listError, setListError] = useState("");
+  const [creatingList, setCreatingList] = useState(false);
+  const listNameInput = useRef<HTMLInputElement>(null);
   const [createState, createAction, createPending] = useActionState(createGroup, undefined);
   const [friendState, friendAction, friendPending] = useActionState(saveFriend, undefined);
   const [removeState, removeAction, removePending] = useActionState(removeFriend, undefined);
@@ -78,6 +83,39 @@ export function Board({ data }: { data: DashboardData }) {
     newListDialog.current?.close();
     router.push(scan ? "/list?scan=1" : "/list");
   }
+
+  function resetNewList() {
+    setNamingList(false);
+    setListName("");
+    setListError("");
+    setCreatingList(false);
+  }
+
+  async function createBlankList(event: React.FormEvent) {
+    event.preventDefault();
+    if (creatingList) return;
+    setCreatingList(true);
+    setListError("");
+    const name = listName.trim() || "Shared list";
+    const res = await fetch("/api/lists", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) {
+      setCreatingList(false);
+      setListError("The list could not be created.");
+      return;
+    }
+    const list = (await res.json()) as { id: string };
+    newListDialog.current?.close();
+    router.push(`/list?id=${encodeURIComponent(list.id)}`);
+  }
+
+  useEffect(() => {
+    if (!namingList) return;
+    listNameInput.current?.focus();
+  }, [namingList]);
 
   function openSplit(charge: Charge) {
     setSplitGroupId(null);
@@ -392,22 +430,51 @@ export function Board({ data }: { data: DashboardData }) {
                   </button>
                 </form>
               </dialog>
-              <dialog ref={newListDialog} className="pop">
-                <form method="dialog">
-                  <h2>New list</h2>
-                  <p>Start a blank list, or scan a receipt onto a new one.</p>
-                  <div className="pop-acts">
-                    <button className="btn" type="button" onClick={() => openList(false)}>
-                      Blank list
+              <dialog ref={newListDialog} className="pop" onClose={resetNewList}>
+                {namingList ? (
+                  <form onSubmit={createBlankList}>
+                    <h2>Name this list</h2>
+                    <p>Leave it blank to keep the name Shared list.</p>
+                    <div>
+                      <label className="lbl" htmlFor="new-list-name">
+                        List name
+                      </label>
+                      <input
+                        ref={listNameInput}
+                        id="new-list-name"
+                        className="field"
+                        value={listName}
+                        placeholder="Shared list"
+                        onChange={(event) => setListName(event.target.value)}
+                      />
+                    </div>
+                    {listError ? <p className="err">{listError}</p> : null}
+                    <div className="pop-acts">
+                      <button className="btn" type="submit" disabled={creatingList}>
+                        {creatingList ? "Creating…" : "Create list"}
+                      </button>
+                      <button className="btn txt" type="button" onClick={() => setNamingList(false)} disabled={creatingList}>
+                        Back
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <form method="dialog">
+                    <h2>New list</h2>
+                    <p>Start a blank list, or scan a receipt onto a new one.</p>
+                    <div className="pop-acts">
+                      <button className="btn" type="button" onClick={() => setNamingList(true)}>
+                        Blank list
+                      </button>
+                      <button className="btn line" type="button" onClick={() => openList(true)}>
+                        Scan a receipt
+                      </button>
+                    </div>
+                    <button className="btn txt" type="submit">
+                      Cancel
                     </button>
-                    <button className="btn line" type="button" onClick={() => openList(true)}>
-                      Scan a receipt
-                    </button>
-                  </div>
-                  <button className="btn txt" type="submit">
-                    Cancel
-                  </button>
-                </form>
+                  </form>
+                )}
               </dialog>
         </div>
       </main>

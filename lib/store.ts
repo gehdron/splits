@@ -42,6 +42,15 @@ function save(db: DB): void {
   writeFileSync(path, `${JSON.stringify(saved, null, 2)}\n`, "utf8");
 }
 
+export function renameList(id: string, name: string): List | null {
+  const db = load();
+  const list = db.lists.get(id);
+  if (!list) return null;
+  list.name = name.trim();
+  save(db);
+  return list;
+}
+
 export function createList(name: string): List {
   const db = load();
   const list = { id: crypto.randomUUID(), name, createdAt: Date.now() };

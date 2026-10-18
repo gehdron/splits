@@ -63,6 +63,10 @@
 .db .wrap{max-width:1100px}
 .db .top{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap}
 .db h1{font-size:56px;line-height:1;letter-spacing:-0.04em}
+.db h1 .rename{display:block;margin:0;padding:0;border:0;background:none;color:inherit;font:inherit;letter-spacing:inherit;line-height:inherit;text-align:left;cursor:pointer}
+.db h1 .rename:hover{color:var(--vtx)}
+.db .title{width:min(100%,640px);min-height:64px;font-family:var(--font-outfit),"Outfit",system-ui,sans-serif;font-weight:600;font-size:clamp(32px,4vw,40px);letter-spacing:-0.04em}
+.db .rename-form{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .db .meta{display:flex;align-items:center;gap:12px;margin-top:16px;color:var(--mut)}
 .db .acts{display:flex;align-items:center;gap:8px}
 .db .sec{margin-top:32px;padding:28px 32px 30px;border-radius:24px;background:#fff;box-shadow:0 0 0 1px var(--line),0 18px 36px -28px rgba(11,16,32,.25)}
@@ -103,7 +107,13 @@
 .db .asg-btn:hover .ph-ic{border-color:var(--ink);color:var(--ink)}
 .db .asg-name{min-width:0;overflow:hidden;font-weight:600;text-overflow:ellipsis;white-space:nowrap}
 .db .asg-name.muted{color:var(--mut);font-weight:500}
-.db .menu{position:absolute;right:0;top:calc(100% + 6px);z-index:20;width:240px;padding:8px;border-radius:14px;background:#fff;box-shadow:0 0 0 1px var(--line),0 20px 40px -14px rgba(11,16,32,.35);animation:pop .18s var(--ease)}
+.db .menu{position:absolute;right:0;top:calc(100% + 6px);z-index:20;width:280px;padding:8px;border-radius:14px;background:#fff;box-shadow:0 0 0 1px var(--line),0 20px 40px -14px rgba(11,16,32,.35);animation:pop .18s var(--ease)}
+.db .menu .on{display:grid;min-width:0}
+.db .menu .on small{font-size:12px;font-weight:500;color:var(--mut)}
+.db .menu form{display:grid;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+.db .menu .field{min-height:40px}
+.db .menu .btn{min-height:40px;padding:0 12px}
+.db .menu .inrow{display:flex;gap:8px}
 .db .menu-h{margin:4px 8px 6px;font-size:13px;color:var(--mut)}
 .db .opt{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:0 10px;border:0;border-radius:10px;background:none;text-align:left;cursor:pointer}
 .db .opt:hover{background:var(--soft)}
@@ -120,6 +130,7 @@
 .db .scan .lbl,.db .scan .sub{margin:0}
 .db .scan .field{padding:10px 12px}
 
+.db .sr{position:absolute;left:-9999px}
 .db .back{display:inline-flex;align-items:center;gap:6px;min-height:44px;margin:-6px 0 18px -10px;padding:0 12px 0 6px;border:0;border-radius:10px;background:none;color:var(--mut);font-weight:700;font-size:15px;cursor:pointer;text-decoration:none}
 .db .back:hover{background:var(--soft);color:var(--ink)}
 
