@@ -61,6 +61,7 @@ export function Board({ data }: { data: DashboardData }) {
   const newListDialog = useRef<HTMLDialogElement>(null);
   const splitDialog = useRef<HTMLDialogElement>(null);
   const [splitTarget, setSplitTarget] = useState<Charge | null>(null);
+  const [splitGroupId, setSplitGroupId] = useState<string | null>(null);
   const selected = search.get("group");
   const group = data.groups.find((entry) => entry.id === selected) ?? data.groups[0] ?? null;
   const members = data.members.filter((member) => member.groupId === group?.id);
@@ -77,6 +78,14 @@ export function Board({ data }: { data: DashboardData }) {
     newListDialog.current?.close();
     router.push(scan ? "/list?scan=1" : "/list");
   }
+
+  function openSplit(charge: Charge) {
+    setSplitGroupId(group?.id ?? null);
+    setSplitTarget(charge);
+  }
+
+  const itemSplitHref = splitGroupId ? `/dashboard/item-by-item?group=${encodeURIComponent(splitGroupId)}` : null;
+  const evenSplitHref = splitGroupId ? `/dashboard/even?group=${encodeURIComponent(splitGroupId)}` : null;
 
   useEffect(() => {
     const dialog = splitDialog.current;
@@ -223,14 +232,8 @@ export function Board({ data }: { data: DashboardData }) {
               <h1>We couldn&apos;t load your groups.</h1>
               <p>{data.loadError}</p>
             </>
-          ) : !group ? (
-            <>
-              <h1>You are not in a group yet.</h1>
-              <p className="sub">Create a group, or ask an owner to add the phone number on your account.</p>
-            </>
-          ) : (
-            <>
-              <header className="top">
+          ) : group ? (
+            <header className="top">
                 <div>
                   <h1>{group.name}</h1>
                   <div className="meta">
@@ -264,12 +267,13 @@ export function Board({ data }: { data: DashboardData }) {
                   )}
                 </div>
               </header>
+          ) : null}
 
               <section className="sec" aria-labelledby="rc-h">
                 <div className="shead">
                   <div>
                     <h2 id="rc-h">Recent charges</h2>
-                    <p className="sub">Sample charges. Choose item by item or an even split.</p>
+                    <p className="sub">Sample charges. Assign a group when you split one.</p>
                   </div>
                   <div className="seg inline" role="group" aria-label="Filter charges">
                     {(
@@ -298,7 +302,7 @@ export function Board({ data }: { data: DashboardData }) {
                       <span className="amt">{charge.amount}</span>
                       <div className="stc">
                         {charge.status === "none" ? (
-                          <button className="btn" type="button" onClick={() => setSplitTarget(charge)}>
+                          <button className="btn" type="button" onClick={() => openSplit(charge)}>
                             Split this charge
                           </button>
                         ) : (
@@ -316,43 +320,81 @@ export function Board({ data }: { data: DashboardData }) {
                     <h2 id="sl-h">Shared lists</h2>
                     <p className="sub">A new list opens on its own page, blank or from a receipt.</p>
                   </div>
-                  {group.role === "owner" ? (
-                    <button className="btn" type="button" onClick={() => newListDialog.current?.showModal()}>
-                      <PlusIcon />
-                      New list
-                    </button>
-                  ) : null}
+                  <button className="btn" type="button" onClick={() => newListDialog.current?.showModal()}>
+                    <PlusIcon />
+                    New list
+                  </button>
                 </div>
               </section>
               <dialog
                 ref={splitDialog}
                 className="pop"
                 aria-labelledby="split-how"
-                onClose={() => setSplitTarget(null)}
+                onClose={() => {
+                  setSplitTarget(null);
+                  setSplitGroupId(null);
+                }}
               >
                 <form method="dialog">
                   <h2 id="split-how">How do you want to split it?</h2>
                   <p>
                     {splitTarget ? `${splitTarget.merchant}, ${splitTarget.amount}. ` : null}
-                    You can add people and check the amounts on the next screen.
+                    Choose a group, then how to split it.
                   </p>
+                  <fieldset className="split-groups">
+                    <legend className="lbl">Group</legend>
+                    {data.groups.length === 0 ? (
+                      <p>Create a group in the sidebar, then you can assign this charge.</p>
+                    ) : (
+                      data.groups.map((entry) => (
+                        <label key={entry.id} className={`gpick${splitGroupId === entry.id ? " on" : ""}`}>
+                          <input
+                            type="radio"
+                            name="split-group"
+                            value={entry.id}
+                            checked={splitGroupId === entry.id}
+                            onChange={() => setSplitGroupId(entry.id)}
+                          />
+                          {entry.name}
+                        </label>
+                      ))
+                    )}
+                  </fieldset>
                   <div className="pop-acts">
-                    <Link className="choice" href="/dashboard/item-by-item">
-                      <span>
-                        <b>Item by item</b>
-                        <small>Scan the receipt and give each item to whoever had it.</small>
+                    {itemSplitHref ? (
+                      <Link className="choice" href={itemSplitHref}>
+                        <span>
+                          <b>Item by item</b>
+                          <small>Scan the receipt and give each item to whoever had it.</small>
+                        </span>
+                        <Icon d="M9 6l6 6-6 6" />
+                      </Link>
+                    ) : (
+                      <span className="choice off">
+                        <span>
+                          <b>Item by item</b>
+                          <small>Scan the receipt and give each item to whoever had it.</small>
+                        </span>
+                        <Icon d="M9 6l6 6-6 6" />
                       </span>
-                      <Icon d="M9 6l6 6-6 6" />
-                    </Link>
-                    <Link className="choice" href="/dashboard/even">
-                      <span>
-                        <b>Split evenly</b>
-                        <small>
-                          Everyone pays the same share{splitTarget ? ` of ${splitTarget.amount}` : ""}.
-                        </small>
+                    )}
+                    {evenSplitHref ? (
+                      <Link className="choice" href={evenSplitHref}>
+                        <span>
+                          <b>Split evenly</b>
+                          <small>Everyone pays the same share{splitTarget ? ` of ${splitTarget.amount}` : ""}.</small>
+                        </span>
+                        <Icon d="M9 6l6 6-6 6" />
+                      </Link>
+                    ) : (
+                      <span className="choice off">
+                        <span>
+                          <b>Split evenly</b>
+                          <small>Everyone pays the same share{splitTarget ? ` of ${splitTarget.amount}` : ""}.</small>
+                        </span>
+                        <Icon d="M9 6l6 6-6 6" />
                       </span>
-                      <Icon d="M9 6l6 6-6 6" />
-                    </Link>
+                    )}
                   </div>
                   <button className="btn txt" type="submit">
                     Cancel
@@ -376,8 +418,6 @@ export function Board({ data }: { data: DashboardData }) {
                   </button>
                 </form>
               </dialog>
-            </>
-          )}
         </div>
       </main>
     </div>
