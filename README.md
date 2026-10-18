@@ -11,7 +11,9 @@ npm run dev
 ```
 
 Open [http://localhost:3001](http://localhost:3001) and allow camera access.
-Use **Switch camera** to change cameras. For better live recognition, place the
+The camera guide follows the device orientation, and captured photos are
+rotated to match it when the camera stream uses the opposite orientation. Use
+**Switch camera** to change cameras. For better live recognition, place the
 receipt inside the on-screen guide, fill as much of it as possible, keep it
 flat, hold the camera steady, and use bright even lighting. The live scanner
 focuses on the guided area, enlarges it, and boosts image contrast before OCR.
@@ -72,6 +74,9 @@ suggestion to correct a partial or mistyped item name. Assign an item to
 multiple people from its assignee menu; its price is split evenly, and tax and
 tip are allocated proportionally. Subtotal, tax, tip, and total appear below
 the item list, and scanned receipt totals are checked against the item amounts.
+The AI split chat can assign an item to multiple people. The list owner can
+delete a list; unpaid payment links are expired first, while completed payments
+remain recorded.
 
 If you already use the production file-backed shared-list tables in Supabase,
 re-run `supabase/shared-lists.sql` to add the receipt-total columns used by the

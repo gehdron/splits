@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { normalizePhone } from "@/lib/phone";
 import { createClient } from "@/lib/supabase/client";
@@ -379,6 +380,7 @@ function receiptToItems(rows: ReceiptRow[]) {
 }
 
 export default function ListPage() {
+  const router = useRouter();
   const [listId, setListId] = useState<string | null>(null);
   const [data, setData] = useState<ListData | null>(null);
   const [friends, setFriends] = useState<Person[]>([]);
@@ -414,6 +416,9 @@ export default function ListPage() {
   const [tipInput, setTipInput] = useState("");
   const [savingTotals, setSavingTotals] = useState(false);
   const [suggestingName, setSuggestingName] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deletingList, setDeletingList] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   // Pay links: one per person who owes. The amount is worked out on the server from this list.
   const [payLinks, setPayLinks] = useState<PayLink[]>([]);
   const [requestFor, setRequestFor] = useState<string | null>(null);
@@ -758,6 +763,28 @@ export default function ListPage() {
       return;
     }
     setData({ ...data, list: { ...data.list, name: next } });
+  }
+
+  async function removeList() {
+    if (!listId || deletingList) return;
+    setDeletingList(true);
+    setDeleteError("");
+    try {
+      const response = await fetch(`/api/lists/${listId}`, { method: "DELETE" });
+      const result: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message =
+          typeof result === "object" && result !== null && "error" in result &&
+          typeof result.error === "string"
+            ? result.error
+            : "The list could not be deleted. Please try again.";
+        throw new Error(message);
+      }
+      router.push("/dashboard");
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "The list could not be deleted.");
+      setDeletingList(false);
+    }
   }
 
   async function addItem(e: React.FormEvent) {
@@ -1433,7 +1460,6 @@ export default function ListPage() {
               </div>
             </div>
             <div className="acts">
-              {/* TODO: there is no delete-list API route yet. */}
               <button
                 className="btn txt"
                 type="button"
@@ -1445,11 +1471,31 @@ export default function ListPage() {
               <button className="btn txt" type="button" onClick={startRename} disabled={!data || editingTitle}>
                 Rename
               </button>
-              <button className="btn txt" type="button">
+              <button
+                className="btn txt"
+                type="button"
+                onClick={() => {
+                  setConfirmingDelete((value) => !value);
+                  setDeleteError("");
+                }}
+                disabled={!data || deletingList}
+              >
                 Delete list
               </button>
             </div>
           </header>
+          {confirmingDelete ? (
+            <div className="delete-confirm" role="group" aria-label="Confirm list deletion">
+              <p>This permanently deletes the list and expires its unpaid payment links.</p>
+              <button className="btn txt" type="button" onClick={() => setConfirmingDelete(false)} disabled={deletingList}>
+                Keep list
+              </button>
+              <button className="btn txt delete-action" type="button" onClick={() => void removeList()} disabled={deletingList}>
+                {deletingList ? "Deleting…" : "Delete permanently"}
+              </button>
+              {deleteError ? <p className="msg" role="alert">{deleteError}</p> : null}
+            </div>
+          ) : null}
 
           <section className="sec" aria-labelledby="wo-h">
             <h2 id="wo-h" className="sh" style={{ fontSize: 14 }}>

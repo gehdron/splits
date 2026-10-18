@@ -147,6 +147,25 @@ export function createList(name: string, ownerId: string | null = null, member?:
   return list;
 }
 
+export function deleteList(id: string, ownerId: string | null): "deleted" | "not-found" | "forbidden" {
+  const db = load();
+  const list = db.lists.get(id);
+  if (!list) return "not-found";
+  if (list.ownerId !== ownerId) return "forbidden";
+
+  db.lists.delete(id);
+  for (const [itemId, item] of db.items) {
+    if (item.listId === id) db.items.delete(itemId);
+  }
+  for (const [shareId, share] of db.shares) {
+    if (share.source === "list" && share.sourceRef === id && share.status !== "paid") {
+      db.shares.delete(shareId);
+    }
+  }
+  save(db);
+  return "deleted";
+}
+
 export function addListMember(listId: string, member: ListMember): List | null {
   const db = load();
   const list = db.lists.get(listId);

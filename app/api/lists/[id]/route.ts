@@ -1,6 +1,9 @@
 import { connection } from "next/server";
-import { getList, updateList } from "@/lib/live-lists";
+import { currentListViewer } from "@/lib/list-viewer";
+import { deleteList, getList, updateList } from "@/lib/live-lists";
 import { reconcileList } from "@/app/(site)/stripe/settle";
+import { listShares } from "@/app/(site)/stripe/shares";
+import { retireShare } from "@/app/(site)/stripe/checkout";
 
 export async function GET(_req: Request, ctx: RouteContext<"/api/lists/[id]">) {
   await connection(); // always run at request time, never prerendered
@@ -78,4 +81,40 @@ export async function PATCH(req: Request, ctx: RouteContext<"/api/lists/[id]">) 
     await reconcileList(id);
   }
   return Response.json(list);
+}
+
+export async function DELETE(_req: Request, ctx: RouteContext<"/api/lists/[id]">) {
+  await connection();
+  const { id } = await ctx.params;
+
+  try {
+    const viewer = await currentListViewer();
+    const data = await getList(id);
+    if (!data) return Response.json({ error: "List not found." }, { status: 404 });
+    if ((data.list.ownerId ?? null) !== (viewer?.userId ?? null)) {
+      return Response.json({ error: "Only the list owner can delete this list." }, { status: 403 });
+    }
+
+    const shares = await listShares("list", id);
+    for (const share of shares) {
+      if (share.status === "unpaid" || share.status === "sent") {
+        await retireShare(share);
+      }
+    }
+
+    const result = await deleteList(id, viewer?.userId ?? null);
+    if (result === "not-found") {
+      return Response.json({ error: "List not found." }, { status: 404 });
+    }
+    if (result === "forbidden") {
+      return Response.json({ error: "Only the list owner can delete this list." }, { status: 403 });
+    }
+    return Response.json({ ok: true });
+  } catch (error) {
+    console.error(`Could not delete list ${id}.`, error);
+    return Response.json(
+      { error: "The list could not be deleted. Please try again." },
+      { status: 500 },
+    );
+  }
 }

@@ -264,7 +264,7 @@ function ReceiptImage({
           aria-hidden="true"
           className="receipt-image-words"
           viewBox={`0 0 ${width} ${height}`}
-          preserveAspectRatio="xMidYMid meet"
+          preserveAspectRatio="xMidYMid slice"
         >
           {words.map(({ text, bbox }, index) => (
             <g key={`${bbox.x0}-${bbox.y0}-${index}`}>
@@ -502,6 +502,7 @@ export function ReceiptScanner({
   const [receiptViewportSize, setReceiptViewportSize] = useState({ width: 0, height: 0 });
 
   const [cameraOn, setCameraOn] = useState(false);
+  const [phoneOrientation, setPhoneOrientation] = useState<"portrait" | "landscape">("portrait");
   const [cameraFacingMode, setCameraFacingMode] =
     useState<CameraFacingMode>("environment");
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
@@ -553,6 +554,19 @@ export function ReceiptScanner({
     Record<string, string>
   >({});
   const [frameSize, setFrameSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    const query = window.matchMedia("(orientation: portrait)");
+    const updateOrientation = () => {
+      setPhoneOrientation(query.matches ? "portrait" : "landscape");
+    };
+    updateOrientation();
+    query.addEventListener("change", updateOrientation);
+    window.addEventListener("orientationchange", updateOrientation);
+    return () => {
+      query.removeEventListener("change", updateOrientation);
+      window.removeEventListener("orientationchange", updateOrientation);
+    };
+  }, []);
   const isPdfReceipt = receiptDocumentDataUrl?.startsWith(
     "data:application/pdf;base64,"
   ) ?? false;
@@ -863,9 +877,15 @@ export function ReceiptScanner({
       return;
     }
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    setFrameSize({ width: video.videoWidth, height: video.videoHeight });
+    const sourceWidth = video.videoWidth;
+    const sourceHeight = video.videoHeight;
+    const rotateForPortrait =
+      phoneOrientation === "portrait" && sourceWidth > sourceHeight;
+    const rotateForLandscape =
+      phoneOrientation === "landscape" && sourceHeight > sourceWidth;
+    const rotate = rotateForPortrait || rotateForLandscape;
+    canvas.width = rotate ? sourceHeight : sourceWidth;
+    canvas.height = rotate ? sourceWidth : sourceHeight;
 
     const context = canvas.getContext("2d");
 
@@ -874,7 +894,14 @@ export function ReceiptScanner({
       return;
     }
 
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    if (rotate) {
+      context.translate(canvas.width / 2, canvas.height / 2);
+      context.rotate(rotateForPortrait ? Math.PI / 2 : -Math.PI / 2);
+      context.drawImage(video, -sourceWidth / 2, -sourceHeight / 2);
+    } else {
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    }
+    setFrameSize({ width: canvas.width, height: canvas.height });
 
     const imageUrl = canvas.toDataURL("image/jpeg", 0.95);
     setFrozenImage(imageUrl);
@@ -1917,14 +1944,20 @@ export function ReceiptScanner({
           {step === 1 && (
             <div className="grid2">
               <section className="sec" aria-label="Camera">
-                <div className="vf">
+                <div
+                  className="vf"
+                  style={{
+                    aspectRatio:
+                      phoneOrientation === "portrait" ? "3 / 4" : "4 / 3",
+                  }}
+                >
                   <video ref={videoRef} playsInline muted autoPlay />
                   {cameraOn && detectedWords.length > 0 && frameSize.width > 0 && (
                     <svg
                       aria-hidden="true"
                       style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}
                       viewBox={`0 0 ${frameSize.width} ${frameSize.height}`}
-                      preserveAspectRatio="xMidYMid slice"
+                      preserveAspectRatio="xMidYMid meet"
                     >
                       {detectedWords.map(({ text, bbox }, index) => (
                         <g key={`${bbox.x0}-${bbox.y0}-${index}`}>
