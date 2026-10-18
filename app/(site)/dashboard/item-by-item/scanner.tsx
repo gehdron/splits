@@ -24,14 +24,7 @@ import type {
 import {
   calculateReceiptTotal,
   calculateReceiptSplits,
-  formatCents,
-  type TipSplitMode,
 } from "@/app/split-calculations";
-import type {
-  ReceiptAssignment,
-  SplitAssistantResult,
-  SplitInstructionMessage,
-} from "@/app/split-types";
 
 type DetectedWord = {
   text: string;
@@ -47,55 +40,6 @@ type ReceiptProcessingStage =
   | "error";
 
 const MAX_PDF_BYTES = 4 * 1024 * 1024;
-
-function getEditDistance(left: string, right: string) {
-  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
-  const current = new Array<number>(right.length + 1);
-
-  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
-    current[0] = leftIndex;
-    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
-      current[rightIndex] = Math.min(
-        current[rightIndex - 1] + 1,
-        previous[rightIndex] + 1,
-        previous[rightIndex - 1] +
-          (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1),
-      );
-    }
-    for (let index = 0; index <= right.length; index += 1) {
-      previous[index] = current[index];
-    }
-  }
-  return previous[right.length];
-}
-
-function isSplitAssistantResult(value: unknown): value is SplitAssistantResult {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "reply" in value &&
-    typeof value.reply === "string" &&
-    "clarification" in value &&
-    typeof value.clarification === "string" &&
-    "assignments" in value &&
-    Array.isArray(value.assignments) &&
-    value.assignments.every(
-      (assignment: unknown) =>
-        typeof assignment === "object" &&
-        assignment !== null &&
-        "itemIndex" in assignment &&
-        typeof assignment.itemIndex === "number" &&
-        Number.isInteger(assignment.itemIndex) &&
-        assignment.itemIndex >= 0 &&
-        "people" in assignment &&
-        Array.isArray(assignment.people) &&
-        assignment.people.length > 0 &&
-        assignment.people.every(
-          (person: unknown) => typeof person === "string" && person.trim().length > 0,
-        ),
-    )
-  );
-}
 
 function isAiParsedReceipt(value: unknown): value is AiParsedReceipt {
   if (
@@ -163,14 +107,12 @@ const CheckIcon = () => <Svg><path d="M5 12l5 5 9-10" /></Svg>;
 const CloseIcon = () => <Svg><path d="M6 6l12 12M18 6L6 18" /></Svg>;
 const PlusIcon = () => <Svg><path d="M12 5v14M5 12h14" /></Svg>;
 const BackIcon = () => <Svg><path d="M15 6l-6 6 6 6" /></Svg>;
-const ChevIcon = () => <svg className="i chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>;
 const CameraIcon = () => <Svg><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></Svg>;
 const UploadIcon = () => <Svg><path d="M12 15V4M7 9l5-5 5 5" /><path d="M5 15v4h14v-4" /></Svg>;
 const SwitchIcon = () => <Svg><path d="M4 10a8 8 0 0 1 14-4l2 2M20 14a8 8 0 0 1-14 4l-2-2" /><path d="M20 4v4h-4M4 20v-4h4" /></Svg>;
 const RetakeIcon = () => <Svg><path d="M4 12a8 8 0 1 0 3-6.2" /><path d="M4 4v5h5" /></Svg>;
 const CopyIcon = () => <Svg><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a1 1 0 0 1 1-1h10" /></Svg>;
 const SparkIcon = () => <Svg><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" /></Svg>;
-const PeopleIcon = () => <Svg><circle cx="9" cy="9" r="3" /><path d="M3.5 19c.6-2.8 2.8-4.5 5.5-4.5s4.9 1.7 5.5 4.5" /><circle cx="17" cy="8" r="2.5" /><path d="M16 13.6c2.4 0 4.1 1.6 4.6 4" /></Svg>;
 const FlatIcon = () => <Svg><path d="M7 3h10v18l-2.5-1.5L12 21l-2.5-1.5L7 21z" /></Svg>;
 const BulbIcon = () => <Svg><path d="M9 18h6M10 21h4" /><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z" /></Svg>;
 const FrameIcon = () => <Svg><path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4" /></Svg>;
@@ -493,9 +435,7 @@ export function ReceiptScanner({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const receiptFileInputRef = useRef<HTMLInputElement>(null);
-  const splitInputRef = useRef<HTMLTextAreaElement>(null);
   const receiptViewportRef = useRef<HTMLDivElement>(null);
-  const assignmentSectionRef = useRef<HTMLElement>(null);
   const autoCameraStarted = useRef(false);
   const [enlargedImageOpen, setEnlargedImageOpen] = useState(false);
   const [receiptZoom, setReceiptZoom] = useState(1);
@@ -534,25 +474,7 @@ export function ReceiptScanner({
   const readRun = useRef(0);
   const [aiParsed, setAiParsed] = useState(false);
   const [aiError, setAiError] = useState("");
-  const [itemAssignmentsOpen, setItemAssignmentsOpen] = useState(false);
-  const [splitAssistantOpen, setSplitAssistantOpen] = useState(false);
-  const [splitMessages, setSplitMessages] = useState<SplitInstructionMessage[]>([]);
-  const [splitMessage, setSplitMessage] = useState("");
-  const [splitSuggestionsEnabled, setSplitSuggestionsEnabled] = useState(true);
-  const [splitCursorPosition, setSplitCursorPosition] = useState(0);
-  const [splitInputScrollTop, setSplitInputScrollTop] = useState(0);
-  const [splitParsing, setSplitParsing] = useState(false);
-  const [splitError, setSplitError] = useState("");
-  const [userNames, setUserNames] = useState<string[]>(people);
-  const [userNameInput, setUserNameInput] = useState("");
-  const [splitAssignments, setSplitAssignments] = useState<ReceiptAssignment[]>([]);
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [tipOptionsOpen, setTipOptionsOpen] = useState(false);
-  const [tipSplitMode, setTipSplitMode] =
-    useState<TipSplitMode>("proportional");
-  const [manualTipAmounts, setManualTipAmounts] = useState<
-    Record<string, string>
-  >({});
   const [frameSize, setFrameSize] = useState({ width: 0, height: 0 });
   useEffect(() => {
     const query = window.matchMedia("(orientation: portrait)");
@@ -571,17 +493,7 @@ export function ReceiptScanner({
     "data:application/pdf;base64,"
   ) ?? false;
 
-  const proportionalTipCalculation = calculateReceiptSplits(
-    receiptRows,
-    receiptTotals,
-    splitAssignments
-  );
-  const splitCalculation = calculateReceiptSplits(
-    receiptRows,
-    receiptTotals,
-    splitAssignments,
-    { mode: tipSplitMode, manualAmounts: manualTipAmounts }
-  );
+  const receiptCalculation = calculateReceiptSplits(receiptRows, receiptTotals, []);
   const displayedReceiptTotal = receiptTotalEdited
     ? calculateReceiptTotal(receiptTotals)
     : receiptTotals.total;
@@ -604,137 +516,6 @@ export function ReceiptScanner({
         : processingStage === "error"
           ? "Failed · retry available"
           : "Waiting";
-  const splitSafeCursor = Math.min(splitCursorPosition, splitMessage.length);
-  const splitTextBeforeCursor = splitMessage.slice(0, splitSafeCursor);
-  const splitTextAfterCursor = splitMessage.slice(splitSafeCursor);
-  const splitTokenBeforeCursor =
-    splitTextBeforeCursor.match(/[^\s;,\n]+$/)?.[0] ?? "";
-  const splitTokenAfterCursor =
-    splitTextAfterCursor.match(/^[^\s;,\n]*/)?.[0] ?? "";
-  const splitTokenStart = splitSafeCursor - splitTokenBeforeCursor.length;
-  const splitTokenEnd = splitSafeCursor + splitTokenAfterCursor.length;
-  const splitSuggestionQuery = (
-    splitTokenBeforeCursor + splitTokenAfterCursor
-  ).toLocaleLowerCase();
-  const splitSuggestions =
-    splitSuggestionsEnabled && splitSuggestionQuery.length >= 2
-      ? receiptRows
-          .map((item) => item.description.trim())
-          .filter(Boolean)
-          .map((description) => {
-            const words = description
-              .toLocaleLowerCase()
-              .split(/[^\p{L}\p{N}]+/u)
-              .filter(Boolean);
-            const scores = words.flatMap((word) => {
-              if (word === splitSuggestionQuery) return [];
-              if (word.startsWith(splitSuggestionQuery)) {
-                return [
-                  0.1 +
-                    (word.length - splitSuggestionQuery.length) / 100,
-                ];
-              }
-              const distance = getEditDistance(splitSuggestionQuery, word);
-              const maxDistance = splitSuggestionQuery.length <= 4 ? 1 : 2;
-              return distance <= maxDistance
-                ? [
-                    1 +
-                      distance +
-                      Math.abs(word.length - splitSuggestionQuery.length) /
-                        100,
-                  ]
-                : [];
-            });
-            const matchedWord = words
-              .filter((word) => word !== splitSuggestionQuery)
-              .find(
-                (word) =>
-                  word.startsWith(splitSuggestionQuery) ||
-                  getEditDistance(splitSuggestionQuery, word) <=
-                    (splitSuggestionQuery.length <= 4 ? 1 : 2),
-              );
-            return {
-              description,
-              score: Math.min(...scores),
-              matchedWord,
-              matchedWordStart: matchedWord
-                ? description
-                    .toLocaleLowerCase()
-                    .indexOf(matchedWord.toLocaleLowerCase())
-                : -1,
-            };
-          })
-          .filter((suggestion) => Number.isFinite(suggestion.score))
-          .sort((left, right) => left.score - right.score)
-          .filter(
-            (suggestion, index, all) =>
-              all.findIndex(
-                (candidate) =>
-                  candidate.description.toLocaleLowerCase() ===
-                  suggestion.description.toLocaleLowerCase(),
-              ) === index,
-          )
-      : [];
-  const splitItemSuggestions = splitSuggestions
-    .slice(0, 5)
-    .map((suggestion) => suggestion.description);
-  const splitInlineSuggestion = splitSuggestions[0] ?? null;
-
-  function selectSplitItemSuggestion(description: string) {
-    const suffix = splitMessage.slice(splitTokenEnd);
-    const needsSpace =
-      suffix.length === 0 && !/[;,\s]$/.test(description);
-    const updatedMessage =
-      splitMessage.slice(0, splitTokenStart) +
-      description +
-      (needsSpace ? " " : "") +
-      suffix;
-    const nextCursor =
-      splitTokenStart + description.length + (needsSpace ? 1 : 0);
-
-    setSplitMessage(updatedMessage);
-    setSplitCursorPosition(nextCursor);
-    requestAnimationFrame(() => {
-      splitInputRef.current?.focus();
-      splitInputRef.current?.setSelectionRange(nextCursor, nextCursor);
-    });
-  }
-
-  function handleSplitInputKeyDown(
-    event: React.KeyboardEvent<HTMLTextAreaElement>,
-  ) {
-    if (event.key === "Tab" && splitInlineSuggestion) {
-      event.preventDefault();
-      selectSplitItemSuggestion(splitInlineSuggestion.description);
-    }
-  }
-
-  function selectTipSplitMode(mode: TipSplitMode) {
-    if (mode === "manual" && tipSplitMode !== "manual") {
-      setManualTipAmounts((currentAmounts) => {
-        const amounts = {
-          ...currentAmounts,
-          ...Object.fromEntries(
-            proportionalTipCalculation.people.map((person) => [
-              person.person.toLowerCase(),
-              currentAmounts[person.person.toLowerCase()] ??
-                (person.tipCents / 100).toFixed(2),
-            ])
-          ),
-        };
-        if (proportionalTipCalculation.unassignedCents > 0) {
-          amounts.__unassigned__ =
-            currentAmounts.__unassigned__ ??
-            (proportionalTipCalculation.unassignedTipCents / 100).toFixed(2);
-        } else {
-          delete amounts.__unassigned__;
-        }
-        return amounts;
-      });
-    }
-    setTipSplitMode(mode);
-  }
-
   const startCamera = useCallback(async (
     facingMode: CameraFacingMode = cameraFacingMode,
     deviceId?: string
@@ -791,14 +572,6 @@ export function ReceiptScanner({
       setReceiptTotalEdited(false);
       setAiParsed(false);
       setAiError("");
-      setSplitAssignments([]);
-      setItemAssignmentsOpen(false);
-      setSplitAssistantOpen(false);
-      setSplitMessages([]);
-      setSplitMessage("");
-      setSplitError("");
-      setUserNames(people);
-      setUserNameInput("");
       setFrameSize({ width: 0, height: 0 });
       setStatus(
         cameras.length < 2
@@ -827,7 +600,7 @@ export function ReceiptScanner({
       setStatus(message);
       setCameraError(message);
     }
-  }, [cameraFacingMode, people]);
+  }, [cameraFacingMode]);
 
   function stopCamera() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -916,8 +689,9 @@ export function ReceiptScanner({
     setReceiptRows([]);
     setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
     setReceiptTotalEdited(false);
-    setStatus("Receipt captured. Select Extract text to start reading it.");
+    setStatus("Receipt captured. Reading its text now.");
     stopCamera();
+    void readImage(imageUrl);
   }
 
   useEffect(() => {
@@ -1061,14 +835,6 @@ export function ReceiptScanner({
       setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
       setReceiptTotalEdited(false);
       setAiParsed(false);
-      setSplitAssignments([]);
-      setItemAssignmentsOpen(false);
-      setSplitAssistantOpen(false);
-      setSplitMessages([]);
-      setSplitMessage("");
-      setSplitError("");
-      setUserNames(people);
-      setUserNameInput("");
 
       const image = new Image();
       image.src = imageUrl;
@@ -1309,12 +1075,6 @@ export function ReceiptScanner({
       setReceiptRows([]);
       setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
       setReceiptTotalEdited(false);
-      setSplitAssignments([]);
-      setUserNames(people);
-      setUserNameInput("");
-      setTipOptionsOpen(false);
-      setTipSplitMode("proportional");
-      setManualTipAmounts({});
 
       if (file.type === "application/pdf") {
         setFrozenImage(null);
@@ -1323,7 +1083,8 @@ export function ReceiptScanner({
         await parseWithAi("", dataUrl, file);
       } else {
         setFrozenImage(dataUrl);
-        setStatus("Receipt image uploaded. Select Extract text to start reading it.");
+        setStatus("Receipt image uploaded. Reading its text now.");
+        void readImage(dataUrl);
       }
     } catch (error) {
       console.error(error);
@@ -1397,17 +1158,6 @@ export function ReceiptScanner({
       setReceiptTotals(result.totals);
       setReceiptTotalEdited(false);
       setAiParsed(true);
-      setItemAssignmentsOpen(false);
-      setSplitAssistantOpen(false);
-      setSplitMessages([]);
-      setSplitMessage("");
-      setSplitError("");
-      setSplitAssignments([]);
-      setUserNames(people);
-      setUserNameInput("");
-      setTipOptionsOpen(false);
-      setTipSplitMode("proportional");
-      setManualTipAmounts({});
       setProcessingStage("complete");
       setStatus("AI parsed the receipt. Review and edit the results as needed.");
     } catch (error) {
@@ -1422,125 +1172,6 @@ export function ReceiptScanner({
       setStatus("AI parsing failed. Check the error and retry.");
     } finally {
       setAiParsing(false);
-    }
-  }
-
-  function addUser(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const name = userNameInput.trim();
-    if (!name) return;
-    if (
-      userNames.some(
-        (existingName) => existingName.toLocaleLowerCase() === name.toLocaleLowerCase()
-      )
-    ) {
-      setUserNameInput("");
-      return;
-    }
-    setUserNames((names) => [...names, name]);
-    setUserNameInput("");
-  }
-
-  function toggleItemAssignment(itemIndex: number, person: string) {
-    setSplitAssignments((assignments) => {
-      const existing = assignments.find(
-        (assignment) => assignment.itemIndex === itemIndex
-      );
-      const alreadyAssigned = existing?.people.some(
-        (name) => name.toLocaleLowerCase() === person.toLocaleLowerCase()
-      );
-      const people = alreadyAssigned
-        ? (existing?.people ?? []).filter(
-            (name) => name.toLocaleLowerCase() !== person.toLocaleLowerCase()
-          )
-        : [...(existing?.people ?? []), person];
-
-      return people.length === 0
-        ? assignments.filter((assignment) => assignment.itemIndex !== itemIndex)
-        : [
-            ...assignments.filter(
-              (assignment) => assignment.itemIndex !== itemIndex
-            ),
-            { itemIndex, people },
-          ].sort((left, right) => left.itemIndex - right.itemIndex);
-    });
-  }
-
-  async function sendSplitMessage(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const content = splitMessage.trim();
-    if (!content || splitParsing || !aiParsed) return;
-
-    const messages: SplitInstructionMessage[] = [
-      ...splitMessages.slice(-19),
-      { role: "user", content },
-    ];
-    setSplitParsing(true);
-    setSplitError("");
-
-    try {
-      const response = await fetch("/api/split-receipt", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: receiptRows,
-          totals: receiptTotals,
-          assignments: splitAssignments,
-          messages,
-        }),
-      });
-      const result: unknown = await response.json();
-      if (!response.ok) {
-        const error =
-          typeof result === "object" &&
-          result !== null &&
-          "error" in result &&
-          typeof result.error === "string"
-            ? result.error
-            : "The split assistant could not process that message.";
-        throw new Error(error);
-      }
-      if (
-        !isSplitAssistantResult(result) ||
-        result.assignments.some(
-          (assignment) => assignment.itemIndex >= receiptRows.length,
-        )
-      ) {
-        throw new Error("The split assistant returned invalid assignments.");
-      }
-
-      const reply = result.clarification
-        ? `${result.reply} ${result.clarification}`
-        : result.reply;
-      setSplitAssignments(result.assignments);
-      setUserNames((currentNames) => {
-        const nextNames = [...currentNames];
-        for (const person of result.assignments.flatMap(
-          (assignment) => assignment.people,
-        )) {
-          if (
-            !nextNames.some(
-              (name) =>
-                name.toLocaleLowerCase() === person.toLocaleLowerCase(),
-            )
-          ) {
-            nextNames.push(person);
-          }
-        }
-        return nextNames;
-      });
-      setSplitMessages([...messages, { role: "assistant", content: reply }]);
-      setSplitMessage("");
-    } catch (error) {
-      console.error(error);
-      setSplitMessages(messages);
-      setSplitError(
-        error instanceof Error
-          ? error.message
-          : "The split assistant could not process that message.",
-      );
-    } finally {
-      setSplitParsing(false);
     }
   }
 
@@ -1559,14 +1190,6 @@ export function ReceiptScanner({
     setReceiptTotalEdited(false);
     setAiParsed(false);
     setAiError("");
-    setSplitAssignments([]);
-    setItemAssignmentsOpen(false);
-    setSplitAssistantOpen(false);
-    setSplitMessages([]);
-    setSplitMessage("");
-    setSplitError("");
-    setUserNames(people);
-    setUserNameInput("");
     setProgress(0);
   }
 
@@ -1622,12 +1245,8 @@ export function ReceiptScanner({
     cameraOn || status === "Opening camera..."
       ? status
       : "Turn on the camera, or upload a photo below.";
-  const assignedCount = splitAssignments.filter(
-    (assignment) => assignment.people.length > 0
-  ).length;
 
-  // Items should add up to the subtotal (within a cent) before anyone is charged.
-  const itemsCents = splitCalculation.lines.reduce<number | null>(
+  const itemsCents = receiptCalculation.lines.reduce<number | null>(
     (sum, line) =>
       sum === null || line.amountCents === null ? null : sum + line.amountCents,
     0
@@ -1652,7 +1271,9 @@ export function ReceiptScanner({
       : step === 2
         ? isProcessing
           ? "Reading your receipt"
-          : "Read the receipt"
+          : processingStage === "error"
+            ? "Receipt reading stopped"
+            : "Preparing your receipt"
         : "Check the items";
   const meta =
     step === 1
@@ -1660,22 +1281,13 @@ export function ReceiptScanner({
       : step === 2
         ? isProcessing
           ? "This usually takes a few seconds. You can check and fix everything on the next step."
-          : "Looks good? Read it to find the items and totals."
-        : "Compare with your photo and fix anything that’s off. Then assign the items.";
+          : processingStage === "error"
+            ? "Receipt reading did not finish. Try again or retake the photo."
+            : "Receipt reading starts automatically."
+        : "Compare with your photo and correct any item names, prices or totals.";
 
   function openUpload() {
     receiptFileInputRef.current?.click();
-  }
-
-  function continueToSplitChat() {
-    setItemAssignmentsOpen(true);
-    setSplitAssistantOpen(true);
-    requestAnimationFrame(() => {
-      const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-        ? "auto"
-        : "smooth";
-      assignmentSectionRef.current?.scrollIntoView({ behavior, block: "start" });
-    });
   }
 
   // PDFs skip OCR, and a failed AI pass after good OCR only needs the AI step again.
@@ -1698,16 +1310,6 @@ export function ReceiptScanner({
   function removeRow(index: number) {
     setReceiptRows((currentRows) =>
       currentRows.filter((_, rowIndex) => rowIndex !== index)
-    );
-    // Assignments point at item positions, so shift the ones after the removed row.
-    setSplitAssignments((assignments) =>
-      assignments
-        .filter((assignment) => assignment.itemIndex !== index)
-        .map((assignment) =>
-          assignment.itemIndex > index
-            ? { ...assignment, itemIndex: assignment.itemIndex - 1 }
-            : assignment
-        )
     );
   }
 
@@ -2071,7 +1673,13 @@ export function ReceiptScanner({
                 aria-busy={isProcessing}
               >
                 <div className="shead">
-                  <h2 id="p-h">{isProcessing ? "Working on it" : "Ready to read"}</h2>
+                  <h2 id="p-h">
+                    {isProcessing
+                      ? "Working on it"
+                      : processingStage === "error"
+                        ? "Receipt reading stopped"
+                        : "Preparing your receipt"}
+                  </h2>
                   <p className="sub">{receiptDocumentName || "Your receipt photo"}</p>
                 </div>
                 <ul className="proc">
@@ -2088,13 +1696,13 @@ export function ReceiptScanner({
                   </span>
                 </p>
                 <div className="acts2">
-                  {isProcessing ? (
-                    <button className="btn lg" type="button" disabled>
-                      Reading…
+                  {processingStage === "error" ? (
+                    <button className="btn lg" type="button" onClick={readReceipt}>
+                      Try again
                     </button>
                   ) : (
-                    <button className="btn lg" type="button" onClick={readReceipt}>
-                      {processingStage === "error" ? "Read again" : "Read receipt"}
+                    <button className="btn lg" type="button" disabled>
+                      Reading…
                     </button>
                   )}
                 </div>
@@ -2212,13 +1820,6 @@ export function ReceiptScanner({
                       displayedReceiptTotal={displayedReceiptTotal}
                     />
                   </Suspense>
-                  <button
-                    className="btn lg"
-                    type="button"
-                    onClick={continueToSplitChat}
-                  >
-                    Continue to split chat
-                  </button>
                 </section>
                 <aside className="col" aria-label="Your receipt">
                   {photoCard}
@@ -2239,456 +1840,6 @@ export function ReceiptScanner({
                 </aside>
               </div>
 
-              <section className="sec" aria-labelledby="n-h" ref={assignmentSectionRef}>
-                <h2 id="n-h">Assign items</h2>
-                <button
-                  className="opt2"
-                  type="button"
-                  aria-expanded={splitAssistantOpen}
-                  aria-controls="receipt-split-assistant"
-                  onClick={() => setSplitAssistantOpen((open) => !open)}
-                >
-                  <span className="oic"><PeopleIcon /></span>
-                  <span>
-                    <b>{splitAssistantOpen ? "Hide AI split chat" : "Use the AI split bot"}</b>
-                    <span className="d">Describe who had each item and the bot will select the assignments.</span>
-                  </span>
-                  <ChevIcon />
-                </button>
-                <button
-                  className="opt2"
-                  type="button"
-                  aria-expanded={itemAssignmentsOpen}
-                  aria-controls="interactive-item-assignments"
-                  onClick={() => setItemAssignmentsOpen((open) => !open)}
-                >
-                  <span className="oic"><PeopleIcon /></span>
-                  <span>
-                    <b>{itemAssignmentsOpen ? "Hide item assignments" : "Assign items yourself"}</b>
-                    <span className="d">Pick who had each item, like a shared list.</span>
-                    <small>{assignedCount} of {receiptRows.length} assigned</small>
-                  </span>
-                  <ChevIcon />
-                </button>
-
-                {itemAssignmentsOpen && (
-                  <div id="interactive-item-assignments">
-                    <p className="sub">Add people, then pick who had each item. Shared items split evenly.</p>
-                    <form onSubmit={addUser}>
-                      <label htmlFor="user-name" className="lbl">Add a person</label>
-                      <div className="inrow">
-                        <input
-                          id="user-name"
-                          className="field"
-                          value={userNameInput}
-                          onChange={(event) => setUserNameInput(event.target.value)}
-                          maxLength={40}
-                          placeholder="[Friend name]"
-                        />
-                        <button className="btn" type="submit" disabled={!userNameInput.trim()}>
-                          Add
-                        </button>
-                      </div>
-                    </form>
-
-                    <p className="lbl">Who had each item</p>
-                    <ul className="proc">
-                      {receiptRows.map((row, index) => {
-                        const assignment = splitAssignments.find(
-                          (entry) => entry.itemIndex === index
-                        );
-                        const line = splitCalculation.lines[index];
-                        return (
-                          <li key={`assignment-${index}`}>
-                            <span className="pst">{index + 1}</span>
-                            <div>
-                              <b>
-                                {row.quantity.trim() ? `${row.quantity.trim()} × ` : ""}
-                                {row.description || `Receipt item ${index + 1}`}
-                              </b>
-                              <small aria-live="polite">
-                                {line.amountCents === null
-                                  ? "Check this item's amount before splitting."
-                                  : line.shares.length > 0
-                                    ? line.shares
-                                        .map((share) => `${share.person}: ${formatCents(share.amountCents)}`)
-                                        .join(", ")
-                                    : "Unassigned"}
-                              </small>
-                              {userNames.length > 0 ? (
-                                <div
-                                  className="seg"
-                                  role="group"
-                                  aria-label={`Assign ${row.description || `item ${index + 1}`} to people`}
-                                >
-                                  {userNames.map((person) => {
-                                    const selected =
-                                      assignment?.people.some(
-                                        (name) => name.toLocaleLowerCase() === person.toLocaleLowerCase()
-                                      ) ?? false;
-                                    return (
-                                      <button
-                                        key={person}
-                                        className={`sg${selected ? " on" : ""}`}
-                                        type="button"
-                                        aria-pressed={selected}
-                                        onClick={() => toggleItemAssignment(index, person)}
-                                      >
-                                        {person}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              ) : (
-                                <small>Add people above to assign this item.</small>
-                              )}
-                            </div>
-                            <span className="ptag">{withDollar(row.amount) || "Amount needs review"}</span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-
-                    <p className="lbl">Each person’s share</p>
-                    {splitCalculation.people.length > 0 ? (
-                      <ul className="proc">
-                        {splitCalculation.people.map((person) => (
-                          <li key={person.person.toLocaleLowerCase()}>
-                            <span className="av p1" aria-hidden="true">
-                              {person.person.trim().charAt(0).toUpperCase()}
-                            </span>
-                            <div>
-                              <b>{person.person}</b>
-                              <small>
-                                Items {formatCents(person.itemsCents)}, tax {formatCents(person.taxCents)}, tip {formatCents(person.tipCents)}
-                              </small>
-                            </div>
-                            <span className="ptag ok">
-                              {formatCents(person.itemsCents + person.taxCents + person.tipCents)}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="sub">Add people and assign items to see everyone’s share.</p>
-                    )}
-                    {splitCalculation.unassignedCents > 0 && (
-                      <p className="msg">
-                        Unassigned items:{" "}
-                        {formatCents(
-                          splitCalculation.unassignedCents +
-                            splitCalculation.unassignedTaxCents +
-                            splitCalculation.unassignedTipCents
-                        )}
-                        . Their share of tax and tip stays unassigned too.
-                      </p>
-                    )}
-                    {!splitCalculation.canAllocateTaxAndTip && (
-                      <p className="msg">
-                        Enter a valid, non-negative amount for every item to allocate tax and tip proportionally.
-                      </p>
-                    )}
-
-                    <div className="acts2">
-                      <button
-                        className="btn line"
-                        type="button"
-                        aria-expanded={tipOptionsOpen}
-                        onClick={() => setTipOptionsOpen((open) => !open)}
-                      >
-                        {tipOptionsOpen ? "Hide tip options" : "Tip options"}
-                        {`: ${
-                          tipSplitMode === "proportional"
-                            ? "Split proportionally"
-                            : tipSplitMode === "manual"
-                              ? "Custom per person"
-                              : "Not included"
-                        }`}
-                      </button>
-                    </div>
-                    {tipOptionsOpen && (
-                      <div>
-                        <p className="sub">Tax stays proportional. Choose how the tip is handled.</p>
-                        <p className="lbl">Tip</p>
-                        <div className="seg" role="group" aria-label="Tip split">
-                          {(
-                            [
-                              ["proportional", "Split proportionally"],
-                              ["manual", "Set each person’s tip"],
-                              ["disabled", "Don’t split tip"],
-                            ] as const
-                          ).map(([mode, label]) => (
-                            <button
-                              key={mode}
-                              className={`sg${tipSplitMode === mode ? " on" : ""}`}
-                              type="button"
-                              aria-pressed={tipSplitMode === mode}
-                              onClick={() => selectTipSplitMode(mode)}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                        {tipSplitMode === "manual" && (
-                          <div>
-                            <p className="sub">Enter each person’s tip. These amounts replace the receipt tip allocation.</p>
-                            {splitCalculation.people.length === 0 && (
-                              <p className="sub">Assign items above to set each person’s tip.</p>
-                            )}
-                            {splitCalculation.people.map((person) => {
-                              const key = person.person.toLowerCase();
-                              return (
-                                <div key={key}>
-                                  <label className="lbl" htmlFor={`tip-${key}`}>{person.person}</label>
-                                  <div className="money-in">
-                                    <span aria-hidden="true">$</span>
-                                    <input
-                                      id={`tip-${key}`}
-                                      className="field"
-                                      type="text"
-                                      inputMode="decimal"
-                                      value={
-                                        manualTipAmounts[key] ??
-                                        ((
-                                          proportionalTipCalculation.people.find(
-                                            (entry) => entry.person.toLowerCase() === key
-                                          )?.tipCents ?? 0
-                                        ) / 100).toFixed(2)
-                                      }
-                                      onChange={(event) =>
-                                        setManualTipAmounts((amounts) => ({
-                                          ...amounts,
-                                          [key]: event.target.value,
-                                        }))
-                                      }
-                                    />
-                                  </div>
-                                </div>
-                              );
-                            })}
-                            {splitCalculation.unassignedCents > 0 && (
-                              <div>
-                                <label className="lbl" htmlFor="tip-unassigned">Unassigned items</label>
-                                <div className="money-in">
-                                  <span aria-hidden="true">$</span>
-                                  <input
-                                    id="tip-unassigned"
-                                    className="field"
-                                    type="text"
-                                    inputMode="decimal"
-                                    value={
-                                      manualTipAmounts.__unassigned__ ??
-                                      (proportionalTipCalculation.unassignedTipCents / 100).toFixed(2)
-                                    }
-                                    onChange={(event) =>
-                                      setManualTipAmounts((amounts) => ({
-                                        ...amounts,
-                                        __unassigned__: event.target.value,
-                                      }))
-                                    }
-                                  />
-                                </div>
-                              </div>
-                            )}
-                            {splitCalculation.manualTipNeedsReview && (
-                              <p className="msg err" role="alert">
-                                Enter a valid non-negative amount for each tip share. Invalid amounts are not included in the totals.
-                              </p>
-                            )}
-                          </div>
-                        )}
-                        {tipSplitMode === "disabled" && (
-                          <p className="sub">The receipt tip will not be included in anyone’s total.</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {splitAssistantOpen && (
-                  <div id="receipt-split-assistant" className="receipt-split-assistant">
-                    <div>
-                      <h3>Assign items with the AI bot</h3>
-                      <p className="sub">
-                        Tell me who had each item. For example: “Sandy gets the burger, John gets the fries, and Bob and Joe split the pizza.”
-                      </p>
-                    </div>
-                    <div
-                      className="receipt-chat-messages"
-                      aria-live="polite"
-                      aria-relevant="additions text"
-                    >
-                      {splitMessages.length === 0 ? (
-                        <p className="receipt-chat-welcome">
-                          I’ll match your instructions to the receipt items. Shared items are split evenly.
-                        </p>
-                      ) : (
-                        splitMessages.map((entry, index) => (
-                          <p
-                            className={`receipt-chat-message ${entry.role}`}
-                            key={`${index}-${entry.role}`}
-                          >
-                            <strong>{entry.role === "user" ? "You" : "AI bot"}</strong>
-                            {entry.content}
-                          </p>
-                        ))
-                      )}
-                      {splitParsing ? (
-                        <p className="receipt-chat-pending" role="status">
-                          Checking the receipt items…
-                        </p>
-                      ) : null}
-                    </div>
-                    {splitError ? (
-                      <p className="msg err" role="alert">{splitError}</p>
-                    ) : null}
-                    <form className="receipt-chat-form" onSubmit={sendSplitMessage}>
-                      <div className="receipt-chat-input-heading">
-                        <label className="lbl" htmlFor="receipt-split-instruction">
-                          Describe who gets each item
-                        </label>
-                        <button
-                          className="receipt-suggestion-toggle"
-                          type="button"
-                          aria-pressed={splitSuggestionsEnabled}
-                          onClick={() =>
-                            setSplitSuggestionsEnabled((enabled) => !enabled)
-                          }
-                        >
-                          Receipt item suggestions:{" "}
-                          {splitSuggestionsEnabled ? "On" : "Off"}
-                        </button>
-                      </div>
-                      <div className="receipt-suggestion-field">
-                        {splitInlineSuggestion ? (
-                          <div
-                            className="receipt-suggestion-preview"
-                            aria-hidden="true"
-                          >
-                            <div
-                              style={{
-                                transform: `translateY(-${splitInputScrollTop}px)`,
-                              }}
-                            >
-                              <span>
-                                {splitMessage.slice(0, splitTokenStart)}
-                              </span>
-                              {splitInlineSuggestion.matchedWord?.startsWith(
-                                splitSuggestionQuery,
-                              ) &&
-                              splitInlineSuggestion.matchedWordStart === 0 ? (
-                                <>
-                                  <span>
-                                    {splitTokenBeforeCursor +
-                                      splitTokenAfterCursor}
-                                  </span>
-                                  <span className="receipt-suggestion-completion">
-                                    {splitInlineSuggestion.description.slice(
-                                      splitInlineSuggestion.matchedWordStart +
-                                        splitSuggestionQuery.length,
-                                    )}
-                                  </span>
-                                </>
-                              ) : (
-                                <>
-                                  <span className="receipt-suggestion-replaced">
-                                    {splitTokenBeforeCursor +
-                                      splitTokenAfterCursor}
-                                  </span>
-                                  <span className="receipt-suggestion-match">
-                                    {splitInlineSuggestion.description}
-                                  </span>
-                                </>
-                              )}
-                              <span>
-                                {splitMessage.slice(splitTokenEnd) || "\u200b"}
-                              </span>
-                            </div>
-                          </div>
-                        ) : null}
-                        <textarea
-                          ref={splitInputRef}
-                          id="receipt-split-instruction"
-                          className={`field receipt-suggestion-textarea${splitInlineSuggestion ? " has-suggestion" : ""}`}
-                          value={splitMessage}
-                          maxLength={1000}
-                          rows={3}
-                          placeholder="Who had each item?"
-                          disabled={splitParsing}
-                          aria-autocomplete="list"
-                          aria-controls="receipt-item-suggestions"
-                          onChange={(event) => {
-                            setSplitMessage(event.target.value);
-                            setSplitCursorPosition(
-                              event.currentTarget.selectionStart,
-                            );
-                          }}
-                          onClick={(event) =>
-                            setSplitCursorPosition(
-                              event.currentTarget.selectionStart,
-                            )
-                          }
-                          onSelect={(event) =>
-                            setSplitCursorPosition(
-                              event.currentTarget.selectionStart,
-                            )
-                          }
-                          onKeyUp={(event) =>
-                            setSplitCursorPosition(
-                              event.currentTarget.selectionStart,
-                            )
-                          }
-                          onKeyDown={handleSplitInputKeyDown}
-                          onScroll={(event) =>
-                            setSplitInputScrollTop(
-                              event.currentTarget.scrollTop,
-                            )
-                          }
-                        />
-                      </div>
-                      {splitInlineSuggestion ? (
-                        <p className="receipt-suggestion-hint" aria-live="polite">
-                          Press <kbd>Tab</kbd> to replace with{" "}
-                          <strong>{splitInlineSuggestion.description}</strong>
-                        </p>
-                      ) : null}
-                      {splitItemSuggestions.length > 0 ? (
-                        <ul
-                          className="receipt-item-suggestions"
-                          id="receipt-item-suggestions"
-                          role="listbox"
-                          aria-label="Receipt item suggestions"
-                        >
-                          {splitItemSuggestions.map((description) => (
-                            <li key={description} role="presentation">
-                              <button
-                                type="button"
-                                role="option"
-                                aria-selected="false"
-                                onMouseDown={(event) =>
-                                  event.preventDefault()
-                                }
-                                onClick={() =>
-                                  selectSplitItemSuggestion(description)
-                                }
-                              >
-                                {description}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : null}
-                      <button
-                        className="btn"
-                        type="submit"
-                        disabled={splitParsing || !splitMessage.trim()}
-                      >
-                        {splitParsing ? "Assigning…" : "Send"}
-                      </button>
-                    </form>
-                  </div>
-                )}
-              </section>
             </>
           )}
         </div>
