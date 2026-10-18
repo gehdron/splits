@@ -1,87 +1,138 @@
-# Splits Receipt Scanner
+# Splits
 
-The app uses your camera to capture a receipt and Tesseract.js to extract its
-printed text in the browser.
+Splits helps a group divide a shared bill by the items each person ordered.
+Create a list, add items manually or scan a receipt, assign items to one or more
+people, and share a payment link for each person's amount. Friends can open a
+link in their browser without installing the app.
+
+Live app: [https://www.splits.select](https://www.splits.select)
+
+## What it does
+
+- **Shared lists:** Create a named list, add people and items, and assign each
+  item to one or more people. Shared item prices are divided evenly.
+- **Receipt scanning:** Take a photo or upload an image or PDF. Text extraction
+  and receipt parsing start automatically. Review and edit the recognized
+  items, subtotal, tax, tip, and total before saving.
+- **Receipt name suggestions:** Gemini can suggest a name when saving a
+  receipt. The suggestion is shown separately and does not replace the typed
+  name unless you choose to use it.
+- **AI item assignment:** Use the list chat to describe who had each item.
+  Item-name suggestions can help correct typos while entering instructions.
+- **Bill totals:** Item shares and tax/tip allocations are calculated by the
+  app. The list shows each person's amount and flags receipt total mismatches.
+- **Payment links:** Share an individual checkout link for an amount owed.
+  Payment links use Stripe Checkout. Use Stripe test mode for demos; do not
+  configure live keys for demo payments.
+- **Accounts and connections:** The dashboard supports shared groups, while
+  account settings include Stripe Connect and Plaid integrations when
+  configured.
 
 ## Run locally
+
+Requirements: Node.js and npm.
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open the live app at [https://www.splits.select](https://www.splits.select) and allow camera access.
-The camera guide follows the device orientation, and captured photos are
-rotated to match it when the camera stream uses the opposite orientation. Use
-**Switch camera** to change cameras. For better live recognition, place the
-receipt inside the on-screen guide, fill as much of it as possible, keep it
-flat, hold the camera steady, and use bright even lighting. The live scanner
-focuses on the guided area, enlarges it, and boosts image contrast before OCR.
-After you select **Take photo**, the full original photo remains visible and
-OCR starts automatically. It prepares a higher-resolution, contrast-enhanced
-image and shows recognized word boxes over the photo. OCR first uses a small
-internal preview to estimate the text's horizontal bounds, then may crop the
-image internally for a higher-resolution pass; the crop preserves the full
-image height. AI parsing starts automatically after text extraction completes.
-Camera access is available on the live HTTPS site. For local development,
-`npm run dev` serves the app at `http://localhost:3001`.
+Open [http://localhost:3001](http://localhost:3001). The development server
+uses port 3001. The deployed app is at [https://www.splits.select](https://www.splits.select).
 
-OCR extracts and displays the recognized text and word boxes. Gemini
-automatically organizes the receipt into editable item and total fields after
-extraction. Review results against the original because OCR and AI can make
-mistakes.
+## Configuration
 
-For optional AI parsing, create `.env.local` in the project root and add:
+Set secrets in `.env.local` for local development and in the deployment
+environment for production. Never expose service-role or provider secret keys
+in client-side code.
+
+| Variable | Used for |
+| --- | --- |
+| `GEMINI_API_KEY` | Receipt parsing, receipt list-name suggestions, and AI split chat |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase account, group, and list access |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase browser and server authentication |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-side production shared-list storage |
+| `STRIPE_SECRET_KEY` | Stripe Checkout and connected-account operations |
+| `STRIPE_WEBHOOK_SECRET` | Verifying Stripe webhook events |
+| `NEXT_PUBLIC_APP_URL` | Base URL used when generating payment links (defaults to `https://splits.select`) |
+| `PLAID_CLIENT_ID`, `PLAID_SECRET` | Plaid account connection |
+| `PLAID_ENV` | Plaid environment; defaults to `sandbox` |
+| `PHOTON_API_KEY`, `PHOTON_PROJECT_ID`, `PHOTON_PLATFORM`, `PHOTON_AGENT_HANDLE` | Optional Photon message delivery |
+| `PHOTON_BASE_URL` | Optional Photon API base URL override |
+
+For receipt parsing, create `.env.local` and add:
 
 ```env
 GEMINI_API_KEY=your_gemini_api_key
 ```
 
-Restart the development server and take a receipt photo. The app sends the
-frozen photo and extracted text to Gemini 3.8 Flash after OCR completes. You can
-also use **Upload receipt image or PDF** instead of the camera. Image uploads
-start OCR and AI parsing automatically; PDFs are parsed directly after upload
-using a binary upload to avoid base64 request-size overhead. PDF files must be
-4 MB or smaller; image files can be up to 8 MB.
-The scanner shows extraction, AI parsing, and review progress; if AI parsing
-fails, it displays the error and a retry option. Files must be 8 MB or smaller.
-AI parsing requires a Gemini API key and may incur API charges depending on
-your account and usage. OCR extraction and raw text remain available without
-an API key.
+Without the Gemini key, camera capture and browser OCR remain available, but
+automatic receipt parsing, name suggestions, and the AI split chat are
+unavailable.
 
-From the dashboard, choose **New list → Scan a receipt** to open the dedicated
-camera and upload screen. After reviewing the parsed items and totals, save the
-receipt to a named group list from the receipt review. Item assignment and the
-AI split chat are available on the list page.
+Camera access requires a secure context: use `localhost` for local development
+and HTTPS for the live site or other devices.
 
-On `/list`, enter a name before creating a list. During receipt uploads, Gemini
-can suggest a name; suggestions are shown separately and never replace your
-typed name unless you choose **Use suggestion**. Receipt item names appear as
-live suggestions in the split chat; press **Tab** or choose a suggestion to
-correct a partial or mistyped item name. Assign an item to multiple people from
-its assignee menu; its price is split evenly, and tax and tip are allocated
-proportionally. Subtotal, tax, tip, and total appear below the item list, and
-scanned receipt totals are checked against the item amounts. The AI split chat
-can assign an item to multiple people. The list owner can delete a list; unpaid
-payment links are expired first, while completed payments remain recorded.
+## Receipt scanning
 
-If you already use the production file-backed shared-list tables in Supabase,
-re-run `supabase/shared-lists.sql` to add the receipt-total columns used by the
-list page.
+From the dashboard, choose **New list → Scan a receipt**. Take a photo or
+upload a JPEG, PNG, WebP, or PDF. Image capture and uploads start browser-based
+OCR automatically, followed by Gemini receipt parsing. PDFs go directly to
+Gemini. Check the parsed items and totals against the receipt before saving.
+
+The scanner shows extracted text boxes over the receipt image. Its camera guide
+follows device orientation and captured photos are rotated when needed. PDFs
+must be 4 MB or smaller; images must be 8 MB or smaller. AI parsing requires a
+Gemini API key and may incur API charges. OCR is performed in the browser.
+
+## Lists and splitting
+
+Create a named list from the dashboard or save a reviewed receipt as a list.
+Add participants and items, then assign each item using its assignee control or
+the AI split chat on the list page. An item assigned to multiple people is
+shared evenly. Tax and tip are allocated proportionally; totals are computed
+deterministically by the app, not generated by AI.
+
+The list page shows subtotal, tax, tip, total, and each person's calculated
+share. Receipt totals are compared with the item amounts. The list owner can
+delete a list; unpaid payment links are retired first, and completed payments
+remain recorded.
+
+## Storage and database setup
+
+For production, group lists use the schema in `supabase/schema.sql`. Configure
+the Supabase environment variables above and apply that schema. The shared-list
+tables used by the `/list` experience are created by
+`supabase/shared-lists.sql`. Rerun that script on an existing installation to
+add receipt-total columns.
+
+For local development, shared lists use `data/store.json` when the production
+Supabase storage path is not enabled.
+
+## Useful commands
+
+```bash
+npm run dev       # Start the local development server
+npm run lint      # Run ESLint
+npm run build     # Create a production build
+npm run start     # Serve the production build
+```
 
 ## Routes
 
-| Route | What it is |
+| Route | Purpose |
 | --- | --- |
-| `/` | Marketing site home (`app/(site)/page.tsx`) |
-| `/pay/sh_…` | A friend's pay link. Opens Stripe Checkout |
-| `/payment-complete` | Shown after a friend pays (`?share=sh_…`). The older `?friend=Maya&event=Dinner&amount=24.50&method=Apple%20Pay` form still works |
-| `/api/stripe/webhook` | Stripe webhook. Marks shares paid |
-| `/dashboard/item-by-item` | Receipt scanner, opened from "Split this charge" |
-| `/account` | Account, payouts (Stripe Connect) and bank (Plaid) |
-| `/scan` | Receipt scanner (moved from `/`) |
-| `/dashboard/item-by-item` | Dedicated receipt camera and upload screen (requires sign-in) |
-| `/list` | Shared list with manual and chat-based item assignment |
-| any other URL | 404 page (`app/global-not-found.tsx`) |
+| `/` | Marketing home |
+| `/dashboard` | Groups, shared lists, and dashboard |
+| `/dashboard/even` | Even-split flow |
+| `/dashboard/item-by-item` | Receipt camera, upload, review, and save |
+| `/list?id=…` | Shared list, item assignment, totals, and AI split chat |
+| `/pay/[shareId]` | Individual payment link |
+| `/payment-complete` | Payment confirmation |
+| `/account` | Account, Stripe Connect, and Plaid settings |
+| `/login`, `/signup` | Authentication |
+| `/privacy` | Privacy policy |
+| `/api/stripe/webhook` | Stripe webhook endpoint |
 
-The marketing pages live in `app/(site)` with their own layout and CSS, separate from the scanner's Tailwind layout in `app/(app)`.
+The marketing site is in `app/(site)`. The authenticated app and shared-list
+experience are in `app/(app)`.
