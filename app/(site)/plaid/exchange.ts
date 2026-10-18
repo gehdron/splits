@@ -1,6 +1,7 @@
 import { connection } from "next/server";
 import { ensureConnectAccount, getPayoutAccount, savePayoutAccount, signedInUser } from "@/app/(site)/stripe/organizer";
 import { exchangePublicToken, plaidConfigured, removeItem, stripeBankAccountToken } from "@/app/(site)/plaid/plaid";
+import { savePlaidLink } from "@/app/(site)/plaid/store";
 import { stripe } from "@/app/(site)/stripe/checkout";
 
 // Plaid public token -> Stripe bank account token -> external account on the organizer's Connect account.
@@ -20,27 +21,27 @@ export async function POST(request: Request) {
 
   try {
     const payout = await getPayoutAccount(user.id);
-    if (payout?.onboardingStartedAt) {
-      return Response.json(
-        { error: "Stripe manages your payout bank now. Change it in your Stripe Express account." },
-        { status: 409 },
-      );
-    }
-    const stripeAccountId = await ensureConnectAccount(user);
+    const stripeAccountId = payout?.onboardingStartedAt ? null : await ensureConnectAccount(user);
 
     const { access_token: accessToken, item_id: itemId } = await exchangePublicToken(publicToken);
+    try {
+      await savePlaidLink(user.id, itemId, accessToken);
+    } catch (error) {
+      await removeItem(accessToken).catch((removeError: unknown) => console.error(removeError));
+      throw error;
+    }
     let attached = false;
     let note: string | null = null;
+    if (!stripeAccountId || (await getPayoutAccount(user.id))?.onboardingStartedAt) {
+      await savePayoutAccount(user.id, { plaidItemId: itemId });
+      return Response.json({
+        ok: true,
+        attached: false,
+        note: "Bank linked for recent charges. Stripe already manages your payout bank.",
+      });
+    }
     try {
       const { stripe_bank_account_token: bankToken } = await stripeBankAccountToken(accessToken, accountId);
-      // Payout setup may have started in another tab while Plaid was working. Then Stripe owns the bank.
-      if ((await getPayoutAccount(user.id))?.onboardingStartedAt) {
-        await savePayoutAccount(user.id, { plaidItemId: itemId });
-        return Response.json(
-          { error: "Stripe manages your payout bank now. Change it in your Stripe Express account." },
-          { status: 409 },
-        );
-      }
       const external = await stripe().accounts.createExternalAccount(stripeAccountId, {
         external_account: bankToken,
         default_for_currency: true,
@@ -58,9 +59,6 @@ export async function POST(request: Request) {
           ? "Stripe didn’t accept that bank. Try another account."
           : "Bank linked in Plaid sandbox. Attaching it to a live Stripe account needs PLAID_ENV=production.";
       await savePayoutAccount(user.id, { plaidItemId: itemId });
-    } finally {
-      // Splits keeps no ongoing bank access once Stripe has (or can't use) the account.
-      await removeItem(accessToken).catch((error: unknown) => console.error(error));
     }
     return Response.json({ ok: true, attached, note });
   } catch (error) {

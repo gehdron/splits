@@ -1,16 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { DashSidebar } from "../sidebar";
 import type { DashboardData } from "../types";
 import "./even.css";
 
-/* Sample charge: Amazon $38.97. Money is computed here, never by a model. */
+/* Money is computed here, never by a model. The charge comes from the dashboard (a Plaid transaction). */
 
 /* ------------------------------------------------------------- helpers */
-
-const ME = "Gordon Zeng";
 
 function initials(name: string): string {
   const words = name.trim().split(/\s+/).filter((w) => /[a-z]/i.test(w));
@@ -19,16 +18,16 @@ function initials(name: string): string {
   return letter(words[0] ?? "") + (words.length > 1 ? letter(words[words.length - 1] ?? "") : "");
 }
 
-function colorClass(name: string): string {
-  if (name === ME) return "p0";
+function colorClass(name: string, me: string): string {
+  if (name === me) return "p0";
   let h = 0;
   for (const ch of name.toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return `p${1 + (h % 3)}`;
 }
 
-function Avatar({ name, large = false }: { name: string; large?: boolean }) {
+function Avatar({ name, me, large = false }: { name: string; me: string; large?: boolean }) {
   return (
-    <span className={`av ${large ? "lgav " : ""}${colorClass(name)}`} aria-hidden="true">
+    <span className={`av ${large ? "lgav " : ""}${colorClass(name, me)}`} aria-hidden="true">
       {initials(name)}
     </span>
   );
@@ -46,24 +45,25 @@ const BackIcon = () => <Icon d="M15 6l-6 6 6 6" />;
 const CheckIcon = () => <Icon d="M5 12l5 5 9-10" />;
 const SendIcon = () => <Icon d="M4 12l16-8-6 16-3-7-7-1z" />;
 
-/* ---------------------------------------------------------- sample data */
-
-const TOTAL = 3897;
-
 type Person = { name: string; sub: string };
 type Mode = "even" | "amount" | "percent";
 
-const starter: Person[] = [
-  { name: "Brayden", sub: "(555) 010-0142" },
-  { name: "Maya", sub: "(555) 010-0178" },
-];
-
-const starterContacts: Person[] = [
-  { name: "Jay", sub: "jay@example.com" },
-  { name: "Riley", sub: "(555) 010-0133" },
-  { name: "Priya", sub: "(555) 010-0190" },
-  { name: "Marcus", sub: "marcus@example.com" },
-];
+function knownPeople(data: DashboardData): Person[] {
+  const seen = new Set<string>();
+  const rows: Person[] = [];
+  const add = (name: string, sub: string) => {
+    const key = name.trim().toLowerCase();
+    const handle = sub.trim();
+    if (!key || !handle || seen.has(key) || key === data.me.name.trim().toLowerCase()) return;
+    seen.add(key);
+    rows.push({ name: name.trim(), sub: handle });
+  };
+  for (const friend of data.friends) add(friend.name, friend.phone);
+  for (const member of data.members) {
+    if (member.userId !== data.me.id) add(member.name, member.phone);
+  }
+  return rows;
+}
 
 function money(cents: number): string {
   const abs = Math.abs(cents);
@@ -87,18 +87,25 @@ function centsFromDollars(value: string): number {
 /* ---------------------------------------------------------------- page */
 
 export function EvenSplitView({ data }: { data: DashboardData }) {
-  const [others, setOthers] = useState(starter);
-  const [contacts, setContacts] = useState(starterContacts);
+  const search = useSearchParams();
+  const meName = data.me.name.trim() || "You";
+  const merchant = search.get("merchant")?.trim() || "Charge";
+  const chargeDate = search.get("date")?.trim() || "";
+  const totalCents = centsFromDollars(search.get("amount") ?? "");
+  const [others, setOthers] = useState<Person[]>([]);
+  const [contacts, setContacts] = useState<Person[]>(() => knownPeople(data));
   const [includeMe, setIncludeMe] = useState(true);
   const [mode, setMode] = useState<Mode>("even");
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [percents, setPercents] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
   const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState("");
   const [reminded, setReminded] = useState<Record<string, boolean>>({});
 
-  const names = includeMe ? [ME, ...others.map((person) => person.name)] : others.map((person) => person.name);
-  const evenParts = splitEven(TOTAL, names.length);
+  const names = includeMe ? [meName, ...others.map((person) => person.name)] : others.map((person) => person.name);
+  const evenParts = splitEven(totalCents, names.length);
   const percentDefaults = splitEven(100, names.length);
   const amountCents = names.map((name, index) =>
     amounts[name] === undefined ? (evenParts[index] ?? 0) : centsFromDollars(amounts[name]),
@@ -107,11 +114,11 @@ export function EvenSplitView({ data }: { data: DashboardData }) {
     percents[name] === undefined ? (percentDefaults[index] ?? 0) : Math.min(100, Number(percents[name] || "0")),
   );
   const percentSum = percentNumbers.reduce((sum, value) => sum + value, 0);
-  const percentParts = names.map((_, index) => Math.floor((TOTAL * percentNumbers[index]) / 100));
+  const percentParts = names.map((_, index) => Math.floor((totalCents * percentNumbers[index]) / 100));
   if (percentSum === 100) {
-    let left = TOTAL - percentParts.reduce((sum, value) => sum + value, 0);
+    let left = totalCents - percentParts.reduce((sum, value) => sum + value, 0);
     const order = percentParts
-      .map((value, index) => ({ index, frac: (TOTAL * percentNumbers[index]) / 100 - value }))
+      .map((value, index) => ({ index, frac: (totalCents * percentNumbers[index]) / 100 - value }))
       .sort((a, b) => b.frac - a.frac);
     for (const slot of order) {
       if (left <= 0) break;
@@ -124,18 +131,18 @@ export function EvenSplitView({ data }: { data: DashboardData }) {
     const cents = mode === "even" ? evenParts[index] ?? 0 : mode === "amount" ? amountCents[index] : percentParts[index];
     return {
       name,
-      label: name === ME ? "Gordon (you)" : name,
-      note: name === ME ? "You paid, so your share stays with you." : `Gets a link at ${person?.sub ?? "the address you added"}`,
+      label: name === meName ? `${meName} (you)` : name,
+      note: name === meName ? "You paid, so your share stays with you." : `Gets a link at ${person?.sub ?? "the address you added"}`,
       cents,
     };
   });
   const covered =
     names.length > 0 &&
     (mode === "even" ||
-      (mode === "amount" && amountCents.reduce((sum, value) => sum + value, 0) === TOTAL) ||
+      (mode === "amount" && amountCents.reduce((sum, value) => sum + value, 0) === totalCents) ||
       (mode === "percent" && percentSum === 100));
-  const request = shares.filter((share) => share.name !== ME).reduce((sum, share) => sum + share.cents, 0);
-  const requestCount = shares.filter((share) => share.name !== ME && share.cents > 0).length;
+  const request = shares.filter((share) => share.name !== meName).reduce((sum, share) => sum + share.cents, 0);
+  const requestCount = shares.filter((share) => share.name !== meName && share.cents > 0).length;
   const shown = contacts.filter((contact) => {
     const needle = query.trim().toLowerCase();
     if (!needle) return true;
@@ -147,11 +154,72 @@ export function EvenSplitView({ data }: { data: DashboardData }) {
   }
 
   function addPerson(person: Person) {
-    if (others.some((entry) => entry.name === person.name) || person.name === ME) return;
+    if (others.some((entry) => entry.name === person.name) || person.name === meName) return;
     setOthers((current) => [...current, person]);
     setContacts((current) => current.filter((entry) => entry.name !== person.name));
     setQuery("");
     resetSent();
+  }
+
+  async function shareLinks() {
+    if (sending || sent || !covered || requestCount === 0 || totalCents <= 0) return;
+    setSending(true);
+    setSendError("");
+    const payers = shares.filter((share) => share.name !== meName && share.cents > 0);
+    try {
+      const created = await fetch("/api/lists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: merchant }),
+      });
+      const list = (await created.json().catch(() => null)) as { id?: string; error?: string } | null;
+      if (!created.ok || !list?.id) throw new Error(list?.error || "The list could not be created.");
+
+      const added = await fetch(`/api/lists/${encodeURIComponent(list.id)}/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          payers.map((share) => ({
+            name: `${merchant} · ${share.name}`,
+            quantity: 1,
+            priceCents: share.cents,
+            claimedBy: share.name,
+          })),
+        ),
+      });
+      if (!added.ok) {
+        const body = (await added.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error || "The shares could not be saved.");
+      }
+
+      const problems: string[] = [];
+      for (const share of payers) {
+        const person = others.find((entry) => entry.name === share.name);
+        const res = await fetch("/api/shares", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            listId: list.id,
+            personName: share.name,
+            handle: person?.sub ?? "",
+            send: true,
+          }),
+        });
+        const body = (await res.json().catch(() => null)) as { error?: string; sent?: boolean; note?: string } | null;
+        if (!res.ok || body?.error) problems.push(body?.error || `Could not share a link with ${share.name}.`);
+        else if (body?.note) problems.push(body.note);
+        else if (!body?.sent) problems.push(`${share.name} did not get a message. Check their phone or email.`);
+      }
+      if (problems.length > 0) {
+        setSendError(problems.join(" "));
+        return;
+      }
+      setSent(true);
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : "Could not share the payment link.");
+    } finally {
+      setSending(false);
+    }
   }
 
   function addTyped() {
@@ -175,17 +243,17 @@ export function EvenSplitView({ data }: { data: DashboardData }) {
           </Link>
           <div className="chg">
             <span className="mic" aria-hidden="true">
-              A
+              {merchant.charAt(0).toUpperCase() || "C"}
             </span>
             <span>
-              <b>Amazon</b>
-              <small>Oct 10, from your linked card</small>
+              <b>{merchant}</b>
+              <small>{chargeDate ? `${chargeDate}, from your linked bank` : "From your linked bank"}</small>
             </span>
           </div>
 
           <header className="top">
             <div>
-              <h1>Split {money(TOTAL)}</h1>
+              <h1>Split {money(totalCents)}</h1>
               <p className="meta">Add people from your contacts, choose how to split, and send everyone a link.</p>
             </div>
           </header>
@@ -197,7 +265,7 @@ export function EvenSplitView({ data }: { data: DashboardData }) {
                 <p className="sub">Anyone in your contacts. They don’t need the app to pay.</p>
               </div>
               <button className={`chip${includeMe ? " on" : ""}`} type="button" aria-pressed={includeMe} onClick={() => { setIncludeMe((value) => !value); resetSent(); }}>
-                <Avatar name={ME} />
+                <Avatar name={meName} me={meName} />
                 Include my share
                 <span className="tick">
                   <CheckIcon />
@@ -207,7 +275,7 @@ export function EvenSplitView({ data }: { data: DashboardData }) {
             <div className="pchips">
               {others.map((person) => (
                 <span key={person.name} className="pchip">
-                  <Avatar name={person.name} />
+                  <Avatar name={person.name} me={meName} />
                   {person.name}
                   <button
                     className="xb"
@@ -250,7 +318,7 @@ export function EvenSplitView({ data }: { data: DashboardData }) {
               <ul className="sugg">
                 {shown.map((contact) => (
                   <li key={contact.name} className="sg-row">
-                    <Avatar name={contact.name} />
+                    <Avatar name={contact.name} me={meName} />
                     <span>
                       <b>{contact.name}</b>
                       <small>{contact.sub}</small>
@@ -294,7 +362,7 @@ export function EvenSplitView({ data }: { data: DashboardData }) {
             <ul className="shares">
               {shares.map((share) => (
                 <li key={share.name} className="sh-row">
-                  <Avatar name={share.name} large />
+                  <Avatar name={share.name} me={meName} large />
                   <div>
                     <b>{share.label}</b>
                     <small>{share.note}</small>
@@ -324,7 +392,7 @@ export function EvenSplitView({ data }: { data: DashboardData }) {
                       }}
                     />
                   )}
-                  {share.name !== ME && share.cents > 0 ? (
+                  {share.name !== meName && share.cents > 0 ? (
                     <button
                       className="btn line remind"
                       type="button"
@@ -345,10 +413,10 @@ export function EvenSplitView({ data }: { data: DashboardData }) {
                 : covered && requestCount === 0
                   ? "This stays with you. Add someone if you want to request a share."
                   : covered
-                    ? `Every cent of ${money(TOTAL)} is covered.`
+                    ? `Every cent of ${money(totalCents)} is covered.`
                     : mode === "percent"
                       ? `These percents add up to ${percentSum}. They need to add up to 100.`
-                      : `These shares add up to ${money(amountCents.reduce((sum, value) => sum + value, 0))}. They need to add up to ${money(TOTAL)}.`}
+                      : `These shares add up to ${money(amountCents.reduce((sum, value) => sum + value, 0))}. They need to add up to ${money(totalCents)}.`}
             </p>
           </section>
 
@@ -360,11 +428,12 @@ export function EvenSplitView({ data }: { data: DashboardData }) {
                 {sent ? "Links sent" : `from ${requestCount} ${requestCount === 1 ? "person" : "people"}`}
               </small>
             </div>
-            <button className="btn" type="button" disabled={!covered || sent || requestCount === 0} onClick={() => setSent(true)}>
+            <button className="btn" type="button" disabled={!covered || sent || sending || requestCount === 0 || totalCents <= 0} onClick={() => void shareLinks()}>
               <SendIcon />
-              {sent ? "Links sent" : "Send payment links"}
+              {sending ? "Sharing…" : sent ? "Links sent" : requestCount === 1 ? "Share link" : "Share links"}
             </button>
           </div>
+          {sendError ? <p className="status">{sendError}</p> : null}
         </div>
       </main>
     </div>
