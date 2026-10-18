@@ -118,6 +118,28 @@ function enhanceOcrImage(
   context.putImageData(pixels, 0, 0);
 }
 
+function getEditDistance(left: string, right: string) {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  const current = new Array<number>(right.length + 1);
+
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    current[0] = leftIndex;
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      current[rightIndex] = Math.min(
+        current[rightIndex - 1] + 1,
+        previous[rightIndex] + 1,
+        previous[rightIndex - 1] +
+          (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1)
+      );
+    }
+    for (let index = 0; index <= right.length; index += 1) {
+      previous[index] = current[index];
+    }
+  }
+
+  return previous[right.length];
+}
+
 export default function ReceiptScanner() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -159,6 +181,7 @@ export default function ReceiptScanner() {
   const [splitMessage, setSplitMessage] = useState("");
   const [splitSuggestionsEnabled, setSplitSuggestionsEnabled] = useState(true);
   const [splitCursorPosition, setSplitCursorPosition] = useState(0);
+  const [splitInputScrollTop, setSplitInputScrollTop] = useState(0);
   const [splitAssignments, setSplitAssignments] = useState<ReceiptAssignment[]>([]);
   const [splitParsing, setSplitParsing] = useState(false);
   const [splitError, setSplitError] = useState("");
@@ -206,21 +229,69 @@ export default function ReceiptScanner() {
         : processingStage === "error"
           ? "Failed · retry available"
           : "Waiting";
-  const splitTextBeforeCursor = splitMessage.slice(0, splitCursorPosition);
-  const splitSuggestionQuery =
-    splitTextBeforeCursor.match(/[^\s;,\n]+$/)?.[0].toLocaleLowerCase() ?? "";
-  const splitItemSuggestions = splitSuggestionsEnabled && splitSuggestionQuery
-    ? [...new Set(
-        receiptRows
-          .map((item) => item.description.trim())
-          .filter((description) =>
-            description
-              .toLocaleLowerCase()
-              .split(/[^\p{L}\p{N}]+/u)
-              .some((word) => word.startsWith(splitSuggestionQuery))
-          )
-      )].slice(0, 5)
+  const splitSafeCursor = Math.min(splitCursorPosition, splitMessage.length);
+  const splitTextBeforeCursor = splitMessage.slice(0, splitSafeCursor);
+  const splitTextAfterCursor = splitMessage.slice(splitSafeCursor);
+  const splitTokenBeforeCursor =
+    splitTextBeforeCursor.match(/[^\s;,\n]+$/)?.[0] ?? "";
+  const splitTokenAfterCursor =
+    splitTextAfterCursor.match(/^[^\s;,\n]*/)?.[0] ?? "";
+  const splitTokenStart = splitSafeCursor - splitTokenBeforeCursor.length;
+  const splitTokenEnd = splitSafeCursor + splitTokenAfterCursor.length;
+  const splitSuggestionQuery = (
+    splitTokenBeforeCursor + splitTokenAfterCursor
+  ).toLocaleLowerCase();
+  const splitSuggestions = splitSuggestionsEnabled && splitSuggestionQuery.length >= 2
+    ? receiptRows
+        .map((item) => item.description.trim())
+        .filter(Boolean)
+        .map((description) => {
+          const words = description
+            .toLocaleLowerCase()
+            .split(/[^\p{L}\p{N}]+/u)
+            .filter(Boolean);
+          const scores = words.flatMap((word) => {
+            if (word === splitSuggestionQuery) return [];
+            if (word.startsWith(splitSuggestionQuery)) {
+              return [
+                0.1 +
+                  (word.length - splitSuggestionQuery.length) / 100,
+              ];
+            }
+            const distance = getEditDistance(splitSuggestionQuery, word);
+            const maxDistance = splitSuggestionQuery.length <= 4 ? 1 : 2;
+            return distance <= maxDistance
+              ? [1 + distance + Math.abs(word.length - splitSuggestionQuery.length) / 100]
+              : [];
+          });
+          return {
+            description,
+            score: Math.min(...scores),
+            matchedWord: words
+              .filter((word) => word !== splitSuggestionQuery)
+              .find(
+                (word) =>
+                  word.startsWith(splitSuggestionQuery) ||
+                  getEditDistance(splitSuggestionQuery, word) <=
+                    (splitSuggestionQuery.length <= 4 ? 1 : 2)
+              ),
+          };
+        })
+        .filter((suggestion) => Number.isFinite(suggestion.score))
+        .sort((left, right) => left.score - right.score)
+        .filter(
+          (suggestion, index, all) =>
+            all.findIndex(
+              (candidate) =>
+                candidate.description.toLocaleLowerCase() ===
+                suggestion.description.toLocaleLowerCase()
+            ) === index
+        )
     : [];
+  const splitItemSuggestions = splitSuggestions
+    .slice(0, 5)
+    .map((suggestion) => suggestion.description);
+  const splitInlineSuggestion = splitSuggestions[0] ?? null;
 
   function selectTipSplitMode(mode: TipSplitMode) {
     if (mode === "manual" && tipSplitMode !== "manual") {
@@ -875,21 +946,16 @@ export default function ReceiptScanner() {
   }
 
   function selectSplitItemSuggestion(description: string) {
-    const input = splitInputRef.current;
-    const cursorPosition = input?.selectionStart ?? splitCursorPosition;
-    const prefix = splitMessage.slice(0, cursorPosition);
-    const suffix = splitMessage.slice(cursorPosition);
-    const token = prefix.match(/[^\s;,\n]+$/)?.[0] ?? "";
-    const replacementStart = cursorPosition - token.length;
+    const suffix = splitMessage.slice(splitTokenEnd);
     const needsSpace =
       suffix.length === 0 && !/[;,\s]$/.test(description);
     const updatedMessage =
-      prefix.slice(0, replacementStart) +
+      splitMessage.slice(0, splitTokenStart) +
       description +
       (needsSpace ? " " : "") +
       suffix;
     const nextCursor =
-      replacementStart + description.length + (needsSpace ? 1 : 0);
+      splitTokenStart + description.length + (needsSpace ? 1 : 0);
 
     setSplitMessage(updatedMessage);
     setSplitCursorPosition(nextCursor);
@@ -897,6 +963,15 @@ export default function ReceiptScanner() {
       splitInputRef.current?.focus();
       splitInputRef.current?.setSelectionRange(nextCursor, nextCursor);
     });
+  }
+
+  function handleSplitInputKeyDown(
+    event: React.KeyboardEvent<HTMLTextAreaElement>
+  ) {
+    if (event.key === "Tab" && splitInlineSuggestion) {
+      event.preventDefault();
+      selectSplitItemSuggestion(splitInlineSuggestion.description);
+    }
   }
 
   async function sendSplitMessage(event: React.FormEvent<HTMLFormElement>) {
@@ -1472,33 +1547,104 @@ export default function ReceiptScanner() {
                       </button>
                     </div>
                     <div className="space-y-2">
-                      <textarea
-                        ref={splitInputRef}
-                        id="split-instruction"
-                        value={splitMessage}
-                        onChange={(event) => {
-                          setSplitMessage(event.target.value);
-                          setSplitCursorPosition(
-                            event.currentTarget.selectionStart
-                          );
-                        }}
-                        onClick={(event) =>
-                          setSplitCursorPosition(
-                            event.currentTarget.selectionStart
-                          )
-                        }
-                        onKeyUp={(event) =>
-                          setSplitCursorPosition(
-                            event.currentTarget.selectionStart
-                          )
-                        }
-                        placeholder="e.g. Sandy gets the burger; Bob and Joe split the pizza"
-                        rows={3}
-                        maxLength={1000}
-                        aria-autocomplete="list"
-                        aria-controls="split-item-suggestions"
-                        className="w-full min-w-0 rounded-lg border p-3 text-base"
-                      />
+                      <div className="relative">
+                        {splitInlineSuggestion && (
+                          <div
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent"
+                          >
+                            <div
+                              className="whitespace-pre-wrap break-words px-3 py-3 font-sans text-base leading-6 text-gray-900"
+                              style={{
+                                transform: `translateY(-${splitInputScrollTop}px)`,
+                              }}
+                            >
+                              <span>
+                                {splitMessage.slice(0, splitTokenStart)}
+                              </span>
+                              {splitInlineSuggestion.matchedWord?.startsWith(
+                                splitSuggestionQuery
+                              ) ? (
+                                <>
+                                  <span>
+                                    {splitTokenBeforeCursor +
+                                      splitTokenAfterCursor}
+                                  </span>
+                                  <span className="text-gray-400">
+                                    {splitInlineSuggestion.matchedWord.slice(
+                                      splitSuggestionQuery.length
+                                    )}
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-gray-500 line-through">
+                                    {splitTokenBeforeCursor +
+                                      splitTokenAfterCursor}
+                                  </span>
+                                  <span className="font-semibold text-blue-700">
+                                    {splitInlineSuggestion.matchedWord}
+                                  </span>
+                                </>
+                              )}
+                              <span>
+                                {splitMessage.slice(splitTokenEnd) || "\u200b"}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                        <textarea
+                          ref={splitInputRef}
+                          id="split-instruction"
+                          value={splitMessage}
+                          onChange={(event) => {
+                            setSplitMessage(event.target.value);
+                            setSplitCursorPosition(
+                              event.currentTarget.selectionStart
+                            );
+                          }}
+                          onClick={(event) =>
+                            setSplitCursorPosition(
+                              event.currentTarget.selectionStart
+                            )
+                          }
+                          onSelect={(event) =>
+                            setSplitCursorPosition(
+                              event.currentTarget.selectionStart
+                            )
+                          }
+                          onKeyUp={(event) =>
+                            setSplitCursorPosition(
+                              event.currentTarget.selectionStart
+                            )
+                          }
+                          onKeyDown={handleSplitInputKeyDown}
+                          onScroll={(event) =>
+                            setSplitInputScrollTop(
+                              event.currentTarget.scrollTop
+                            )
+                          }
+                          placeholder="e.g. Sandy gets the burger; Bob and Joe split the pizza"
+                          rows={3}
+                          maxLength={1000}
+                          aria-autocomplete="list"
+                          aria-controls="split-item-suggestions"
+                          className={`relative w-full min-w-0 rounded-lg border p-3 text-base leading-6 ${
+                            splitInlineSuggestion
+                              ? "bg-transparent text-transparent caret-gray-900 selection:bg-blue-200"
+                              : ""
+                          }`}
+                        />
+                      </div>
+                      {splitInlineSuggestion && (
+                        <p className="text-xs text-gray-600" aria-live="polite">
+                          Press <kbd className="rounded border px-1">Tab</kbd>{" "}
+                          to replace with{" "}
+                          <span className="font-medium text-gray-800">
+                            {splitInlineSuggestion.description}
+                          </span>
+                        </p>
+                      )}
                       {splitItemSuggestions.length > 0 && (
                         <ul
                           id="split-item-suggestions"
