@@ -26,6 +26,12 @@ type DetectedWord = {
 };
 
 type CameraFacingMode = "user" | "environment";
+type ReceiptProcessingStage =
+  | "idle"
+  | "extracting"
+  | "parsing"
+  | "complete"
+  | "error";
 
 function isAiParsedReceipt(value: unknown): value is AiParsedReceipt {
   if (
@@ -112,11 +118,34 @@ function enhanceOcrImage(
   context.putImageData(pixels, 0, 0);
 }
 
+function getEditDistance(left: string, right: string) {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  const current = new Array<number>(right.length + 1);
+
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    current[0] = leftIndex;
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      current[rightIndex] = Math.min(
+        current[rightIndex - 1] + 1,
+        previous[rightIndex] + 1,
+        previous[rightIndex - 1] +
+          (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1)
+      );
+    }
+    for (let index = 0; index <= right.length; index += 1) {
+      previous[index] = current[index];
+    }
+  }
+
+  return previous[right.length];
+}
+
 export default function ReceiptScanner() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const receiptFileInputRef = useRef<HTMLInputElement>(null);
+  const splitInputRef = useRef<HTMLTextAreaElement>(null);
 
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraFacingMode, setCameraFacingMode] =
@@ -132,6 +161,9 @@ export default function ReceiptScanner() {
   const [extractedText, setExtractedText] = useState("");
   const [status, setStatus] = useState("Start your camera to scan a receipt.");
   const [progress, setProgress] = useState(0);
+  const [processingStage, setProcessingStage] =
+    useState<ReceiptProcessingStage>("idle");
+  const [ocrCompleted, setOcrCompleted] = useState(false);
   const [detectedWords, setDetectedWords] = useState<DetectedWord[]>([]);
   const [receiptRows, setReceiptRows] = useState<AiReceiptItem[]>([]);
   const [receiptTotals, setReceiptTotals] = useState<AiReceiptTotals>({
@@ -147,6 +179,9 @@ export default function ReceiptScanner() {
   const [splitAssistantOpen, setSplitAssistantOpen] = useState(false);
   const [splitMessages, setSplitMessages] = useState<SplitInstructionMessage[]>([]);
   const [splitMessage, setSplitMessage] = useState("");
+  const [splitSuggestionsEnabled, setSplitSuggestionsEnabled] = useState(true);
+  const [splitCursorPosition, setSplitCursorPosition] = useState(0);
+  const [splitInputScrollTop, setSplitInputScrollTop] = useState(0);
   const [splitAssignments, setSplitAssignments] = useState<ReceiptAssignment[]>([]);
   const [splitParsing, setSplitParsing] = useState(false);
   const [splitError, setSplitError] = useState("");
@@ -175,6 +210,88 @@ export default function ReceiptScanner() {
   const displayedReceiptTotal = receiptTotalEdited
     ? calculateReceiptTotal(receiptTotals)
     : receiptTotals.total;
+  const extractionStatus = isPdfReceipt
+    ? "Skipped for PDF"
+    : processingStage === "extracting"
+      ? `In progress${progress > 0 ? ` · ${progress}%` : ""}`
+      : extractedText.trim()
+        ? "Text extracted"
+        : ocrCompleted
+          ? "No text found; AI will read image"
+          : processingStage === "parsing" || processingStage === "complete"
+            ? "OCR unavailable; AI will read image"
+            : "Waiting";
+  const parsingStatus =
+    processingStage === "parsing"
+      ? "In progress"
+      : processingStage === "complete"
+        ? "Complete"
+        : processingStage === "error"
+          ? "Failed · retry available"
+          : "Waiting";
+  const splitSafeCursor = Math.min(splitCursorPosition, splitMessage.length);
+  const splitTextBeforeCursor = splitMessage.slice(0, splitSafeCursor);
+  const splitTextAfterCursor = splitMessage.slice(splitSafeCursor);
+  const splitTokenBeforeCursor =
+    splitTextBeforeCursor.match(/[^\s;,\n]+$/)?.[0] ?? "";
+  const splitTokenAfterCursor =
+    splitTextAfterCursor.match(/^[^\s;,\n]*/)?.[0] ?? "";
+  const splitTokenStart = splitSafeCursor - splitTokenBeforeCursor.length;
+  const splitTokenEnd = splitSafeCursor + splitTokenAfterCursor.length;
+  const splitSuggestionQuery = (
+    splitTokenBeforeCursor + splitTokenAfterCursor
+  ).toLocaleLowerCase();
+  const splitSuggestions = splitSuggestionsEnabled && splitSuggestionQuery.length >= 2
+    ? receiptRows
+        .map((item) => item.description.trim())
+        .filter(Boolean)
+        .map((description) => {
+          const words = description
+            .toLocaleLowerCase()
+            .split(/[^\p{L}\p{N}]+/u)
+            .filter(Boolean);
+          const scores = words.flatMap((word) => {
+            if (word === splitSuggestionQuery) return [];
+            if (word.startsWith(splitSuggestionQuery)) {
+              return [
+                0.1 +
+                  (word.length - splitSuggestionQuery.length) / 100,
+              ];
+            }
+            const distance = getEditDistance(splitSuggestionQuery, word);
+            const maxDistance = splitSuggestionQuery.length <= 4 ? 1 : 2;
+            return distance <= maxDistance
+              ? [1 + distance + Math.abs(word.length - splitSuggestionQuery.length) / 100]
+              : [];
+          });
+          return {
+            description,
+            score: Math.min(...scores),
+            matchedWord: words
+              .filter((word) => word !== splitSuggestionQuery)
+              .find(
+                (word) =>
+                  word.startsWith(splitSuggestionQuery) ||
+                  getEditDistance(splitSuggestionQuery, word) <=
+                    (splitSuggestionQuery.length <= 4 ? 1 : 2)
+              ),
+          };
+        })
+        .filter((suggestion) => Number.isFinite(suggestion.score))
+        .sort((left, right) => left.score - right.score)
+        .filter(
+          (suggestion, index, all) =>
+            all.findIndex(
+              (candidate) =>
+                candidate.description.toLocaleLowerCase() ===
+                suggestion.description.toLocaleLowerCase()
+            ) === index
+        )
+    : [];
+  const splitItemSuggestions = splitSuggestions
+    .slice(0, 5)
+    .map((suggestion) => suggestion.description);
+  const splitInlineSuggestion = splitSuggestions[0] ?? null;
 
   function selectTipSplitMode(mode: TipSplitMode) {
     if (mode === "manual" && tipSplitMode !== "manual") {
@@ -245,6 +362,8 @@ export default function ReceiptScanner() {
       setFrozenImage(null);
       setReceiptDocumentDataUrl(null);
       setReceiptDocumentName("");
+      setProcessingStage("idle");
+      setOcrCompleted(false);
       setDetectedWords([]);
       setReceiptRows([]);
       setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
@@ -349,13 +468,16 @@ export default function ReceiptScanner() {
     setFrozenImage(imageUrl);
     setReceiptDocumentDataUrl(imageUrl);
     setReceiptDocumentName("Camera receipt");
+    setProcessingStage("idle");
+    setOcrCompleted(false);
+    setProgress(0);
+    setAiError("");
     setExtractedText("");
     setReceiptRows([]);
     setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
     setReceiptTotalEdited(false);
-    setStatus("Image frozen. Finding text and drawing its boxes...");
+    setStatus("Receipt captured. Select Extract text to start reading it.");
     stopCamera();
-    void readImage(imageUrl);
   }
 
   useEffect(() => {
@@ -484,8 +606,11 @@ export default function ReceiptScanner() {
 
   async function readImage(imageUrl: string) {
     let worker: Tesseract.Worker | null = null;
+    let receiptText = "";
 
     try {
+      setProcessingStage("extracting");
+      setOcrCompleted(false);
       setStatus("Locating the receipt and reading its text...");
       setProgress(0);
       setExtractedText("");
@@ -633,7 +758,9 @@ export default function ReceiptScanner() {
         { text: true, blocks: true }
       );
 
-      setExtractedText(result.data.text);
+      receiptText = result.data.text;
+      setExtractedText(receiptText);
+      setOcrCompleted(true);
       const words: DetectedWord[] = (result.data.blocks ?? [])
         .flatMap((block) =>
           block.paragraphs.flatMap((paragraph) =>
@@ -659,12 +786,13 @@ export default function ReceiptScanner() {
       setDetectedWords(words);
       setStatus(
         words.length > 0
-          ? `Found ${words.length} words. Review the text, then parse it with AI if you want structured items and totals.`
-          : "No text was detected. Move closer, improve the lighting, and hold steady."
+          ? "Text extracted. Organizing receipt items and totals..."
+          : "No text was detected. Trying to read the receipt image with AI..."
       );
     } catch (error) {
       console.error(error);
-      setStatus("OCR failed. Try taking a clearer picture.");
+      setOcrCompleted(false);
+      setStatus("Text extraction failed. Trying to read the receipt image with AI...");
     } finally {
       if (worker) {
         try {
@@ -674,6 +802,8 @@ export default function ReceiptScanner() {
           setStatus("Could not stop receipt text detection cleanly.");
         }
       }
+
+      await parseWithAi(receiptText, imageUrl);
     }
   }
 
@@ -713,6 +843,11 @@ export default function ReceiptScanner() {
       stopCamera();
       setReceiptDocumentDataUrl(dataUrl);
       setReceiptDocumentName(file.name);
+      setProcessingStage(
+        file.type === "application/pdf" ? "parsing" : "idle"
+      );
+      setOcrCompleted(false);
+      setProgress(0);
       setDetectedWords([]);
       setFrameSize({ width: 0, height: 0 });
       setAiError("");
@@ -732,11 +867,11 @@ export default function ReceiptScanner() {
       if (file.type === "application/pdf") {
         setFrozenImage(null);
         setExtractedText("");
-        setStatus("PDF uploaded. Select Parse receipt with AI to read it.");
+        setStatus("PDF uploaded. Organizing receipt items and totals...");
+        await parseWithAi("", dataUrl);
       } else {
         setFrozenImage(dataUrl);
-        setStatus("Receipt image uploaded. Reading its text...");
-        await readImage(dataUrl);
+        setStatus("Receipt image uploaded. Select Extract text to start reading it.");
       }
     } catch (error) {
       console.error(error);
@@ -748,22 +883,23 @@ export default function ReceiptScanner() {
     }
   }
 
-  async function parseWithAi() {
-    if (!receiptDocumentDataUrl || aiParsing) return;
-    if (!extractedText.trim() && !isPdfReceipt) {
-      setAiError("Receipt text could not be read. Extract text and try again.");
-      return;
-    }
+  async function parseWithAi(
+    receiptText: string,
+    documentDataUrl: string | null
+  ) {
+    if (!documentDataUrl || aiParsing) return;
 
     setAiParsing(true);
+    setProcessingStage("parsing");
     setAiError("");
+    setStatus("Organizing receipt items and totals with AI...");
     try {
       const response = await fetch("/api/parse-receipt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          receiptText: extractedText,
-          imageDataUrl: receiptDocumentDataUrl,
+          receiptText,
+          imageDataUrl: documentDataUrl,
         }),
       });
       const result: unknown = await response.json();
@@ -793,16 +929,48 @@ export default function ReceiptScanner() {
       setTipOptionsOpen(false);
       setTipSplitMode("proportional");
       setManualTipAmounts({});
+      setProcessingStage("complete");
       setStatus("AI parsed the receipt. Review and edit the results as needed.");
     } catch (error) {
       console.error(error);
+      setProcessingStage("error");
       setAiError(
         error instanceof Error
           ? error.message
           : "AI parsing failed. Please try again."
       );
+      setStatus("AI parsing failed. Check the error and retry.");
     } finally {
       setAiParsing(false);
+    }
+  }
+
+  function selectSplitItemSuggestion(description: string) {
+    const suffix = splitMessage.slice(splitTokenEnd);
+    const needsSpace =
+      suffix.length === 0 && !/[;,\s]$/.test(description);
+    const updatedMessage =
+      splitMessage.slice(0, splitTokenStart) +
+      description +
+      (needsSpace ? " " : "") +
+      suffix;
+    const nextCursor =
+      splitTokenStart + description.length + (needsSpace ? 1 : 0);
+
+    setSplitMessage(updatedMessage);
+    setSplitCursorPosition(nextCursor);
+    requestAnimationFrame(() => {
+      splitInputRef.current?.focus();
+      splitInputRef.current?.setSelectionRange(nextCursor, nextCursor);
+    });
+  }
+
+  function handleSplitInputKeyDown(
+    event: React.KeyboardEvent<HTMLTextAreaElement>
+  ) {
+    if (event.key === "Tab" && splitInlineSuggestion) {
+      event.preventDefault();
+      selectSplitItemSuggestion(splitInlineSuggestion.description);
     }
   }
 
@@ -868,6 +1036,8 @@ export default function ReceiptScanner() {
     setFrozenImage(null);
     setReceiptDocumentDataUrl(null);
     setReceiptDocumentName("");
+    setProcessingStage("idle");
+    setOcrCompleted(false);
     setExtractedText("");
     setReceiptRows([]);
     setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
@@ -880,7 +1050,6 @@ export default function ReceiptScanner() {
     setSplitMessage("");
     setSplitError("");
     setProgress(0);
-    void startCamera();
   }
 
   useEffect(() => {
@@ -895,8 +1064,8 @@ export default function ReceiptScanner() {
         Splits Receipt Scanner
       </h1>
       <p className="text-sm text-gray-600 sm:text-base">
-        Fit the receipt inside the on-screen guide, keep it flat and well lit,
-        then freeze the image to extract its text.
+        Fit the receipt inside the guide, keep it flat and well lit, then freeze
+        it. Select Extract text when you are ready to scan it.
       </p>
 
       <div className="relative w-full min-w-0 overflow-hidden rounded-xl bg-black">
@@ -1000,7 +1169,13 @@ export default function ReceiptScanner() {
         }}
       />
 
-      <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
+      <div
+        className={
+          frozenImage
+            ? "grid w-full grid-cols-3 gap-2"
+            : "grid grid-cols-2 gap-3 sm:flex sm:flex-wrap"
+        }
+      >
         {!cameraOn && !frozenImage && (
           <button
             onClick={() => void startCamera()}
@@ -1040,14 +1215,25 @@ export default function ReceiptScanner() {
         {frozenImage && (
           <>
             <button
+              type="button"
               onClick={extractText}
-              className="min-h-12 min-w-0 rounded-lg bg-green-600 px-4 py-3 text-sm font-semibold text-white sm:text-base"
+              disabled={
+                processingStage === "extracting" ||
+                processingStage === "parsing"
+              }
+              className="min-h-12 min-w-0 rounded-lg bg-green-600 px-2 py-3 text-xs font-semibold text-white disabled:cursor-wait disabled:opacity-60 sm:px-4 sm:text-base"
             >
-              Extract text
+              {processingStage === "extracting"
+                ? "Extracting..."
+                : processingStage === "parsing"
+                  ? "Organizing..."
+                  : extractedText
+                    ? "Extract again"
+                    : "Extract text"}
             </button>
             <button
               onClick={retake}
-              className="min-h-12 min-w-0 rounded-lg border px-4 py-3 text-sm sm:text-base"
+              className="min-h-12 min-w-0 rounded-lg border px-2 py-3 text-xs sm:px-4 sm:text-base"
             >
               Retake
             </button>
@@ -1057,31 +1243,114 @@ export default function ReceiptScanner() {
         <button
           type="button"
           onClick={() => receiptFileInputRef.current?.click()}
-          className="col-span-2 min-h-12 min-w-0 rounded-lg border bg-white px-4 py-3 text-sm font-semibold sm:col-span-1 sm:text-base"
+          aria-label="Upload receipt image or PDF"
+          className={`min-h-12 min-w-0 rounded-lg border bg-white px-2 py-3 text-xs font-semibold sm:px-4 sm:text-base ${
+            frozenImage ? "" : "col-span-2 sm:col-span-1"
+          }`}
         >
-          Upload receipt image or PDF
+          {frozenImage ? "Upload" : "Upload receipt image or PDF"}
         </button>
       </div>
-      {aiError && (
+      {!receiptDocumentDataUrl && aiError && (
         <p role="alert" className="break-words text-sm text-red-700">
           {aiError}
         </p>
       )}
-
-      {progress > 0 && progress < 100 && (
-        <div>
-          <div className="mb-1 text-sm">OCR progress: {progress}%</div>
-          <progress value={progress} max={100} className="w-full" />
-        </div>
+      {receiptDocumentDataUrl && (
+        <section
+          aria-live="polite"
+          aria-busy={
+            processingStage === "extracting" || processingStage === "parsing"
+          }
+          className="space-y-3 rounded-xl border bg-white p-4"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-semibold">Receipt processing</h2>
+            <span className="max-w-full break-all text-sm text-gray-600">
+              {receiptDocumentName}
+            </span>
+          </div>
+          <ol className="space-y-3">
+            {[
+              {
+                label: "Read receipt text",
+                detail: extractionStatus,
+                active: processingStage === "extracting",
+                done: isPdfReceipt || ocrCompleted,
+              },
+              {
+                label: "Organize items and totals with AI",
+                detail: parsingStatus,
+                active: processingStage === "parsing",
+                done: processingStage === "complete",
+                failed: processingStage === "error",
+              },
+              {
+                label: "Review parsed receipt",
+                detail: aiParsed ? "Ready" : "Available when parsing finishes",
+                active: false,
+                done: aiParsed,
+              },
+            ].map((step, index) => (
+              <li key={step.label} className="flex items-start gap-3">
+                <span
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
+                    step.failed
+                      ? "bg-red-100 text-red-800"
+                      : step.done
+                        ? "bg-green-100 text-green-800"
+                        : step.active
+                          ? "bg-blue-100 text-blue-800"
+                          : "bg-gray-100 text-gray-600"
+                  }`}
+                  aria-hidden="true"
+                >
+                  {step.failed ? "!" : step.done ? "✓" : index + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                    <span className="font-medium">{step.label}</span>
+                    <span
+                      className={`text-sm ${
+                        step.failed ? "text-red-700" : "text-gray-600"
+                      }`}
+                    >
+                      {step.detail}
+                    </span>
+                  </div>
+                  {step.active && (
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-blue-100">
+                      {processingStage === "extracting" && progress > 0 ? (
+                        <div
+                          className="h-full bg-blue-600 transition-all"
+                          style={{ width: `${progress}%` }}
+                        />
+                      ) : (
+                        <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-600" />
+                      )}
+                    </div>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+          {aiError && (
+            <p role="alert" className="break-words text-sm text-red-700">
+              {aiError}
+            </p>
+          )}
+        </section>
       )}
 
-      {(extractedText || isPdfReceipt) && (
+      {receiptDocumentDataUrl && (
         <section className="min-w-0 space-y-3 rounded-xl border p-3 sm:p-4">
           <h2 className="text-xl font-semibold">Receipt text</h2>
           <p className="text-sm text-gray-600">
             {isPdfReceipt
-              ? "Select Parse receipt with AI to send this PDF to Gemini for item and total extraction."
-              : "OCR extracts the printed text. Select Parse receipt with AI to send the receipt image and text to Gemini for item and total extraction."}{" "}
+              ? "The PDF is sent to Gemini for item and total extraction."
+              : "Select Extract text to read the receipt. Its image and extracted text are then sent to Gemini for item and total extraction."}{" "}
+            AI parsing sends the receipt to Gemini and may use your project’s API
+            quota.{" "}
             Review the results against the original receipt.
           </p>
           {aiParsed && (
@@ -1261,18 +1530,147 @@ export default function ReceiptScanner() {
                   </div>
 
                   <form onSubmit={sendSplitMessage} className="space-y-2">
-                    <label htmlFor="split-instruction" className="sr-only">
-                      Describe how to split the receipt items
-                    </label>
-                    <textarea
-                      id="split-instruction"
-                      value={splitMessage}
-                      onChange={(event) => setSplitMessage(event.target.value)}
-                      placeholder="e.g. Sandy gets the burger; Bob and Joe split the pizza"
-                      rows={3}
-                      maxLength={1000}
-                      className="w-full min-w-0 rounded-lg border p-3 text-base"
-                    />
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <label htmlFor="split-instruction" className="text-sm font-medium">
+                        Describe how to split the receipt items
+                      </label>
+                      <button
+                        type="button"
+                        aria-pressed={splitSuggestionsEnabled}
+                        onClick={() =>
+                          setSplitSuggestionsEnabled((enabled) => !enabled)
+                        }
+                        className="min-h-10 rounded-lg border px-3 py-2 text-sm font-medium"
+                      >
+                        Receipt item suggestions:{" "}
+                        {splitSuggestionsEnabled ? "On" : "Off"}
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="relative">
+                        {splitInlineSuggestion && (
+                          <div
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent"
+                          >
+                            <div
+                              className="whitespace-pre-wrap break-words px-3 py-3 font-sans text-base leading-6 text-gray-900"
+                              style={{
+                                transform: `translateY(-${splitInputScrollTop}px)`,
+                              }}
+                            >
+                              <span>
+                                {splitMessage.slice(0, splitTokenStart)}
+                              </span>
+                              {splitInlineSuggestion.matchedWord?.startsWith(
+                                splitSuggestionQuery
+                              ) ? (
+                                <>
+                                  <span>
+                                    {splitTokenBeforeCursor +
+                                      splitTokenAfterCursor}
+                                  </span>
+                                  <span className="text-gray-400">
+                                    {splitInlineSuggestion.matchedWord.slice(
+                                      splitSuggestionQuery.length
+                                    )}
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-gray-500 line-through">
+                                    {splitTokenBeforeCursor +
+                                      splitTokenAfterCursor}
+                                  </span>
+                                  <span className="font-semibold text-blue-700">
+                                    {splitInlineSuggestion.matchedWord}
+                                  </span>
+                                </>
+                              )}
+                              <span>
+                                {splitMessage.slice(splitTokenEnd) || "\u200b"}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                        <textarea
+                          ref={splitInputRef}
+                          id="split-instruction"
+                          value={splitMessage}
+                          onChange={(event) => {
+                            setSplitMessage(event.target.value);
+                            setSplitCursorPosition(
+                              event.currentTarget.selectionStart
+                            );
+                          }}
+                          onClick={(event) =>
+                            setSplitCursorPosition(
+                              event.currentTarget.selectionStart
+                            )
+                          }
+                          onSelect={(event) =>
+                            setSplitCursorPosition(
+                              event.currentTarget.selectionStart
+                            )
+                          }
+                          onKeyUp={(event) =>
+                            setSplitCursorPosition(
+                              event.currentTarget.selectionStart
+                            )
+                          }
+                          onKeyDown={handleSplitInputKeyDown}
+                          onScroll={(event) =>
+                            setSplitInputScrollTop(
+                              event.currentTarget.scrollTop
+                            )
+                          }
+                          placeholder="e.g. Sandy gets the burger; Bob and Joe split the pizza"
+                          rows={3}
+                          maxLength={1000}
+                          aria-autocomplete="list"
+                          aria-controls="split-item-suggestions"
+                          className={`relative w-full min-w-0 rounded-lg border p-3 text-base leading-6 ${
+                            splitInlineSuggestion
+                              ? "bg-transparent text-transparent caret-gray-900 selection:bg-blue-200"
+                              : ""
+                          }`}
+                        />
+                      </div>
+                      {splitInlineSuggestion && (
+                        <p className="text-xs text-gray-600" aria-live="polite">
+                          Press <kbd className="rounded border px-1">Tab</kbd>{" "}
+                          to replace with{" "}
+                          <span className="font-medium text-gray-800">
+                            {splitInlineSuggestion.description}
+                          </span>
+                        </p>
+                      )}
+                      {splitItemSuggestions.length > 0 && (
+                        <ul
+                          id="split-item-suggestions"
+                          role="listbox"
+                          aria-label="Receipt item suggestions"
+                          className="overflow-hidden rounded-lg border bg-white"
+                        >
+                          {splitItemSuggestions.map((description) => (
+                            <li key={description} role="presentation">
+                              <button
+                                type="button"
+                                role="option"
+                                aria-selected="false"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() =>
+                                  selectSplitItemSuggestion(description)
+                                }
+                                className="min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-blue-50 focus:bg-blue-50"
+                              >
+                                {description}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                     <button
                       type="submit"
                       disabled={!splitMessage.trim() || splitParsing}
@@ -1502,13 +1900,18 @@ export default function ReceiptScanner() {
             </div>
           )}
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={parseWithAi}
-              disabled={aiParsing || !receiptDocumentDataUrl}
-              className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white disabled:cursor-wait disabled:opacity-60"
-            >
-              {aiParsing ? "Parsing receipt..." : "Parse receipt with AI"}
-            </button>
+            {aiError && !aiParsed && (
+              <button
+                type="button"
+                onClick={() =>
+                  void parseWithAi(extractedText, receiptDocumentDataUrl)
+                }
+                disabled={aiParsing}
+                className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white disabled:cursor-wait disabled:opacity-60"
+              >
+                {aiParsing ? "Retrying..." : "Retry AI parsing"}
+              </button>
+            )}
             {extractedText && (
               <button
                 onClick={() => navigator.clipboard.writeText(extractedText)}
@@ -1531,7 +1934,15 @@ export default function ReceiptScanner() {
             />
           ) : (
             <p className="text-sm text-gray-600">
-              This PDF will be read directly by the AI parser.
+              {isPdfReceipt
+                ? "The PDF will be read directly by the AI parser."
+                : processingStage === "idle"
+                  ? "Select Extract text to run OCR. When it finishes, AI parsing starts automatically."
+                  : aiParsing
+                    ? "Reading text and organizing receipt items..."
+                    : ocrCompleted
+                      ? "No text was extracted. The AI parser will try reading the original image."
+                      : "Text extraction has not started."}
             </p>
           )}
         </section>

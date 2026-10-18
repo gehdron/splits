@@ -15,19 +15,19 @@ Use **Switch camera** to change cameras. For better live recognition, place the
 receipt inside the on-screen guide, fill as much of it as possible, keep it
 flat, hold the camera steady, and use bright even lighting. The live scanner
 focuses on the guided area, enlarges it, and boosts image contrast before OCR.
-After you select **Freeze frame**, the app prepares a higher-resolution,
-contrast-enhanced OCR image and shows the word boxes over the original. OCR
-first uses a small internal preview to estimate the text's horizontal bounds,
-then may crop the image internally for a higher-resolution pass; the full
-original photo remains visible, and the crop preserves the full image height.
-Select **Extract text** to run OCR again and review or edit the result.
+After you select **Freeze frame**, the full original photo remains visible.
+Select **Extract text** to prepare a higher-resolution, contrast-enhanced OCR
+image and show recognized word boxes over the photo. OCR first uses a small
+internal preview to estimate the text's horizontal bounds, then may crop the
+image internally for a higher-resolution pass; the crop preserves the full
+image height. AI parsing starts automatically after text extraction completes.
 Camera access requires a secure context: use `localhost` for local development
 and HTTPS when accessing the app from another device.
 
-OCR extracts and displays the recognized text and word boxes. It does not
-organize the text into items or totals on its own. Select **Parse with AI** to
-organize OCR text into editable item and total fields; review results against
-the original because OCR and AI can make mistakes.
+OCR extracts and displays the recognized text and word boxes. Gemini
+automatically organizes the receipt into editable item and total fields after
+extraction. Review results against the original because OCR and AI can make
+mistakes.
 
 For optional AI parsing, create `.env.local` in the project root and add:
 
@@ -35,19 +35,24 @@ For optional AI parsing, create `.env.local` in the project root and add:
 GEMINI_API_KEY=your_gemini_api_key
 ```
 
-Restart the development server, freeze a receipt, and select
-**Parse photo with AI**. The app sends both the frozen receipt photo and
-extracted text to Gemini 3.8 Flash; the photo is sent only when you select this
-button and must be 8 MB or smaller. AI parsing requires a Gemini API key and
-may incur API charges depending on your account and usage. OCR extraction and
-the raw text remain available without an API key.
-You can also use **Upload receipt image or PDF** instead of the camera. JPEG,
-PNG, and WebP images go through OCR before AI parsing; PDFs are sent directly
-to the AI parser. Files must be 8 MB or smaller.
+Restart the development server, freeze a receipt, and select **Extract text**.
+The app sends the frozen photo and extracted text to Gemini 3.8 Flash after OCR
+completes. You can also use **Upload receipt image or PDF** instead of the
+camera. Select **Extract text** after uploading a JPEG, PNG, or WebP image to
+run OCR and start automatic AI parsing; PDFs are parsed directly after upload.
+The scanner shows extraction, AI parsing, and review progress; if AI parsing
+fails, it displays the error and a retry option. Files must be 8 MB or smaller.
+AI parsing requires a Gemini API key and may incur API charges depending on
+your account and usage. OCR extraction and raw text remain available without
+an API key.
 
 After AI parsing, select **Split items with chat** to assign receipt items
 using natural-language instructions. Shared items are split equally; parsed
 tax is allocated proportionally to each person's share of the item amounts.
+While typing split instructions, item-name suggestions are based on the
+AI-parsed receipt items and can be toggled on or off. Matching names appear as
+inline completions; press **Tab** to replace the current word with the
+suggested receipt item.
 Open **Tip options** to split the receipt tip proportionally, set a custom tip
 amount for each person, or leave the tip out of split totals. Any unassigned
 items keep their associated tax and tip under **Unassigned** until they are
