@@ -95,3 +95,10 @@
   display: grid;
   gap: 10px;
 }
+
+@media (max-width: 600px) {
+  .p2 .auth {
+    max-width: 360px;
+    padding: 48px 16px 96px;
+  }
+}
