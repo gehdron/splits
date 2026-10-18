@@ -85,7 +85,7 @@ export function BankLink({ bank }: { bank: string | null }) {
 
   return (
     <div className="payouts-bank">
-      <p className="note">Optional first step: link your bank with Plaid so Stripe already has it.</p>
+      <p className="note">Link your bank with Plaid. Recent charges come from that account, and Stripe can use it for payouts.</p>
       <button className="btn btn-b" type="button" onClick={() => void linkBank()} disabled={busy}>
         {busy ? "Opening Plaid…" : bank ? "Use a different bank" : "Link your bank with Plaid"}
       </button>

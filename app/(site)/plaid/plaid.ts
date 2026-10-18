@@ -1,7 +1,7 @@
 import "server-only";
 
-// Plaid is only for the organizer's own bank (where their payouts land). Friends never see Plaid;
-// they pay with Stripe Checkout. Plain fetch keeps this to the four calls we need.
+// Plaid is the organizer's own bank: payout account, and the recent charges on the dashboard.
+// Friends never see Plaid; they pay with Stripe Checkout. Plain fetch keeps this to the calls we need.
 export function plaidConfigured() {
   return Boolean(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET);
 }
@@ -23,8 +23,12 @@ async function plaid<T>(path: string, body: Record<string, unknown>): Promise<T>
     body: JSON.stringify({ client_id: clientId, secret, ...body }),
     cache: "no-store",
   });
-  const data = (await response.json().catch(() => null)) as (T & { error_message?: string }) | null;
-  if (!response.ok || !data) throw new Error(data?.error_message ?? `Plaid ${path} failed (${response.status}).`);
+  const data = (await response.json().catch(() => null)) as (T & { error_message?: string; error_code?: string }) | null;
+  if (!response.ok || !data) {
+    const error = new Error(data?.error_message ?? `Plaid ${path} failed (${response.status}).`) as Error & { code?: string };
+    error.code = data?.error_code;
+    throw error;
+  }
   return data;
 }
 
@@ -32,7 +36,7 @@ export function createLinkToken(userId: string, redirectUri: string) {
   return plaid<{ link_token: string; expiration: string }>("/link/token/create", {
     user: { client_user_id: userId },
     client_name: "Splits",
-    products: ["auth"],
+    products: ["auth", "transactions"],
     country_codes: ["US"],
     language: "en",
     redirect_uri: redirectUri,
@@ -51,7 +55,26 @@ export function stripeBankAccountToken(accessToken: string, accountId: string) {
   });
 }
 
-// We only need the access token once. Removing the item afterwards means Splits keeps no bank access.
+export type PlaidTransaction = {
+  transaction_id: string;
+  name: string;
+  merchant_name: string | null;
+  amount: number;
+  date: string;
+  pending: boolean;
+};
+
+// Posted charges for the dashboard. Amounts are positive when money left the account.
+export function transactionsGet(accessToken: string, startDate: string, endDate: string) {
+  return plaid<{ transactions: PlaidTransaction[] }>("/transactions/get", {
+    access_token: accessToken,
+    start_date: startDate,
+    end_date: endDate,
+    options: { count: 25, offset: 0 },
+  });
+}
+
+// Drop a link we could not store. A stored link stays, so recent charges can be read later.
 export function removeItem(accessToken: string) {
   return plaid<{ request_id: string }>("/item/remove", { access_token: accessToken });
 }

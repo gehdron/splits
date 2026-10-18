@@ -7,15 +7,14 @@ import { exitGroup } from "./actions";
 import { DashSidebar } from "./sidebar";
 import type { DashboardData } from "./types";
 
-const charges = [
-  { merchant: "Noodle House", date: "Today", amount: "$142.60", status: "split" as const, label: "2 of 3 paid" },
-  { merchant: "Uber", date: "Yesterday", amount: "$23.40", status: "none" as const },
-  { merchant: "Trader Joe's", date: "Oct 12", amount: "$54.20", status: "split" as const, label: "1 of 3 paid" },
-  { merchant: "Amazon", date: "Oct 10", amount: "$38.97", status: "none" as const },
-  { merchant: "Comcast Internet", date: "Oct 1", amount: "$60.00", status: "settled" as const, label: "Settled" },
-];
-
-type Charge = (typeof charges)[number];
+type Charge = {
+  id: string;
+  merchant: string;
+  date: string;
+  amount: string;
+  status: "none" | "split" | "settled";
+  label?: string;
+};
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -74,6 +73,9 @@ export function Board({ data }: { data: DashboardData }) {
   const [creatingList, setCreatingList] = useState(false);
   const [suggestingName, setSuggestingName] = useState(false);
   const [sharedLists, setSharedLists] = useState<{ id: string; name: string; itemCount: number }[] | null>(null);
+  const [charges, setCharges] = useState<Charge[] | null>(null);
+  const [chargesNote, setChargesNote] = useState("");
+  const [bankLinked, setBankLinked] = useState(true);
   const listNameInput = useRef<HTMLInputElement>(null);
   const creatingRef = useRef(false);
   const [exitState, exitAction, exitPending] = useActionState(exitGroup, undefined);
@@ -195,6 +197,21 @@ export function Board({ data }: { data: DashboardData }) {
   useEffect(() => {
     let cancel = false;
     (async () => {
+      const res = await fetch("/api/plaid/transactions");
+      const body = (await res.json().catch(() => null)) as { charges?: Charge[]; linked?: boolean; error?: string } | null;
+      if (cancel) return;
+      setBankLinked(body?.linked !== false);
+      setCharges(Array.isArray(body?.charges) ? body.charges : []);
+      setChargesNote(body?.error ?? "");
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
       const res = await fetch("/api/lists");
       if (!res.ok || cancel) return;
       const rows = (await res.json()) as { id: string; name: string; itemCount: number }[];
@@ -210,17 +227,17 @@ export function Board({ data }: { data: DashboardData }) {
     setSplitTarget(charge);
   }
 
-  const groupQuery = splitGroupId ? `?group=${encodeURIComponent(splitGroupId)}` : "";
-  // The scanner shows which charge it's splitting, so it gets the charge too.
-  const itemQuery = new URLSearchParams(splitGroupId ? { group: splitGroupId } : {});
+  // Both split pages show which charge it's splitting, so they get the charge too.
+  const splitQuery = new URLSearchParams(splitGroupId ? { group: splitGroupId } : {});
   if (splitTarget) {
-    itemQuery.set("merchant", splitTarget.merchant);
-    itemQuery.set("amount", splitTarget.amount);
-    itemQuery.set("date", splitTarget.date);
+    splitQuery.set("merchant", splitTarget.merchant);
+    splitQuery.set("amount", splitTarget.amount);
+    splitQuery.set("date", splitTarget.date);
   }
-  const itemQueryString = itemQuery.toString();
-  const itemSplitHref = `/dashboard/item-by-item${itemQueryString ? `?${itemQueryString}` : ""}`;
-  const evenSplitHref = `/dashboard/even${groupQuery}`;
+  const splitQueryString = splitQuery.toString();
+  const splitSuffix = splitQueryString ? `?${splitQueryString}` : "";
+  const itemSplitHref = `/dashboard/item-by-item${splitSuffix}`;
+  const evenSplitHref = `/dashboard/even${splitSuffix}`;
 
   useEffect(() => {
     const dialog = splitDialog.current;
@@ -228,7 +245,7 @@ export function Board({ data }: { data: DashboardData }) {
     dialog.showModal();
   }, [splitTarget]);
 
-  const visibleCharges = charges.filter((charge) => {
+  const visibleCharges = (charges ?? []).filter((charge) => {
     if (chargeFilter === "all") return true;
     if (chargeFilter === "none") return charge.status === "none";
     return charge.status !== "none";
@@ -286,7 +303,7 @@ export function Board({ data }: { data: DashboardData }) {
                 <div className="shead">
                   <div>
                     <h2 id="rc-h">Recent charges</h2>
-                    <p className="sub">Sample charges. Choose item by item or an even split.</p>
+                    <p className="sub">From your linked bank. Choose item by item or an even split.</p>
                   </div>
                   <div className="seg inline" role="group" aria-label="Filter charges">
                     {(
@@ -302,9 +319,23 @@ export function Board({ data }: { data: DashboardData }) {
                     ))}
                   </div>
                 </div>
+                {charges === null ? (
+                  <p className="empty">Loading charges…</p>
+                ) : visibleCharges.length === 0 ? (
+                  <p className="empty">
+                    {chargesNote
+                      ? chargesNote
+                      : bankLinked
+                        ? chargeFilter === "all"
+                          ? "No recent charges on that bank."
+                          : "No charges in this filter."
+                        : "Link your bank to see recent charges."}{" "}
+                    {!bankLinked && !chargesNote ? <Link href="/account">Link your bank</Link> : null}
+                  </p>
+                ) : (
                 <ul className="rows">
                   {visibleCharges.map((charge) => (
-                    <li key={charge.merchant} className="ch">
+                    <li key={charge.id} className="ch">
                       <span className="mic" aria-hidden="true">
                         {charge.merchant.charAt(0)}
                       </span>
@@ -325,6 +356,7 @@ export function Board({ data }: { data: DashboardData }) {
                     </li>
                   ))}
                 </ul>
+                )}
               </section>
 
               <section className="sec" aria-labelledby="sl-h">

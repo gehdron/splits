@@ -1547,7 +1547,7 @@ export default function ListPage() {
                           <span />
                         ) : (
                           <button className="btn line" type="button" aria-expanded={open} onClick={() => openRequest(o.name)}>
-                            {link?.status === "sent" ? "Send again" : "Request"}
+                            {link?.status === "sent" ? "Share again" : "Share link"}
                           </button>
                         )}
                         {open ? (
@@ -1571,7 +1571,7 @@ export default function ListPage() {
                                 autoComplete="off"
                               />
                               <button className="btn" type="submit" disabled={requestBusy || !requestHandle.trim()}>
-                                {requestBusy ? "Sending…" : "Send pay link"}
+                                {requestBusy ? "Sharing…" : "Share link"}
                               </button>
                             </div>
                             <button className="btn txt" type="button" disabled={requestBusy} onClick={() => void requestPay(o.name, false)}>

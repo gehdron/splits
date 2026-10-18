@@ -56,5 +56,16 @@ create policy "organizers read their shares" on public.shares
 
 -- If you ran an earlier version of this file, these bring it up to date.
 alter table public.payout_accounts add column if not exists onboarding_started_at timestamptz;
+
+-- The organizer's Plaid item, kept so recent charges can be read. No policies: service role only,
+-- so the access token is not readable from the browser.
+create table if not exists public.plaid_links (
+  user_id uuid primary key references public.profiles (id) on delete cascade,
+  item_id text,
+  access_token text not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.plaid_links enable row level security;
 alter table public.shares drop constraint if exists shares_status_check;
 alter table public.shares add constraint shares_status_check check (status in ('unpaid', 'sent', 'paid', 'void'));
