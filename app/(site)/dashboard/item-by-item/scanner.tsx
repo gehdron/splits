@@ -48,6 +48,27 @@ type ReceiptProcessingStage =
 
 const MAX_PDF_BYTES = 4 * 1024 * 1024;
 
+function getEditDistance(left: string, right: string) {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  const current = new Array<number>(right.length + 1);
+
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    current[0] = leftIndex;
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      current[rightIndex] = Math.min(
+        current[rightIndex - 1] + 1,
+        previous[rightIndex] + 1,
+        previous[rightIndex - 1] +
+          (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1),
+      );
+    }
+    for (let index = 0; index <= right.length; index += 1) {
+      previous[index] = current[index];
+    }
+  }
+  return previous[right.length];
+}
+
 function isSplitAssistantResult(value: unknown): value is SplitAssistantResult {
   return (
     typeof value === "object" &&
@@ -378,6 +399,7 @@ export function ReceiptScanner({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const receiptFileInputRef = useRef<HTMLInputElement>(null);
+  const splitInputRef = useRef<HTMLTextAreaElement>(null);
   const receiptViewportRef = useRef<HTMLDivElement>(null);
   const assignmentSectionRef = useRef<HTMLElement>(null);
   const autoCameraStarted = useRef(false);
@@ -421,6 +443,9 @@ export function ReceiptScanner({
   const [splitAssistantOpen, setSplitAssistantOpen] = useState(false);
   const [splitMessages, setSplitMessages] = useState<SplitInstructionMessage[]>([]);
   const [splitMessage, setSplitMessage] = useState("");
+  const [splitSuggestionsEnabled, setSplitSuggestionsEnabled] = useState(true);
+  const [splitCursorPosition, setSplitCursorPosition] = useState(0);
+  const [splitInputScrollTop, setSplitInputScrollTop] = useState(0);
   const [splitParsing, setSplitParsing] = useState(false);
   const [splitError, setSplitError] = useState("");
   const [userNames, setUserNames] = useState<string[]>(people);
@@ -471,6 +496,111 @@ export function ReceiptScanner({
         : processingStage === "error"
           ? "Failed · retry available"
           : "Waiting";
+  const splitSafeCursor = Math.min(splitCursorPosition, splitMessage.length);
+  const splitTextBeforeCursor = splitMessage.slice(0, splitSafeCursor);
+  const splitTextAfterCursor = splitMessage.slice(splitSafeCursor);
+  const splitTokenBeforeCursor =
+    splitTextBeforeCursor.match(/[^\s;,\n]+$/)?.[0] ?? "";
+  const splitTokenAfterCursor =
+    splitTextAfterCursor.match(/^[^\s;,\n]*/)?.[0] ?? "";
+  const splitTokenStart = splitSafeCursor - splitTokenBeforeCursor.length;
+  const splitTokenEnd = splitSafeCursor + splitTokenAfterCursor.length;
+  const splitSuggestionQuery = (
+    splitTokenBeforeCursor + splitTokenAfterCursor
+  ).toLocaleLowerCase();
+  const splitSuggestions =
+    splitSuggestionsEnabled && splitSuggestionQuery.length >= 2
+      ? receiptRows
+          .map((item) => item.description.trim())
+          .filter(Boolean)
+          .map((description) => {
+            const words = description
+              .toLocaleLowerCase()
+              .split(/[^\p{L}\p{N}]+/u)
+              .filter(Boolean);
+            const scores = words.flatMap((word) => {
+              if (word === splitSuggestionQuery) return [];
+              if (word.startsWith(splitSuggestionQuery)) {
+                return [
+                  0.1 +
+                    (word.length - splitSuggestionQuery.length) / 100,
+                ];
+              }
+              const distance = getEditDistance(splitSuggestionQuery, word);
+              const maxDistance = splitSuggestionQuery.length <= 4 ? 1 : 2;
+              return distance <= maxDistance
+                ? [
+                    1 +
+                      distance +
+                      Math.abs(word.length - splitSuggestionQuery.length) /
+                        100,
+                  ]
+                : [];
+            });
+            const matchedWord = words
+              .filter((word) => word !== splitSuggestionQuery)
+              .find(
+                (word) =>
+                  word.startsWith(splitSuggestionQuery) ||
+                  getEditDistance(splitSuggestionQuery, word) <=
+                    (splitSuggestionQuery.length <= 4 ? 1 : 2),
+              );
+            return {
+              description,
+              score: Math.min(...scores),
+              matchedWord,
+              matchedWordStart: matchedWord
+                ? description
+                    .toLocaleLowerCase()
+                    .indexOf(matchedWord.toLocaleLowerCase())
+                : -1,
+            };
+          })
+          .filter((suggestion) => Number.isFinite(suggestion.score))
+          .sort((left, right) => left.score - right.score)
+          .filter(
+            (suggestion, index, all) =>
+              all.findIndex(
+                (candidate) =>
+                  candidate.description.toLocaleLowerCase() ===
+                  suggestion.description.toLocaleLowerCase(),
+              ) === index,
+          )
+      : [];
+  const splitItemSuggestions = splitSuggestions
+    .slice(0, 5)
+    .map((suggestion) => suggestion.description);
+  const splitInlineSuggestion = splitSuggestions[0] ?? null;
+
+  function selectSplitItemSuggestion(description: string) {
+    const suffix = splitMessage.slice(splitTokenEnd);
+    const needsSpace =
+      suffix.length === 0 && !/[;,\s]$/.test(description);
+    const updatedMessage =
+      splitMessage.slice(0, splitTokenStart) +
+      description +
+      (needsSpace ? " " : "") +
+      suffix;
+    const nextCursor =
+      splitTokenStart + description.length + (needsSpace ? 1 : 0);
+
+    setSplitMessage(updatedMessage);
+    setSplitCursorPosition(nextCursor);
+    requestAnimationFrame(() => {
+      splitInputRef.current?.focus();
+      splitInputRef.current?.setSelectionRange(nextCursor, nextCursor);
+    });
+  }
+
+  function handleSplitInputKeyDown(
+    event: React.KeyboardEvent<HTMLTextAreaElement>,
+  ) {
+    if (event.key === "Tab" && splitInlineSuggestion) {
+      event.preventDefault();
+      selectSplitItemSuggestion(splitInlineSuggestion.description);
+    }
+  }
+
   function selectTipSplitMode(mode: TipSplitMode) {
     if (mode === "manual" && tipSplitMode !== "manual") {
       setManualTipAmounts((currentAmounts) => {
@@ -2279,19 +2409,141 @@ export function ReceiptScanner({
                       <p className="msg err" role="alert">{splitError}</p>
                     ) : null}
                     <form className="receipt-chat-form" onSubmit={sendSplitMessage}>
-                      <label className="lbl" htmlFor="receipt-split-instruction">
-                        Describe who gets each item
-                      </label>
-                      <textarea
-                        id="receipt-split-instruction"
-                        className="field"
-                        value={splitMessage}
-                        maxLength={1000}
-                        rows={3}
-                        placeholder="Who had each item?"
-                        disabled={splitParsing}
-                        onChange={(event) => setSplitMessage(event.target.value)}
-                      />
+                      <div className="receipt-chat-input-heading">
+                        <label className="lbl" htmlFor="receipt-split-instruction">
+                          Describe who gets each item
+                        </label>
+                        <button
+                          className="receipt-suggestion-toggle"
+                          type="button"
+                          aria-pressed={splitSuggestionsEnabled}
+                          onClick={() =>
+                            setSplitSuggestionsEnabled((enabled) => !enabled)
+                          }
+                        >
+                          Receipt item suggestions:{" "}
+                          {splitSuggestionsEnabled ? "On" : "Off"}
+                        </button>
+                      </div>
+                      <div className="receipt-suggestion-field">
+                        {splitInlineSuggestion ? (
+                          <div
+                            className="receipt-suggestion-preview"
+                            aria-hidden="true"
+                          >
+                            <div
+                              style={{
+                                transform: `translateY(-${splitInputScrollTop}px)`,
+                              }}
+                            >
+                              <span>
+                                {splitMessage.slice(0, splitTokenStart)}
+                              </span>
+                              {splitInlineSuggestion.matchedWord?.startsWith(
+                                splitSuggestionQuery,
+                              ) &&
+                              splitInlineSuggestion.matchedWordStart === 0 ? (
+                                <>
+                                  <span>
+                                    {splitTokenBeforeCursor +
+                                      splitTokenAfterCursor}
+                                  </span>
+                                  <span className="receipt-suggestion-completion">
+                                    {splitInlineSuggestion.description.slice(
+                                      splitInlineSuggestion.matchedWordStart +
+                                        splitSuggestionQuery.length,
+                                    )}
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="receipt-suggestion-replaced">
+                                    {splitTokenBeforeCursor +
+                                      splitTokenAfterCursor}
+                                  </span>
+                                  <span className="receipt-suggestion-match">
+                                    {splitInlineSuggestion.description}
+                                  </span>
+                                </>
+                              )}
+                              <span>
+                                {splitMessage.slice(splitTokenEnd) || "\u200b"}
+                              </span>
+                            </div>
+                          </div>
+                        ) : null}
+                        <textarea
+                          ref={splitInputRef}
+                          id="receipt-split-instruction"
+                          className={`field receipt-suggestion-textarea${splitInlineSuggestion ? " has-suggestion" : ""}`}
+                          value={splitMessage}
+                          maxLength={1000}
+                          rows={3}
+                          placeholder="Who had each item?"
+                          disabled={splitParsing}
+                          aria-autocomplete="list"
+                          aria-controls="receipt-item-suggestions"
+                          onChange={(event) => {
+                            setSplitMessage(event.target.value);
+                            setSplitCursorPosition(
+                              event.currentTarget.selectionStart,
+                            );
+                          }}
+                          onClick={(event) =>
+                            setSplitCursorPosition(
+                              event.currentTarget.selectionStart,
+                            )
+                          }
+                          onSelect={(event) =>
+                            setSplitCursorPosition(
+                              event.currentTarget.selectionStart,
+                            )
+                          }
+                          onKeyUp={(event) =>
+                            setSplitCursorPosition(
+                              event.currentTarget.selectionStart,
+                            )
+                          }
+                          onKeyDown={handleSplitInputKeyDown}
+                          onScroll={(event) =>
+                            setSplitInputScrollTop(
+                              event.currentTarget.scrollTop,
+                            )
+                          }
+                        />
+                      </div>
+                      {splitInlineSuggestion ? (
+                        <p className="receipt-suggestion-hint" aria-live="polite">
+                          Press <kbd>Tab</kbd> to replace with{" "}
+                          <strong>{splitInlineSuggestion.description}</strong>
+                        </p>
+                      ) : null}
+                      {splitItemSuggestions.length > 0 ? (
+                        <ul
+                          className="receipt-item-suggestions"
+                          id="receipt-item-suggestions"
+                          role="listbox"
+                          aria-label="Receipt item suggestions"
+                        >
+                          {splitItemSuggestions.map((description) => (
+                            <li key={description} role="presentation">
+                              <button
+                                type="button"
+                                role="option"
+                                aria-selected="false"
+                                onMouseDown={(event) =>
+                                  event.preventDefault()
+                                }
+                                onClick={() =>
+                                  selectSplitItemSuggestion(description)
+                                }
+                              >
+                                {description}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
                       <button
                         className="btn"
                         type="submit"
