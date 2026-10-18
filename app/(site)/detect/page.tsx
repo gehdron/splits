@@ -1040,6 +1040,25 @@ export default function ReceiptScanner() {
         {status}
       </p>
 
+      {frozenImage && (
+        <button
+          type="button"
+          onClick={extractText}
+          disabled={
+            processingStage === "extracting" || processingStage === "parsing"
+          }
+          className="min-h-12 w-full rounded-lg bg-green-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-wait disabled:opacity-60 sm:w-auto sm:text-base"
+        >
+          {processingStage === "extracting"
+            ? "Extracting text..."
+            : processingStage === "parsing"
+              ? "Organizing receipt..."
+              : extractedText
+                ? "Extract text again"
+                : "Extract text"}
+        </button>
+      )}
+
       {receiptDocumentDataUrl && (
         <section
           aria-live="polite"
@@ -1177,19 +1196,6 @@ export default function ReceiptScanner() {
 
         {frozenImage && (
           <>
-            <button
-              onClick={extractText}
-              disabled={processingStage === "extracting" || processingStage === "parsing"}
-              className="min-h-12 min-w-0 rounded-lg bg-green-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-wait disabled:opacity-60 sm:text-base"
-            >
-              {processingStage === "extracting"
-                ? "Extracting text..."
-                : processingStage === "parsing"
-                  ? "Organizing receipt..."
-                  : extractedText
-                    ? "Extract text again"
-                    : "Extract text"}
-            </button>
             <button
               onClick={retake}
               className="min-h-12 min-w-0 rounded-lg border px-4 py-3 text-sm sm:text-base"
