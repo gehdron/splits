@@ -1,5 +1,5 @@
-// File-backed lists for a local Next.js run. The iMessage agent writes to Supabase instead.
-// On Vercel, lib/live-lists.ts uses the same bill_lists tables.
+// File-backed lists only when Supabase is not configured. With SUPABASE_SERVICE_ROLE_KEY set,
+// lib/live-lists.ts reads and writes the bill_lists tables instead, locally and on Vercel.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";

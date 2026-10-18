@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
+import { rememberListCharge } from "@/lib/split-charges";
 import { DashSidebar } from "../sidebar";
 import type { DashboardData } from "../types";
 import "./even.css";
@@ -90,6 +91,7 @@ export function EvenSplitView({ data }: { data: DashboardData }) {
   const search = useSearchParams();
   const meName = data.me.name.trim() || "You";
   const merchant = search.get("merchant")?.trim() || "Charge";
+  const chargeId = search.get("charge")?.trim() ?? "";
   const chargeDate = search.get("date")?.trim() || "";
   const totalCents = centsFromDollars(search.get("amount") ?? "");
   const [others, setOthers] = useState<Person[]>([]);
@@ -170,10 +172,11 @@ export function EvenSplitView({ data }: { data: DashboardData }) {
       const created = await fetch("/api/lists", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: merchant }),
+        body: JSON.stringify({ name: merchant, chargeId }),
       });
       const list = (await created.json().catch(() => null)) as { id?: string; error?: string } | null;
       if (!created.ok || !list?.id) throw new Error(list?.error || "The list could not be created.");
+      if (chargeId) rememberListCharge(list.id, chargeId);
 
       const added = await fetch(`/api/lists/${encodeURIComponent(list.id)}/items`, {
         method: "POST",

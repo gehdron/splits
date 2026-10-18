@@ -1,7 +1,7 @@
 import { connection } from "next/server";
 import { ensureConnectAccount, getPayoutAccount, savePayoutAccount, signedInUser } from "@/app/(site)/stripe/organizer";
 import { exchangePublicToken, plaidConfigured, removeItem, stripeBankAccountToken } from "@/app/(site)/plaid/plaid";
-import { savePlaidLink } from "@/app/(site)/plaid/store";
+import { plaidAccessToken, savePlaidLink } from "@/app/(site)/plaid/store";
 import { stripe } from "@/app/(site)/stripe/checkout";
 
 // Plaid public token -> Stripe bank account token -> external account on the organizer's Connect account.
@@ -24,11 +24,15 @@ export async function POST(request: Request) {
     const stripeAccountId = payout?.onboardingStartedAt ? null : await ensureConnectAccount(user);
 
     const { access_token: accessToken, item_id: itemId } = await exchangePublicToken(publicToken);
+    const previous = await plaidAccessToken(user.id);
     try {
       await savePlaidLink(user.id, itemId, accessToken);
     } catch (error) {
       await removeItem(accessToken).catch((removeError: unknown) => console.error(removeError));
       throw error;
+    }
+    if (previous && previous !== accessToken) {
+      await removeItem(previous).catch((removeError: unknown) => console.error(removeError));
     }
     let attached = false;
     let note: string | null = null;

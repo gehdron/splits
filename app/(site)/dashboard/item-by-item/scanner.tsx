@@ -14,6 +14,7 @@ import type { ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { signOut } from "../../auth/actions";
 import { createListFromReceipt, importReceipt } from "../actions";
+import { forgetChargeId, rememberChargeId } from "@/lib/split-charges";
 import Tesseract from "tesseract.js";
 import "./item-by-item.css";
 import type {
@@ -326,8 +327,12 @@ function SaveReceiptButton({
 }) {
   const params = useSearchParams();
   const listId = params.get("list");
+  const chargeId = params.get("charge")?.trim() ?? "";
   const [importState, importAction, importPending] = useActionState(importReceipt, undefined);
   const [createState, createAction, createPending] = useActionState(createListFromReceipt, undefined);
+  useEffect(() => {
+    if ((createState?.error || importState?.error) && chargeId) forgetChargeId(chargeId);
+  }, [createState, importState, chargeId]);
   const [customName, setCustomName] = useState(listName && listName !== "Receipt" ? listName : "");
   const [nameSuggestion, setNameSuggestion] = useState("");
   const [suggesting, setSuggesting] = useState(false);
@@ -393,8 +398,15 @@ function SaveReceiptButton({
   const pending = listId ? importPending : createPending;
   const state = listId ? importState : createState;
   return (
-    <form action={listId ? importAction : createAction} className="acts2">
+    <form
+      action={listId ? importAction : createAction}
+      className="acts2"
+      onSubmit={() => {
+        if (chargeId) rememberChargeId(chargeId);
+      }}
+    >
       <input type="hidden" name="groupId" value={selectedGroupId} />
+      {chargeId ? <input type="hidden" name="chargeId" value={chargeId} /> : null}
       {availableGroups.length > 1 ? (
         <label className="lbl" htmlFor="receipt-list-group">
           Save in

@@ -1,12 +1,22 @@
 import "server-only";
 import { supabaseAdminConfigured } from "@/lib/supabase/admin";
 import { plaidConfigured } from "@/app/(site)/plaid/plaid";
+import { plaidLinkExists } from "@/app/(site)/plaid/store";
 import { stripe } from "./checkout";
 import { getPayoutAccount } from "./organizer";
 import type { PayoutStatus } from "./payouts-panel";
 
 export async function payoutStatus(userId: string): Promise<PayoutStatus> {
-  const empty = { hasAccount: false, onboardingStarted: false, payoutsEnabled: false, detailsSubmitted: false, bank: null, plaid: plaidConfigured() };
+  const linked = await plaidLinkExists(userId);
+  const empty = {
+    hasAccount: false,
+    onboardingStarted: false,
+    payoutsEnabled: false,
+    detailsSubmitted: false,
+    bank: null,
+    plaid: plaidConfigured(),
+    linked,
+  };
   if (!supabaseAdminConfigured()) return { ready: false, ...empty };
   const payout = await getPayoutAccount(userId).catch(() => null);
   if (!payout?.stripeAccountId) return { ready: true, ...empty };
@@ -20,6 +30,7 @@ export async function payoutStatus(userId: string): Promise<PayoutStatus> {
     detailsSubmitted: Boolean(account?.details_submitted),
     bank: payoutBank(account, payout),
     plaid: plaidConfigured(),
+    linked,
   };
 }
 

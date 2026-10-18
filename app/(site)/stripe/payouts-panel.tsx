@@ -12,6 +12,7 @@ export type PayoutStatus = {
   detailsSubmitted: boolean;
   bank: string | null; // "Chase ••6789"
   plaid: boolean;
+  linked: boolean; // a Plaid item is already stored for recent charges
 };
 
 export function PayoutsPanel({ status, notice }: { status: PayoutStatus; notice: { ok: boolean; text: string } | null }) {
@@ -33,7 +34,7 @@ export function PayoutsPanel({ status, notice }: { status: PayoutStatus; notice:
       </p>
       {notice ? <p className={notice.ok ? "ok" : "err"}>{notice.text}</p> : null}
       {status.bank ? <p className="ok">Bank: {status.bank}</p> : null}
-      {status.plaid && !status.onboardingStarted ? <BankLink bank={status.bank} /> : null}
+      {status.plaid ? <BankLink bank={status.bank} linked={status.linked} /> : null}
       {!status.payoutsEnabled ? (
         <form action={action}>
           <button className="btn btn-a" type="submit" disabled={pending}>

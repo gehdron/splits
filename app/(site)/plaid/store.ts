@@ -15,6 +15,13 @@ export async function savePlaidLink(userId: string, itemId: string, accessToken:
   if (error) throw new Error(error.message.includes("plaid_links") ? SETUP : error.message);
 }
 
+export async function plaidLinkExists(userId: string): Promise<boolean> {
+  if (!supabaseAdminConfigured()) return false;
+  const { data, error } = await createAdminClient().from("plaid_links").select("user_id").eq("user_id", userId).maybeSingle();
+  if (error) return false;
+  return Boolean(data);
+}
+
 export async function plaidAccessToken(userId: string): Promise<string | null> {
   if (!supabaseAdminConfigured()) return null;
   const { data, error } = await createAdminClient()

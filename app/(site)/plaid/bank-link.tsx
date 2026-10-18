@@ -33,7 +33,7 @@ function loadPlaid(): Promise<PlaidLink> {
 
 // The "Link your bank with Plaid" button on /account. It asks the server for a link token, opens Plaid's popup,
 // and sends the result to /api/plaid/exchange. The server code is in link-token.ts and exchange.ts next to this file.
-export function BankLink({ bank }: { bank: string | null }) {
+export function BankLink({ bank, linked }: { bank: string | null; linked: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -85,9 +85,13 @@ export function BankLink({ bank }: { bank: string | null }) {
 
   return (
     <div className="payouts-bank">
-      <p className="note">Link your bank with Plaid. Recent charges come from that account, and Stripe can use it for payouts.</p>
+      <p className="note">
+        {linked
+          ? "Recent charges come from the bank you linked. Relink it if that was the wrong account."
+          : "Link your bank with Plaid. Recent charges come from that account, and Stripe can use it for payouts."}
+      </p>
       <button className="btn btn-b" type="button" onClick={() => void linkBank()} disabled={busy}>
-        {busy ? "Opening Plaid…" : bank ? "Use a different bank" : "Link your bank with Plaid"}
+        {busy ? "Opening Plaid…" : linked || bank ? "Relink your bank" : "Link your bank with Plaid"}
       </button>
       {message ? <p className={message.ok ? "ok" : "err"}>{message.text}</p> : null}
     </div>

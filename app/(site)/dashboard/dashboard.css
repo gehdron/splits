@@ -120,6 +120,10 @@
    @media (max-width:640px){.db .main{padding:28px 16px 56px}.db .sec{padding:22px 18px}.db h1{font-size:42px}}
    .db a.lrow,.db a.gbtn,.db a.btn{color:inherit;text-decoration:none}
    .db a.slist{grid-template-columns:44px minmax(0,1fr) 20px}
+   .db .list-line{display:flex;align-items:center;border-bottom:1px solid var(--line)}
+   .db .list-line .lrow{flex:1;width:auto;margin:0;border-bottom:0}
+   .db .xlist{flex:none;margin-right:4px}
+   .db .xlist:hover{background:#F4E4E8;color:#9A3048}
    .db a.btn{color:#fff}
    .db .err{margin:8px 0 0;color:#9b1c1c;font-weight:700;font-size:14px}
    .db .openlist{display:grid;gap:12px;margin-top:18px;padding-top:18px;border-top:1px solid var(--line)}
