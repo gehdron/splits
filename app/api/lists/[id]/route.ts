@@ -6,10 +6,16 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/lists/[id]">) {
   const { id } = await ctx.params;
   const data = getList(id);
   if (!data) return Response.json({ error: "List not found" }, { status: 404 });
-  // The organizer's user id isn't anyone else's business.
+  // The organizer's user id, and members' phone numbers and emails, aren't anyone else's business.
   const list = { ...data.list };
   delete list.ownerId;
-  return Response.json({ ...data, list });
+  return Response.json({
+    ...data,
+    list: {
+      ...list,
+      members: (list.members ?? []).map((member) => ({ name: member.name, userId: member.userId })),
+    },
+  });
 }
 
 export async function PATCH(req: Request, ctx: RouteContext<"/api/lists/[id]">) {

@@ -14,8 +14,38 @@ export type Item = {
   purchased: boolean;
 };
 
+export type ListMember = { name: string; userId?: string; phone?: string; email?: string };
+
+export type ListViewer = { userId: string; phone?: string; email?: string };
+
 // ownerId is the signed-in organizer who may request money on this list (null for lists made while signed out).
-export type List = { id: string; name: string; createdAt: number; ownerId?: string | null };
+export type List = { id: string; name: string; createdAt: number; ownerId?: string | null; members?: ListMember[] };
+
+function digits(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+function samePhone(a?: string, b?: string): boolean {
+  if (!a || !b) return false;
+  const left = digits(a);
+  const right = digits(b);
+  if (left.length < 10 || right.length < 10) return false;
+  return left === right || left.endsWith(right) || right.endsWith(left);
+}
+
+export function memberOnList(member: ListMember, viewer: ListViewer): boolean {
+  if (member.userId && member.userId === viewer.userId) return true;
+  if (samePhone(member.phone, viewer.phone)) return true;
+  if (member.email && viewer.email && member.email.toLowerCase() === viewer.email.toLowerCase()) return true;
+  return false;
+}
+
+function sameMember(a: ListMember, b: ListMember): boolean {
+  if (a.userId && b.userId && a.userId === b.userId) return true;
+  if (samePhone(a.phone, b.phone)) return true;
+  if (a.email && b.email && a.email.toLowerCase() === b.email.toLowerCase()) return true;
+  return false;
+}
 
 // One person's share of a bill, behind https://splits.select/pay/sh_... (see lib/shares.ts).
 // This file keeps them only for local runs; production stores them in Supabase.
@@ -76,10 +106,26 @@ export function renameList(id: string, name: string): List | null {
   return list;
 }
 
-export function createList(name: string, ownerId: string | null = null): List {
+export function createList(name: string, ownerId: string | null = null, member?: ListMember): List {
   const db = load();
-  const list = { id: crypto.randomUUID(), name, createdAt: Date.now(), ownerId };
+  const list: List = { id: crypto.randomUUID(), name, createdAt: Date.now(), ownerId };
+  if (member?.name.trim()) list.members = [member];
   db.lists.set(list.id, list);
+  save(db);
+  return list;
+}
+
+export function addListMember(listId: string, member: ListMember): List | null {
+  const db = load();
+  const list = db.lists.get(listId);
+  const name = member.name.trim();
+  if (!list || !name) return null;
+  const next: ListMember = { name };
+  if (member.userId) next.userId = member.userId;
+  if (member.phone) next.phone = member.phone;
+  if (member.email) next.email = member.email.toLowerCase();
+  const members = list.members ?? [];
+  if (!members.some((entry) => sameMember(entry, next))) list.members = [...members, next];
   save(db);
   return list;
 }
@@ -88,8 +134,24 @@ export function listAll(): List[] {
   return [...load().lists.values()].sort((a, b) => a.createdAt - b.createdAt);
 }
 
+export function listSummaries(): (List & { itemCount: number })[] {
+  const db = load();
+  const counts = new Map<string, number>();
+  for (const item of db.items.values()) counts.set(item.listId, (counts.get(item.listId) ?? 0) + 1);
+  return [...db.lists.values()]
+    .map((list) => ({ ...list, itemCount: counts.get(list.id) ?? 0 }))
+    .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export function listSummariesFor(viewer: ListViewer): { id: string; name: string; createdAt: number; itemCount: number }[] {
+  return listSummaries()
+    .filter((list) => list.ownerId === viewer.userId || (list.members ?? []).some((member) => memberOnList(member, viewer)))
+    .map((list) => ({ id: list.id, name: list.name, createdAt: list.createdAt, itemCount: list.itemCount }));
+}
+
 // The iMessage agent's list. It never returns an organizer's own list, so texts from unrelated
 // chats can't land on (and be billed from) someone's private list.
+// The agent and /list share this list so a text shows up without a new id.
 export function defaultList(): List {
   return listAll().find((list) => !list.ownerId) ?? createList("Shared list");
 }

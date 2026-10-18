@@ -27,7 +27,8 @@ type ApiItem = {
   priceCents: number;
   claimedBy: string | null;
 };
-type ListData = { list: { id: string; name: string }; items: ApiItem[]; totals: Record<string, number> };
+type ListMember = { name: string; userId?: string };
+type ListData = { list: { id: string; name: string; members?: ListMember[] }; items: ApiItem[]; totals: Record<string, number> };
 
 type Item = { id: string; name: string; quantity: number; cents: number; who: string | null };
 type SharedList = { name: string; paidBy: string; items: Item[] };
@@ -140,8 +141,33 @@ const LogoMark = () => (
 // TODO: this page has no auth, groups or friends API. People are the names that have claimed items on this list.
 // Create, Add, Remove, Add to group and Sign out have no action until the list page is wired to Supabase
 // (see app/(site)/dashboard/actions.ts).
-function Sidebar({ me, people }: { me: string; people: string[] }) {
+function Sidebar({ me, people, onAdd }: { me: string; people: string[]; onAdd: (person: { name: string; phone?: string; email?: string }) => Promise<string> }) {
   const [by, setBy] = useState<"phone" | "email">("phone");
+  const [contact, setContact] = useState("");
+  const [addError, setAddError] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  async function addPerson(event: React.FormEvent) {
+    event.preventDefault();
+    if (adding) return;
+    if (by === "phone") {
+      const phone = normalizePhone(contact);
+      if (!phone) return setAddError("Enter a phone number, including the area code.");
+      setAdding(true);
+      const error = await onAdd({ name: phone, phone });
+      setAdding(false);
+      setAddError(error);
+      if (!error) setContact("");
+      return;
+    }
+    const email = contact.trim().toLowerCase();
+    if (!emailPattern.test(email)) return setAddError("Enter a valid email.");
+    setAdding(true);
+    const error = await onAdd({ name: email, email });
+    setAdding(false);
+    setAddError(error);
+    if (!error) setContact("");
+  }
   const groups = [
     { name: GROUP_NAME, count: people.length + (me ? 1 : 0), active: true },
     ...OTHER_GROUPS.map((name) => ({ name, count: null, active: false })),
@@ -189,7 +215,7 @@ function Sidebar({ me, people }: { me: string; people: string[] }) {
               <Avatar name={name} me={me} />
               <div>
                 <b>{name}</b>
-                <small>In {GROUP_NAME}</small>
+                <small>On this list</small>
               </div>
               <button className="mini" type="button" disabled>
                 Added
@@ -200,29 +226,37 @@ function Sidebar({ me, people }: { me: string; people: string[] }) {
             </li>
           ))}
         </ul>
-        {people.length === 0 && <p className="sub note">People who claim items show up here.</p>}
-        <p className="lbl">Add someone to {GROUP_NAME}</p>
-        <div className="seg" role="group" aria-label="Add by">
-          <button className={`sg${by === "phone" ? " on" : ""}`} type="button" aria-pressed={by === "phone"} onClick={() => setBy("phone")}>
-            Phone
+        {people.length === 0 && <p className="sub note">People you add can see this list.</p>}
+        <form onSubmit={addPerson}>
+          <p className="lbl">Add someone to this list</p>
+          <div className="seg" role="group" aria-label="Add by">
+            <button className={`sg${by === "phone" ? " on" : ""}`} type="button" aria-pressed={by === "phone"} onClick={() => setBy("phone")}>
+              Phone
+            </button>
+            <button className={`sg${by === "email" ? " on" : ""}`} type="button" aria-pressed={by === "email"} onClick={() => setBy("email")}>
+              Email
+            </button>
+          </div>
+          <label className="lbl" htmlFor="ct">
+            {by === "phone" ? "Phone number" : "Email address"}
+          </label>
+          <input
+            id="ct"
+            className="field"
+            type={by === "phone" ? "tel" : "email"}
+            value={contact}
+            placeholder={by === "phone" ? "(555) 123-4567" : "[friend's email address]"}
+            onChange={(event) => {
+              setContact(event.target.value);
+              setAddError("");
+            }}
+          />
+          {addError ? <p className="sub note">{addError}</p> : null}
+          <button className="btn full" type="submit" disabled={adding}>
+            <PlusIcon />
+            {adding ? "Adding…" : "Add to list"}
           </button>
-          <button className={`sg${by === "email" ? " on" : ""}`} type="button" aria-pressed={by === "email"} onClick={() => setBy("email")}>
-            Email
-          </button>
-        </div>
-        <label className="lbl" htmlFor="ct">
-          {by === "phone" ? "Phone number" : "Email address"}
-        </label>
-        <input
-          id="ct"
-          className="field"
-          type={by === "phone" ? "tel" : "email"}
-          placeholder={by === "phone" ? "(555) 123-4567" : "[friend's email address]"}
-        />
-        <button className="btn full" type="button">
-          <PlusIcon />
-          Add to group
-        </button>
+        </form>
       </section>
 
       <div className="me">
@@ -266,6 +300,7 @@ export default function ListPage() {
   const me = ME;
   const [friends, setFriends] = useState<Person[]>([]);
   const [added, setAdded] = useState<Person[]>([]);
+  const [meId, setMeId] = useState<string | null>(null);
   const [openItem, setOpenItem] = useState<string | null>(null);
   const [contactBy, setContactBy] = useState<"phone" | "email">("phone");
   const [contact, setContact] = useState("");
@@ -311,6 +346,8 @@ export default function ListPage() {
     (async () => {
       try {
         const supabase = createClient();
+        const { data: userData } = await supabase.auth.getUser();
+        if (!cancel) setMeId(userData.user?.id ?? null);
         const { data: rows, error } = await supabase.rpc("list_friends");
         if (cancel || error || !rows) return;
         setFriends(
@@ -452,6 +489,30 @@ export default function ListPage() {
     return () => document.removeEventListener("pointerdown", close);
   }, [openItem]);
 
+  function contactOf(person: Person): { name: string; phone?: string; email?: string } | null {
+    if (person.id.startsWith("phone:")) return { name: person.name, phone: person.id.slice("phone:".length) };
+    if (person.id.startsWith("email:")) return { name: person.name, email: person.id.slice("email:".length) };
+    const phone = normalizePhone(person.detail);
+    if (phone) return { name: person.name, phone };
+    if (emailPattern.test(person.detail)) return { name: person.name, email: person.detail.trim().toLowerCase() };
+    return null;
+  }
+
+  async function addPerson(person: { name: string; phone?: string; email?: string }) {
+    if (!listId) return "Open a list first.";
+    const res = await fetch(`/api/lists/${listId}/members`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(person),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      return body?.error || "That person could not be added.";
+    }
+    refresh();
+    return "";
+  }
+
   function remember(person: Person) {
     setAdded((current) => (current.some((entry) => entry.id === person.id) || friends.some((entry) => entry.id === person.id) ? current : [...current, person]));
     setContact("");
@@ -465,14 +526,14 @@ export default function ListPage() {
       if (!phone) return setMsg("Enter a phone number, including the area code.");
       const person = { id: `phone:${phone}`, name: phone, detail: "Phone" };
       remember(person);
-      void assignPerson(item, person.name);
+      void assignPerson(item, person);
       return;
     }
     const email = contact.trim();
     if (!emailPattern.test(email)) return setMsg("Enter a valid email.");
     const person = { id: `email:${email.toLowerCase()}`, name: email, detail: "Email" };
     remember(person);
-    void assignPerson(item, person.name);
+    void assignPerson(item, person);
   }
 
   // What this person has paid on the list, what's left, and their open link (if it's for what's left).
@@ -525,7 +586,6 @@ export default function ListPage() {
     }
   }
 
-  async function act(id: string, action: "claim" | "unclaim", user: string) {
   async function act(
     id: string,
     action: "claim" | "unclaim",
@@ -552,9 +612,14 @@ export default function ListPage() {
 
   async function assignPerson(
     item: Item,
-    user: string
+    assignee: Person | string
   ): Promise<{ success: boolean; error?: string }> {
     setOpenItem(null);
+    if (typeof assignee !== "string") {
+      const contact = contactOf(assignee);
+      if (contact) void addPerson(contact);
+    }
+    const user = typeof assignee === "string" ? assignee : assignee.name;
     if (item.who === user) return { success: true };
     if (item.who) {
       const cleared = await fetch(`/api/items/${item.id}`, {
@@ -717,7 +782,12 @@ export default function ListPage() {
       who: i.claimedBy,
     })),
   };
-  const people = [...new Set(list.items.map((i) => i.who).filter((who): who is string => !!who && who !== me))];
+  const people = [
+    ...new Set([
+      ...(data?.list.members ?? []).filter((member) => member.userId !== meId).map((member) => member.name),
+      ...list.items.map((i) => i.who).filter((who): who is string => !!who && who !== me),
+    ]),
+  ];
 
   const mine = list.paidBy === me;
   const s = summarize(list, me);
@@ -732,7 +802,7 @@ export default function ListPage() {
 
   return (
     <div className="db">
-      <Sidebar me={me} people={people} />
+      <Sidebar me={me} people={people} onAdd={addPerson} />
 
       <main className="main">
         <div className="wrap">
@@ -990,7 +1060,7 @@ export default function ListPage() {
                       <div className="menu" role="menu" aria-label={`Assign ${item.name}`}>
                         {roster.length > 0 ? <p className="menu-h">Friends and contacts</p> : null}
                         {roster.map((person) => (
-                          <button key={person.id} className="opt" type="button" role="menuitem" onClick={() => assignPerson(item, person.name)}>
+                          <button key={person.id} className="opt" type="button" role="menuitem" onClick={() => assignPerson(item, person)}>
                             <Avatar name={person.name} me={me} />
                             <span className="on">
                               {person.name}
