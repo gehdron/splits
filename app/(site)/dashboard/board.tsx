@@ -80,12 +80,13 @@ export function Board({ data }: { data: DashboardData }) {
   }
 
   function openSplit(charge: Charge) {
-    setSplitGroupId(group?.id ?? null);
+    setSplitGroupId(null);
     setSplitTarget(charge);
   }
 
-  const itemSplitHref = splitGroupId ? `/dashboard/item-by-item?group=${encodeURIComponent(splitGroupId)}` : null;
-  const evenSplitHref = splitGroupId ? `/dashboard/even?group=${encodeURIComponent(splitGroupId)}` : null;
+  const groupQuery = splitGroupId ? `?group=${encodeURIComponent(splitGroupId)}` : "";
+  const itemSplitHref = `/dashboard/item-by-item${groupQuery}`;
+  const evenSplitHref = `/dashboard/even${groupQuery}`;
 
   useEffect(() => {
     const dialog = splitDialog.current;
@@ -273,7 +274,7 @@ export function Board({ data }: { data: DashboardData }) {
                 <div className="shead">
                   <div>
                     <h2 id="rc-h">Recent charges</h2>
-                    <p className="sub">Sample charges. Assign a group when you split one.</p>
+                    <p className="sub">Sample charges. Choose item by item or an even split.</p>
                   </div>
                   <div className="seg inline" role="group" aria-label="Filter charges">
                     {(
@@ -339,14 +340,16 @@ export function Board({ data }: { data: DashboardData }) {
                   <h2 id="split-how">How do you want to split it?</h2>
                   <p>
                     {splitTarget ? `${splitTarget.merchant}, ${splitTarget.amount}. ` : null}
-                    Choose a group, then how to split it.
+                    Assign a group if you want. You can also split it on its own.
                   </p>
-                  <fieldset className="split-groups">
-                    <legend className="lbl">Group</legend>
-                    {data.groups.length === 0 ? (
-                      <p>Create a group in the sidebar, then you can assign this charge.</p>
-                    ) : (
-                      data.groups.map((entry) => (
+                  {data.groups.length > 0 ? (
+                    <fieldset className="split-groups">
+                      <legend className="lbl">Group</legend>
+                      <label className={`gpick${splitGroupId === null ? " on" : ""}`}>
+                        <input type="radio" name="split-group" value="" checked={splitGroupId === null} onChange={() => setSplitGroupId(null)} />
+                        No group
+                      </label>
+                      {data.groups.map((entry) => (
                         <label key={entry.id} className={`gpick${splitGroupId === entry.id ? " on" : ""}`}>
                           <input
                             type="radio"
@@ -357,44 +360,24 @@ export function Board({ data }: { data: DashboardData }) {
                           />
                           {entry.name}
                         </label>
-                      ))
-                    )}
-                  </fieldset>
+                      ))}
+                    </fieldset>
+                  ) : null}
                   <div className="pop-acts">
-                    {itemSplitHref ? (
-                      <Link className="choice" href={itemSplitHref}>
-                        <span>
-                          <b>Item by item</b>
-                          <small>Scan the receipt and give each item to whoever had it.</small>
-                        </span>
-                        <Icon d="M9 6l6 6-6 6" />
-                      </Link>
-                    ) : (
-                      <span className="choice off">
-                        <span>
-                          <b>Item by item</b>
-                          <small>Scan the receipt and give each item to whoever had it.</small>
-                        </span>
-                        <Icon d="M9 6l6 6-6 6" />
+                    <Link className="choice" href={itemSplitHref}>
+                      <span>
+                        <b>Item by item</b>
+                        <small>Scan the receipt and give each item to whoever had it.</small>
                       </span>
-                    )}
-                    {evenSplitHref ? (
-                      <Link className="choice" href={evenSplitHref}>
-                        <span>
-                          <b>Split evenly</b>
-                          <small>Everyone pays the same share{splitTarget ? ` of ${splitTarget.amount}` : ""}.</small>
-                        </span>
-                        <Icon d="M9 6l6 6-6 6" />
-                      </Link>
-                    ) : (
-                      <span className="choice off">
-                        <span>
-                          <b>Split evenly</b>
-                          <small>Everyone pays the same share{splitTarget ? ` of ${splitTarget.amount}` : ""}.</small>
-                        </span>
-                        <Icon d="M9 6l6 6-6 6" />
+                      <Icon d="M9 6l6 6-6 6" />
+                    </Link>
+                    <Link className="choice" href={evenSplitHref}>
+                      <span>
+                        <b>Split evenly</b>
+                        <small>Everyone pays the same share{splitTarget ? ` of ${splitTarget.amount}` : ""}.</small>
                       </span>
-                    )}
+                      <Icon d="M9 6l6 6-6 6" />
+                    </Link>
                   </div>
                   <button className="btn txt" type="submit">
                     Cancel
