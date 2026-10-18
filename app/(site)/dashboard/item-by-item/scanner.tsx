@@ -306,7 +306,7 @@ function colorClass(name: string): string {
 function Sidebar({ me, groups, group, people, loadError }: Omit<ScannerProps, "charge">) {
   return (
     <aside className="side">
-      <div className="brand"><LogoMark /><span>Splits</span></div>
+      <Link className="brand" href="/" aria-label="Splits home"><LogoMark /><span>Splits</span></Link>
       <section aria-labelledby="g-h">
         <h2 className="sh" id="g-h">Your groups</h2>
         {loadError ? (
