@@ -10,7 +10,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3001](http://localhost:3001) and allow camera access.
+Open the live app at [https://www.splits.select](https://www.splits.select) and allow camera access.
 The camera guide follows the device orientation, and captured photos are
 rotated to match it when the camera stream uses the opposite orientation. Use
 **Switch camera** to change cameras. For better live recognition, place the
@@ -23,8 +23,8 @@ image and shows recognized word boxes over the photo. OCR first uses a small
 internal preview to estimate the text's horizontal bounds, then may crop the
 image internally for a higher-resolution pass; the crop preserves the full
 image height. AI parsing starts automatically after text extraction completes.
-Camera access requires a secure context: use `localhost` for local development
-and HTTPS when accessing the app from another device.
+Camera access is available on the live HTTPS site. For local development,
+`npm run dev` serves the app at `http://localhost:3001`.
 
 OCR extracts and displays the recognized text and word boxes. Gemini
 automatically organizes the receipt into editable item and total fields after
@@ -54,16 +54,16 @@ camera and upload screen. After reviewing the parsed items and totals, save the
 receipt to a named group list from the receipt review. Item assignment and the
 AI split chat are available on the list page.
 
-On `/list`, enter a name before creating a list. **AI suggest name** uses
-Gemini to suggest one from the current items or receipt. Receipt item names
-appear as live suggestions in the split chat; press **Tab** or choose a
-suggestion to correct a partial or mistyped item name. Assign an item to
-multiple people from its assignee menu; its price is split evenly, and tax and
-tip are allocated proportionally. Subtotal, tax, tip, and total appear below
-the item list, and scanned receipt totals are checked against the item amounts.
-The AI split chat can assign an item to multiple people. The list owner can
-delete a list; unpaid payment links are expired first, while completed payments
-remain recorded.
+On `/list`, enter a name before creating a list. During receipt uploads, Gemini
+can suggest a name; suggestions are shown separately and never replace your
+typed name unless you choose **Use suggestion**. Receipt item names appear as
+live suggestions in the split chat; press **Tab** or choose a suggestion to
+correct a partial or mistyped item name. Assign an item to multiple people from
+its assignee menu; its price is split evenly, and tax and tip are allocated
+proportionally. Subtotal, tax, tip, and total appear below the item list, and
+scanned receipt totals are checked against the item amounts. The AI split chat
+can assign an item to multiple people. The list owner can delete a list; unpaid
+payment links are expired first, while completed payments remain recorded.
 
 If you already use the production file-backed shared-list tables in Supabase,
 re-run `supabase/shared-lists.sql` to add the receipt-total columns used by the

@@ -408,7 +408,6 @@ function ListPageContent() {
   const [title, setTitle] = useState("");
   const [newListTitle, setNewListTitle] = useState("");
   const [creatingList, setCreatingList] = useState(false);
-  const [suggestingNewTitle, setSuggestingNewTitle] = useState(false);
   const startWithScan = requestedScan;
   const savingTitle = useRef(false);
   const [price, setPrice] = useState("");
@@ -427,7 +426,7 @@ function ListPageContent() {
   const [taxInput, setTaxInput] = useState("");
   const [tipInput, setTipInput] = useState("");
   const [savingTotals, setSavingTotals] = useState(false);
-  const [suggestingName, setSuggestingName] = useState(false);
+  const [receiptNameSuggestion, setReceiptNameSuggestion] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deletingList, setDeletingList] = useState(false);
   const [deleteError, setDeleteError] = useState("");
@@ -599,10 +598,9 @@ function ListPageContent() {
       if (parsedTotals.tip !== undefined) setTipInput((parsedTotals.tip / 100).toFixed(2));
 
       const merchant = receiptBody.merchant?.trim() ?? "";
-      const needsName = !data?.list.name.trim() || data.list.name === "Shared list";
       let suggestedName = "";
       let suggestionWarning = "";
-      if (needsName) {
+      if (!data?.list.name.trim() || data.list.name === "Shared list") {
         try {
           const nameResponse = await fetch("/api/suggest-list-name", {
             method: "POST",
@@ -628,13 +626,13 @@ function ListPageContent() {
             throw new Error(reason);
           }
           suggestedName = nameResult.name.trim();
+          setReceiptNameSuggestion(suggestedName);
         } catch (error) {
           suggestionWarning = error instanceof Error ? error.message : "Gemini could not suggest a list name.";
         }
       }
 
       const patchBody: Record<string, string | number> = {};
-      if (suggestedName) patchBody.name = suggestedName;
       if (merchant) patchBody.merchant = merchant;
       if (parsedTotals.subtotal !== undefined) patchBody.receiptSubtotalCents = parsedTotals.subtotal;
       if (parsedTotals.tax !== undefined) patchBody.taxCents = parsedTotals.tax;
@@ -651,83 +649,24 @@ function ListPageContent() {
           const reason =
             typeof failed === "object" && failed !== null && "error" in failed && typeof failed.error === "string"
               ? failed.error
-              : "Receipt totals and name could not be saved.";
+              : "Receipt details could not be saved.";
           setMsg(`Receipt items were added, but ${reason}`);
           refresh();
           return;
         }
-        if (suggestedName) setTitle(suggestedName);
       }
 
       setScan(false);
       window.history.replaceState(null, "", `/list?id=${listId}`);
       setMsg(
-        `${items.length} ${items.length === 1 ? "item" : "items"} added from receipt.${
-          suggestedName ? ` Named "${suggestedName}".` : ""
-        }${suggestionWarning ? ` ${suggestionWarning}` : ""}`,
+        `${items.length} ${items.length === 1 ? "item" : "items"} added from receipt.` +
+          (suggestionWarning ? ` ${suggestionWarning}` : ""),
       );
       refresh();
     } catch (error) {
       setMsg(error instanceof Error ? error.message : "The receipt could not be read.");
     } finally {
       setScanning(false);
-    }
-  }
-
-  async function suggestListName() {
-    if (!listId) return;
-    setSuggestingName(true);
-    setMsg("");
-    try {
-      const res = await fetch("/api/suggest-list-name", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: list.items.map((i) => i.name),
-          currentName: list.name,
-        }),
-      });
-      const result: unknown = await res.json().catch(() => null);
-      if (!res.ok) {
-        const message =
-          typeof result === "object" && result !== null && "error" in result && typeof result.error === "string"
-            ? result.error
-            : "Gemini could not suggest a list name.";
-        throw new Error(message);
-      }
-      if (
-        typeof result === "object" &&
-        result !== null &&
-        "name" in result &&
-        typeof result.name === "string" &&
-        result.name.trim()
-      ) {
-        const suggestedName = result.name.trim();
-        setTitle(result.name);
-        const saved = await fetch(`/api/lists/${listId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: suggestedName }),
-        });
-        if (!saved.ok) {
-          const failed: unknown = await saved.json().catch(() => null);
-          const message =
-            typeof failed === "object" && failed !== null && "error" in failed && typeof failed.error === "string"
-              ? failed.error
-              : "The suggested list name could not be saved.";
-          throw new Error(message);
-        }
-        if (data) {
-          setData({ ...data, list: { ...data.list, name: suggestedName } });
-        }
-        setMsg(`List named "${suggestedName}".`);
-      } else {
-        throw new Error("Gemini returned an invalid list name.");
-      }
-    } catch (error) {
-      setMsg(error instanceof Error ? error.message : "Could not suggest a list name.");
-    } finally {
-      setSuggestingName(false);
     }
   }
 
@@ -1299,40 +1238,6 @@ function ListPageContent() {
     .map((suggestion) => suggestion.description);
   const splitInlineSuggestion = splitSuggestions[0] ?? null;
 
-  async function suggestNewListName() {
-    setSuggestingNewTitle(true);
-    setMsg("");
-    try {
-      const response = await fetch("/api/suggest-list-name", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ currentName: newListTitle.trim() || undefined }),
-      });
-      const result: unknown = await response.json().catch(() => null);
-      if (!response.ok) {
-        const message =
-          typeof result === "object" && result !== null && "error" in result && typeof result.error === "string"
-            ? result.error
-            : "Gemini could not suggest a list name.";
-        throw new Error(message);
-      }
-      if (
-        typeof result !== "object" ||
-        result === null ||
-        !("name" in result) ||
-        typeof result.name !== "string" ||
-        !result.name.trim()
-      ) {
-        throw new Error("Gemini returned an invalid list name.");
-      }
-      setNewListTitle(result.name.trim());
-    } catch (error) {
-      setMsg(error instanceof Error ? error.message : "Gemini could not suggest a list name.");
-    } finally {
-      setSuggestingNewTitle(false);
-    }
-  }
-
   async function createNamedList(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const requestedName = newListTitle.trim();
@@ -1461,14 +1366,6 @@ function ListPageContent() {
                     required
                     onChange={(event) => setNewListTitle(event.target.value)}
                   />
-                  <button
-                    className="btn line"
-                    type="button"
-                    disabled={suggestingNewTitle || creatingList}
-                    onClick={() => void suggestNewListName()}
-                  >
-                    {suggestingNewTitle ? "Suggesting…" : "AI suggest"}
-                  </button>
                 </div>
                 {msg ? <p className="msg" role="alert">{msg}</p> : null}
                 <button
@@ -1535,14 +1432,6 @@ function ListPageContent() {
               </div>
             </div>
             <div className="acts">
-              <button
-                className="btn txt"
-                type="button"
-                onClick={() => void suggestListName()}
-                disabled={!data || suggestingName}
-              >
-                {suggestingName ? "Suggesting…" : "AI suggest name"}
-              </button>
               <button className="btn txt" type="button" onClick={startRename} disabled={!data || editingTitle}>
                 Rename
               </button>
@@ -1733,6 +1622,30 @@ function ListPageContent() {
                 />
                 {scanning ? <p className="sub">Reading the receipt…</p> : null}
               </form>
+            ) : null}
+            {receiptNameSuggestion ? (
+              <div className="receipt-name-suggestion" role="status">
+                <span>Receipt name suggestion: <strong>{receiptNameSuggestion}</strong></span>
+                <button
+                  className="btn line"
+                  type="button"
+                  onClick={() => {
+                    setTitle(receiptNameSuggestion);
+                    setEditingTitle(true);
+                    setReceiptNameSuggestion("");
+                  }}
+                >
+                  Use suggestion
+                </button>
+                <button
+                  className="btn txt"
+                  type="button"
+                  aria-label="Dismiss receipt name suggestion"
+                  onClick={() => setReceiptNameSuggestion("")}
+                >
+                  Dismiss
+                </button>
+              </div>
             ) : null}
 
             <div className="lt lh" aria-hidden="true">
