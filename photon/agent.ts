@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -5,6 +6,28 @@ import { ApiError, Photon } from "@photon-ai/api";
 import { chooseList, isSummaryRequest, parseCommitments, renderConfirmation, renderSummary, textWithoutList, type Commitment, type ParsedCommitment } from "./commitments.ts";
 import { loadLedger, saveLedger } from "./ledger.ts";
 import { defaultList, listAll, recordPurchase } from "../lib/store.ts";
+
+function loadEnvFile(path: string): void {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return;
+  }
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const body = trimmed.replace(/^export\s+/, "");
+    const eq = body.indexOf("=");
+    if (eq <= 0) continue;
+    const name = body.slice(0, eq).trim();
+    let value = body.slice(eq + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (process.env[name] === undefined) process.env[name] = value;
+  }
+}
 
 type Config = { key: string; project: string; platform: "imessage" | "email"; agent: string; sender: string };
 
@@ -135,6 +158,7 @@ export async function run(c: Config, pollMs = 2_000) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  loadEnvFile(join(dirname(fileURLToPath(import.meta.url)), "..", ".env.local"));
   try {
     await run(configuration());
   } catch (error) {

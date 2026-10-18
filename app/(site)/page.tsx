@@ -16,9 +16,9 @@ export const metadata: Metadata = {
 const APP_URL = "/signup";
 
 const steps = [
-  { title: "Snap the receipt", body: "Splits reads every item and price for you." },
-  { title: "Pick who had what", body: "Assign each item to someone in your group." },
-  { title: "Send the links", body: "Everyone pays their own share. No app needed." },
+  { title: "Snap the receipt", body: "Splits reads every item and price for you.", image: "/assets/screens/step-scan.png", alt: "A receipt inside the camera frame while Splits reads it" },
+  { title: "Pick who had what", body: "Assign each item to someone in your group.", image: "/assets/screens/step-assign.png", alt: "Receipt items with a name button for each person, and each person's total" },
+  { title: "Send the links", body: "Everyone pays their own share. No app needed.", image: "/assets/screens/step-pay.png", alt: "A text message with a payment link and a checkout page with Apple Pay" },
 ];
 
 export default function Home() {
@@ -81,7 +81,11 @@ export default function Home() {
             <div className="panels">
               {steps.map((step) => (
                 <div key={step.title} className="panel">
-                  <div className="ph">Step image placeholder</div>
+                    <img
+                      src={step.image}
+                      alt={step.alt}
+                      style={{ width: "100%", height: "auto", display: "block", borderRadius: 20, border: "1px solid #e3e7f1" }}
+                    />
                   <div><h3>{step.title}</h3><p>{step.body}</p></div>
                 </div>
               ))}
