@@ -40,9 +40,11 @@ Restart the development server and freeze a receipt. The app sends the frozen
 photo and extracted text to Gemini 3.8 Flash automatically. You can also use
 **Upload receipt image or PDF** instead of the camera. JPEG, PNG, and WebP
 images go through OCR before automatic AI parsing; PDFs are parsed directly.
-Files must be 8 MB or smaller. AI parsing requires a Gemini API key and may
-incur API charges depending on your account and usage. OCR extraction and raw
-text remain available without an API key.
+The scanner shows extraction, AI parsing, and review progress; if AI parsing
+fails, it displays the error and a retry option. Files must be 8 MB or smaller.
+AI parsing requires a Gemini API key and may incur API charges depending on
+your account and usage. OCR extraction and raw text remain available without
+an API key.
 
 After AI parsing, select **Split items with chat** to assign receipt items
 using natural-language instructions. Shared items are split equally; parsed

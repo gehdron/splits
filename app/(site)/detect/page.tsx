@@ -26,6 +26,12 @@ type DetectedWord = {
 };
 
 type CameraFacingMode = "user" | "environment";
+type ReceiptProcessingStage =
+  | "idle"
+  | "extracting"
+  | "parsing"
+  | "complete"
+  | "error";
 
 function isAiParsedReceipt(value: unknown): value is AiParsedReceipt {
   if (
@@ -132,6 +138,9 @@ export default function ReceiptScanner() {
   const [extractedText, setExtractedText] = useState("");
   const [status, setStatus] = useState("Start your camera to scan a receipt.");
   const [progress, setProgress] = useState(0);
+  const [processingStage, setProcessingStage] =
+    useState<ReceiptProcessingStage>("idle");
+  const [ocrCompleted, setOcrCompleted] = useState(false);
   const [detectedWords, setDetectedWords] = useState<DetectedWord[]>([]);
   const [receiptRows, setReceiptRows] = useState<AiReceiptItem[]>([]);
   const [receiptTotals, setReceiptTotals] = useState<AiReceiptTotals>({
@@ -175,6 +184,25 @@ export default function ReceiptScanner() {
   const displayedReceiptTotal = receiptTotalEdited
     ? calculateReceiptTotal(receiptTotals)
     : receiptTotals.total;
+  const extractionStatus = isPdfReceipt
+    ? "Skipped for PDF"
+    : processingStage === "extracting"
+      ? `In progress${progress > 0 ? ` · ${progress}%` : ""}`
+      : extractedText.trim()
+        ? "Text extracted"
+        : ocrCompleted
+          ? "No text found; AI will read image"
+          : processingStage === "parsing" || processingStage === "complete"
+            ? "OCR unavailable; AI will read image"
+            : "Waiting";
+  const parsingStatus =
+    processingStage === "parsing"
+      ? "In progress"
+      : processingStage === "complete"
+        ? "Complete"
+        : processingStage === "error"
+          ? "Failed · retry available"
+          : "Waiting";
 
   function selectTipSplitMode(mode: TipSplitMode) {
     if (mode === "manual" && tipSplitMode !== "manual") {
@@ -245,6 +273,8 @@ export default function ReceiptScanner() {
       setFrozenImage(null);
       setReceiptDocumentDataUrl(null);
       setReceiptDocumentName("");
+      setProcessingStage("idle");
+      setOcrCompleted(false);
       setDetectedWords([]);
       setReceiptRows([]);
       setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
@@ -349,6 +379,8 @@ export default function ReceiptScanner() {
     setFrozenImage(imageUrl);
     setReceiptDocumentDataUrl(imageUrl);
     setReceiptDocumentName("Camera receipt");
+    setProcessingStage("extracting");
+    setOcrCompleted(false);
     setExtractedText("");
     setReceiptRows([]);
     setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
@@ -487,6 +519,8 @@ export default function ReceiptScanner() {
     let receiptText = "";
 
     try {
+      setProcessingStage("extracting");
+      setOcrCompleted(false);
       setStatus("Locating the receipt and reading its text...");
       setProgress(0);
       setExtractedText("");
@@ -636,6 +670,7 @@ export default function ReceiptScanner() {
 
       receiptText = result.data.text;
       setExtractedText(receiptText);
+      setOcrCompleted(true);
       const words: DetectedWord[] = (result.data.blocks ?? [])
         .flatMap((block) =>
           block.paragraphs.flatMap((paragraph) =>
@@ -666,6 +701,7 @@ export default function ReceiptScanner() {
       );
     } catch (error) {
       console.error(error);
+      setOcrCompleted(false);
       setStatus("Text extraction failed. Trying to read the receipt image with AI...");
     } finally {
       if (worker) {
@@ -717,6 +753,10 @@ export default function ReceiptScanner() {
       stopCamera();
       setReceiptDocumentDataUrl(dataUrl);
       setReceiptDocumentName(file.name);
+      setProcessingStage(
+        file.type === "application/pdf" ? "parsing" : "extracting"
+      );
+      setOcrCompleted(false);
       setDetectedWords([]);
       setFrameSize({ width: 0, height: 0 });
       setAiError("");
@@ -760,6 +800,7 @@ export default function ReceiptScanner() {
     if (!documentDataUrl || aiParsing) return;
 
     setAiParsing(true);
+    setProcessingStage("parsing");
     setAiError("");
     setStatus("Organizing receipt items and totals with AI...");
     try {
@@ -798,9 +839,11 @@ export default function ReceiptScanner() {
       setTipOptionsOpen(false);
       setTipSplitMode("proportional");
       setManualTipAmounts({});
+      setProcessingStage("complete");
       setStatus("AI parsed the receipt. Review and edit the results as needed.");
     } catch (error) {
       console.error(error);
+      setProcessingStage("error");
       setAiError(
         error instanceof Error
           ? error.message
@@ -874,6 +917,8 @@ export default function ReceiptScanner() {
     setFrozenImage(null);
     setReceiptDocumentDataUrl(null);
     setReceiptDocumentName("");
+    setProcessingStage("idle");
+    setOcrCompleted(false);
     setExtractedText("");
     setReceiptRows([]);
     setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
@@ -994,6 +1039,92 @@ export default function ReceiptScanner() {
         {status}
       </p>
 
+      {receiptDocumentDataUrl && (
+        <section
+          aria-live="polite"
+          aria-busy={
+            processingStage === "extracting" || processingStage === "parsing"
+          }
+          className="space-y-3 rounded-xl border bg-white p-4"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-semibold">Receipt processing</h2>
+            <span className="max-w-full break-all text-sm text-gray-600">
+              {receiptDocumentName}
+            </span>
+          </div>
+          <ol className="space-y-3">
+            {[
+              {
+                label: "Read receipt text",
+                detail: extractionStatus,
+                active: processingStage === "extracting",
+                done: isPdfReceipt || ocrCompleted,
+              },
+              {
+                label: "Organize items and totals with AI",
+                detail: parsingStatus,
+                active: processingStage === "parsing",
+                done: processingStage === "complete",
+                failed: processingStage === "error",
+              },
+              {
+                label: "Review parsed receipt",
+                detail: aiParsed ? "Ready" : "Available when parsing finishes",
+                active: false,
+                done: aiParsed,
+              },
+            ].map((step, index) => (
+              <li key={step.label} className="flex items-start gap-3">
+                <span
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
+                    step.failed
+                      ? "bg-red-100 text-red-800"
+                      : step.done
+                        ? "bg-green-100 text-green-800"
+                        : step.active
+                          ? "bg-blue-100 text-blue-800"
+                          : "bg-gray-100 text-gray-600"
+                  }`}
+                  aria-hidden="true"
+                >
+                  {step.failed ? "!" : step.done ? "✓" : index + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                    <span className="font-medium">{step.label}</span>
+                    <span
+                      className={`text-sm ${
+                        step.failed ? "text-red-700" : "text-gray-600"
+                      }`}
+                    >
+                      {step.detail}
+                    </span>
+                  </div>
+                  {step.active && (
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-blue-100">
+                      {processingStage === "extracting" && progress > 0 ? (
+                        <div
+                          className="h-full bg-blue-600 transition-all"
+                          style={{ width: `${progress}%` }}
+                        />
+                      ) : (
+                        <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-600" />
+                      )}
+                    </div>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+          {aiError && (
+            <p role="alert" className="break-words text-sm text-red-700">
+              {aiError}
+            </p>
+          )}
+        </section>
+      )}
+
       <input
         ref={receiptFileInputRef}
         type="file"
@@ -1068,19 +1199,6 @@ export default function ReceiptScanner() {
           Upload receipt image or PDF
         </button>
       </div>
-      {aiError && (
-        <p role="alert" className="break-words text-sm text-red-700">
-          {aiError}
-        </p>
-      )}
-
-      {progress > 0 && progress < 100 && (
-        <div>
-          <div className="mb-1 text-sm">OCR progress: {progress}%</div>
-          <progress value={progress} max={100} className="w-full" />
-        </div>
-      )}
-
       {receiptDocumentDataUrl && (
         <section className="min-w-0 space-y-3 rounded-xl border p-3 sm:p-4">
           <h2 className="text-xl font-semibold">Receipt text</h2>
