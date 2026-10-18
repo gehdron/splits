@@ -28,7 +28,6 @@ export function PayPage({ params, searchParams }: PayPageProps) {
           <PayGate params={params} searchParams={searchParams} />
         </Suspense>
       </main>
-      <div className="fine">Live demo: payments are real, kept to a few dollars, and refunded. Apple Pay is a trademark of Apple Inc.</div>
     </div>
   );
 }
