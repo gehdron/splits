@@ -13,9 +13,20 @@ export type DashMember = {
   role: "owner" | "member";
 };
 
+export type DashList = {
+  id: string;
+  groupId: string;
+  name: string;
+  itemCount: number;
+  unassigned: number;
+  totalCents: number;
+  myShareCents: number;
+};
+
 export type DashItem = {
   id: string;
   groupId: string;
+  listId: string;
   listName: string;
   name: string;
   quantity: number;
@@ -41,6 +52,7 @@ export type DashboardData = {
   groups: DashGroup[];
   members: DashMember[];
   items: DashItem[];
+  lists: DashList[];
   totals: DashTotal[];
   friends: DashFriend[];
   friendsReady: boolean;

@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import type { DashboardData, DashFriend, DashGroup, DashItem, DashMember, DashTotal } from "./types";
+import type { DashboardData, DashFriend, DashGroup, DashItem, DashList, DashMember, DashTotal } from "./types";
 
 type ProfileEmbed = { display_name: string; phone: string } | { display_name: string; phone: string }[] | null;
 
@@ -23,6 +23,7 @@ export async function loadDashboard(userId: string, email: string): Promise<Dash
     groups: [],
     members: [],
     items: [],
+    lists: [],
     totals: [],
     friends: [],
     friendsReady: true,
@@ -116,6 +117,7 @@ export async function loadDashboard(userId: string, email: string): Promise<Dash
       return {
         id: item.id,
         groupId: list?.group_id ?? "",
+        listId: item.list_id,
         listName: list?.name ?? "Shared list",
         name: item.name,
         quantity: item.quantity,
@@ -125,15 +127,33 @@ export async function loadDashboard(userId: string, email: string): Promise<Dash
     });
   }
 
-  const totalResult = await supabase.from("who_owes_what").select("group_id, user_id, name, total_cents").in("group_id", groupIds);
+  const totalResult = await supabase
+    .from("who_owes_what")
+    .select("group_id, list_id, user_id, name, total_cents")
+    .in("group_id", groupIds);
   if (totalResult.error) return { ...empty, groups, members, items, loadError: totalResult.error.message };
 
   const totals: DashTotal[] = [];
+  const shareByList = new Map<string, number>();
   for (const row of totalResult.data ?? []) {
     const existing = totals.find((total) => total.groupId === row.group_id && total.userId === row.user_id);
     if (existing) existing.totalCents += row.total_cents;
     else totals.push({ groupId: row.group_id, userId: row.user_id, name: row.name, totalCents: row.total_cents });
+    if (row.user_id === userId) shareByList.set(row.list_id, (shareByList.get(row.list_id) ?? 0) + row.total_cents);
   }
 
-  return { ...empty, groups, members, items, totals, selectedGroupId: groups[0]?.id ?? null, loadError: null };
+  const dashLists: DashList[] = lists.map((list) => {
+    const rows = items.filter((item) => item.listId === list.id);
+    return {
+      id: list.id,
+      groupId: list.group_id,
+      name: list.name,
+      itemCount: rows.length,
+      unassigned: rows.filter((item) => item.claimedBy.length === 0).length,
+      totalCents: rows.reduce((sum, item) => sum + item.priceCents * item.quantity, 0),
+      myShareCents: shareByList.get(list.id) ?? 0,
+    };
+  });
+
+  return { ...empty, groups, members, items, lists: dashLists, totals, selectedGroupId: groups[0]?.id ?? null, loadError: null };
 }
