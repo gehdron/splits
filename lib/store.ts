@@ -40,7 +40,7 @@ export function memberOnList(member: ListMember, viewer: ListViewer): boolean {
   return false;
 }
 
-function sameMember(a: ListMember, b: ListMember): boolean {
+export function sameListMember(a: ListMember, b: ListMember): boolean {
   if (a.userId && b.userId && a.userId === b.userId) return true;
   if (samePhone(a.phone, b.phone)) return true;
   if (a.email && b.email && a.email.toLowerCase() === b.email.toLowerCase()) return true;
@@ -125,7 +125,7 @@ export function addListMember(listId: string, member: ListMember): List | null {
   if (member.phone) next.phone = member.phone;
   if (member.email) next.email = member.email.toLowerCase();
   const members = list.members ?? [];
-  if (!members.some((entry) => sameMember(entry, next))) list.members = [...members, next];
+  if (!members.some((entry) => sameListMember(entry, next))) list.members = [...members, next];
   save(db);
   return list;
 }

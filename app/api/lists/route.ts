@@ -1,6 +1,7 @@
 import { connection } from "next/server";
 import { creatorMember, currentListViewer } from "@/lib/list-viewer";
-import { createList, listSummaries, memberOnList } from "@/lib/store";
+import { createList, listSummaries } from "@/lib/live-lists";
+import { memberOnList } from "@/lib/store";
 import { supabaseConfigured } from "@/lib/supabase/env";
 
 function publicSummary(list: { id: string; name: string; createdAt: number; itemCount: number }) {
@@ -11,7 +12,7 @@ function publicSummary(list: { id: string; name: string; createdAt: number; item
 // Pay links are requested per list, so list ids aren't handed out to anyone who asks.
 export async function GET() {
   await connection();
-  const summaries = listSummaries();
+  const summaries = await listSummaries();
   if (!supabaseConfigured()) return Response.json(summaries.map(publicSummary));
   const viewer = await currentListViewer();
   if (!viewer) return Response.json([]);
@@ -32,9 +33,11 @@ export async function POST(req: Request) {
   const name = String(body.name ?? "").trim() || "Shared list";
   try {
     const viewer = await currentListViewer();
-    const list = createList(name, viewer?.userId ?? null, viewer ? creatorMember(viewer) : undefined);
+    const list = await createList(name, viewer?.userId ?? null, viewer ? creatorMember(viewer) : undefined);
     return Response.json({ id: list.id, name: list.name, createdAt: list.createdAt, itemCount: 0 }, { status: 201 });
-  } catch {
-    return Response.json({ error: "The list could not be created." }, { status: 500 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "The list could not be created.";
+    const safe = /SUPABASE_SERVICE_ROLE_KEY|shared-lists\.sql/.test(message) ? message : "The list could not be created.";
+    return Response.json({ error: safe }, { status: 500 });
   }
 }

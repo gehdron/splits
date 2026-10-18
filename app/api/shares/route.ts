@@ -2,7 +2,7 @@ import { connection } from "next/server";
 import { supabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient, supabaseAdminConfigured } from "@/lib/supabase/admin";
-import { getList } from "@/lib/store";
+import { getList } from "@/lib/live-lists";
 import { createShare, listShares, markShareSent, maxShareCents, MIN_SHARE_CENTS, payUrl, type Share } from "@/lib/shares";
 import { settlePerson } from "@/lib/settle";
 import { normalizeHandle, photonConfigured, sendText } from "@/lib/photon-send";
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
   if (!listId || !personName) return Response.json({ error: "Choose a person on a list." }, { status: 400 });
 
   // The amount comes from the list on the server, never from the browser.
-  const data = getList(listId);
+  const data = await getList(listId);
   if (!data) return Response.json({ error: "List not found." }, { status: 404 });
   const owedCents = data.items
     .filter((item) => item.claimedBy === personName)
