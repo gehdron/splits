@@ -4,7 +4,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { exitGroup } from "./actions";
-import { DashboardListAssistant } from "./list-assistant";
+import { DashboardListAssistant, SharedListAssistant } from "./list-assistant";
 import { DashSidebar } from "./sidebar";
 import type { DashboardData } from "./types";
 
@@ -312,6 +312,14 @@ export function Board({ data }: { data: DashboardData }) {
                             <Icon d="M9 6l6 6-6 6" />
                           </span>
                         </Link>
+                        <SharedListAssistant
+                          list={list}
+                          currentUser={data.me.name}
+                          people={[
+                            ...members.map((member) => member.name),
+                            ...data.friends.map((friend) => friend.name),
+                          ]}
+                        />
                       </li>
                     ))}
                   </ul>
