@@ -311,7 +311,7 @@ export function DashboardHome({ data }: { data: DashboardData }) {
                 <p className="quiet">An owner adds items. Claim what you ordered.</p>
               )}
               <p>
-                <a href="/detect">Split a bill</a>
+                <a href="/dashboard/item-by-item">Split a bill</a>
               </p>
             </section>
           </>

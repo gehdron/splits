@@ -241,22 +241,28 @@ export async function createList(_state: DashState, formData: FormData): Promise
   redirect(listHref(groupId, id, true, false));
 }
 
-export async function importReceipt(_state: DashState, formData: FormData): Promise<DashState> {
-  const groupId = String(formData.get("groupId") ?? "");
-  const listId = String(formData.get("listId") ?? "");
-  if (!groupId || !listId) return { error: "Choose a list first." };
+type ReceiptRow = { description?: string; quantity?: string; amount?: string };
 
-  let rows: { description?: string; quantity?: string; amount?: string }[] = [];
+function readReceiptRows(formData: FormData): ReceiptRow[] | null {
   try {
     const parsed = JSON.parse(String(formData.get("items") ?? "[]"));
-    if (!Array.isArray(parsed)) throw new Error("bad");
-    rows = parsed;
+    return Array.isArray(parsed) ? parsed : null;
   } catch {
-    return { error: "The receipt items could not be read." };
+    return null;
   }
+}
 
-  const { supabase, user } = await requireUser();
-  const inserts = rows
+// A discount or coupon line reads as negative ("-2.00", "2.00-", "(2.00)"). Saving it would
+// turn it into a positive charge, so these saves are refused until the user removes or fixes the line.
+function hasNegativeAmount(rows: ReceiptRow[]) {
+  return rows.some((row) => /^\s*[-\u2212(]|[-\u2212)]\s*$/.test(String(row.amount ?? "")));
+}
+
+const NEGATIVE_AMOUNT_ERROR = "A line on the receipt is a discount or has a negative price. Delete it or fix the price, then save again.";
+
+// Receipt amounts are line totals; store a per-unit price only when it divides evenly.
+function receiptItemInserts(listId: string, rows: ReceiptRow[]) {
+  return rows
     .map((row) => {
       const name = String(row.description ?? "").trim();
       const line = Math.round(Number(String(row.amount ?? "").replace(/[^0-9.]/g, "")) * 100);
@@ -273,10 +279,51 @@ export async function importReceipt(_state: DashState, formData: FormData): Prom
       };
     })
     .filter((row) => row !== null);
+}
+
+export async function importReceipt(_state: DashState, formData: FormData): Promise<DashState> {
+  const groupId = String(formData.get("groupId") ?? "");
+  const listId = String(formData.get("listId") ?? "");
+  if (!groupId || !listId) return { error: "Choose a list first." };
+
+  const rows = readReceiptRows(formData);
+  if (!rows) return { error: "The receipt items could not be read." };
+  if (hasNegativeAmount(rows)) return { error: NEGATIVE_AMOUNT_ERROR };
+
+  const { supabase, user } = await requireUser();
+  const inserts = receiptItemInserts(listId, rows);
   if (inserts.length === 0) return { error: "The receipt has no items to add." };
 
   const { error } = await supabase.from("items").insert(inserts);
   if (error) return { error: error.message };
+  updateTag(`dashboard-${user.id}`);
+  redirect(listHref(groupId, listId, false, false));
+}
+
+// Item-by-item split: the scanned receipt becomes a new list in the chosen group.
+export async function createListFromReceipt(_state: DashState, formData: FormData): Promise<DashState> {
+  const groupId = String(formData.get("groupId") ?? "");
+  const name = String(formData.get("name") ?? "").trim() || "Receipt";
+  if (!groupId) return { error: "Choose a group first." };
+
+  const rows = readReceiptRows(formData);
+  if (!rows) return { error: "The receipt items could not be read." };
+  if (hasNegativeAmount(rows)) return { error: NEGATIVE_AMOUNT_ERROR };
+
+  const listId = crypto.randomUUID();
+  const inserts = receiptItemInserts(listId, rows);
+  if (inserts.length === 0) return { error: "The receipt has no items to add." };
+
+  const { supabase, user } = await requireUser();
+  const { error: listError } = await supabase.from("lists").insert({ id: listId, group_id: groupId, created_by: user.id, name });
+  if (listError) return { error: listError.message };
+
+  const { error } = await supabase.from("items").insert(inserts);
+  if (error) {
+    // Don't leave an empty list behind if the items were rejected.
+    await supabase.from("lists").delete().eq("id", listId);
+    return { error: error.message };
+  }
   updateTag(`dashboard-${user.id}`);
   redirect(listHref(groupId, listId, false, false));
 }

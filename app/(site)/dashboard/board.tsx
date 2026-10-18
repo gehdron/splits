@@ -85,7 +85,15 @@ export function Board({ data }: { data: DashboardData }) {
   }
 
   const groupQuery = splitGroupId ? `?group=${encodeURIComponent(splitGroupId)}` : "";
-  const itemSplitHref = `/dashboard/item-by-item${groupQuery}`;
+  // The scanner shows which charge it's splitting, so it gets the charge too.
+  const itemQuery = new URLSearchParams(splitGroupId ? { group: splitGroupId } : {});
+  if (splitTarget) {
+    itemQuery.set("merchant", splitTarget.merchant);
+    itemQuery.set("amount", splitTarget.amount);
+    itemQuery.set("date", splitTarget.date);
+  }
+  const itemQueryString = itemQuery.toString();
+  const itemSplitHref = `/dashboard/item-by-item${itemQueryString ? `?${itemQueryString}` : ""}`;
   const evenSplitHref = `/dashboard/even${groupQuery}`;
 
   useEffect(() => {
