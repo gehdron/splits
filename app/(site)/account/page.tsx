@@ -27,6 +27,14 @@ export const metadata: Metadata = {
   title: "Your Splits account",
 };
 
+function isMissingProfileDetails(error: { code?: string; message: string }) {
+  return (
+    error.code === "PGRST204" ||
+    error.code === "42703" ||
+    /column .*?(bio|avatar_url).*?(does not exist|schema cache)/i.test(error.message)
+  );
+}
+
 export default function AccountPage({ searchParams }: { searchParams: SearchParams }) {
   return (
     <AuthShell title="Your account" lead="This is the account you use to split bills.">
@@ -52,17 +60,32 @@ async function AccountPanel({ searchParams }: { searchParams: SearchParams }) {
 
   const profileResult = await supabase
     .from("profiles")
-    .select("display_name, phone, bio, avatar_url")
+    .select("display_name, phone")
     .eq("id", data.user.id)
     .maybeSingle();
+  const profileDetailsResult = profileResult.error
+    ? null
+    : await supabase
+        .from("profiles")
+        .select("display_name, phone, bio, avatar_url")
+        .eq("id", data.user.id)
+        .maybeSingle();
   const metadataName = data.user.user_metadata?.name;
   const metadataPhone = data.user.user_metadata?.phone;
-  const profile = profileResult.data ?? {
-    display_name: typeof metadataName === "string" && metadataName.trim() ? metadataName : "Splits member",
-    phone: typeof metadataPhone === "string" ? metadataPhone : "",
+  const profile = profileDetailsResult?.data ?? {
+    display_name:
+      profileResult.data?.display_name ??
+      (typeof metadataName === "string" && metadataName.trim() ? metadataName : "Splits member"),
+    phone: profileResult.data?.phone ?? (typeof metadataPhone === "string" ? metadataPhone : ""),
     bio: "",
     avatar_url: null,
   };
+  const detailsNeedMigration = Boolean(
+    profileDetailsResult?.error && isMissingProfileDetails(profileDetailsResult.error),
+  );
+  const profileLoadError = profileResult.error || (
+    profileDetailsResult?.error && !detailsNeedMigration ? profileDetailsResult.error : null
+  );
   const query = await searchParams;
   const noticeKey = ["payouts", "bank"].map((key) => (typeof query[key] === "string" ? `${key}:${query[key]}` : "")).find((key) => key in NOTICES);
   const payouts = await payoutStatus(data.user.id);
@@ -73,9 +96,14 @@ async function AccountPanel({ searchParams }: { searchParams: SearchParams }) {
         <strong>{profile.display_name}</strong>
         <span>{data.user.email}</span>
       </div>
-      {profileResult.error ? (
+      {detailsNeedMigration ? (
         <p className="note" role="status">
-          Profile fields could not be loaded. Apply <code>supabase/profile-fields.sql</code> in Supabase before saving profile changes.
+          Your name and phone can still be edited. To enable the description and profile photo, apply <code>supabase/profile-fields.sql</code> in the Supabase SQL Editor.
+        </p>
+      ) : null}
+      {profileLoadError ? (
+        <p className="err" role="alert">
+          Profile details could not be loaded: {profileLoadError.message}
         </p>
       ) : null}
       <ProfileForm initialProfile={profile} />
