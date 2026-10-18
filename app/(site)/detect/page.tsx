@@ -3,7 +3,7 @@
 
 import { Suspense, useActionState, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { importReceipt } from "../dashboard/actions";
+import { importReceipt } from "../Dashboard/actions";
 import Tesseract from "tesseract.js";
 import type {
   AiParsedReceipt,
@@ -205,14 +205,15 @@ export default function ReceiptScanner() {
   const [aiParsing, setAiParsing] = useState(false);
   const [aiParsed, setAiParsed] = useState(false);
   const [aiError, setAiError] = useState("");
+  const [itemAssignmentsOpen, setItemAssignmentsOpen] = useState(false);
   const [splitAssistantOpen, setSplitAssistantOpen] = useState(false);
   const [splitMessages, setSplitMessages] = useState<SplitInstructionMessage[]>([]);
   const [splitMessage, setSplitMessage] = useState("");
   const [splitSuggestionsEnabled, setSplitSuggestionsEnabled] = useState(true);
   const [splitCursorPosition, setSplitCursorPosition] = useState(0);
   const [splitInputScrollTop, setSplitInputScrollTop] = useState(0);
-  const [dinerNames, setDinerNames] = useState<string[]>([]);
-  const [dinerNameInput, setDinerNameInput] = useState("");
+  const [userNames, setUserNames] = useState<string[]>([]);
+  const [userNameInput, setUserNameInput] = useState("");
   const [splitAssignments, setSplitAssignments] = useState<ReceiptAssignment[]>([]);
   const [splitParsing, setSplitParsing] = useState(false);
   const [splitError, setSplitError] = useState("");
@@ -411,8 +412,8 @@ export default function ReceiptScanner() {
       setSplitAssistantOpen(false);
       setSplitMessages([]);
       setSplitAssignments([]);
-      setDinerNames([]);
-      setDinerNameInput("");
+      setUserNames([]);
+      setUserNameInput("");
       setSplitMessage("");
       setSplitError("");
       setFrameSize({ width: 0, height: 0 });
@@ -663,8 +664,8 @@ export default function ReceiptScanner() {
       setSplitAssistantOpen(false);
       setSplitMessages([]);
       setSplitAssignments([]);
-      setDinerNames([]);
-      setDinerNameInput("");
+      setUserNames([]);
+      setUserNameInput("");
       setSplitMessage("");
       setSplitError("");
 
@@ -906,8 +907,8 @@ export default function ReceiptScanner() {
       setSplitAssistantOpen(false);
       setSplitMessages([]);
       setSplitAssignments([]);
-      setDinerNames([]);
-      setDinerNameInput("");
+      setUserNames([]);
+      setUserNameInput("");
       setSplitMessage("");
       setSplitError("");
       setTipOptionsOpen(false);
@@ -993,10 +994,11 @@ export default function ReceiptScanner() {
       setReceiptTotals(result.totals);
       setReceiptTotalEdited(false);
       setAiParsed(true);
+      setItemAssignmentsOpen(false);
       setSplitMessages([]);
       setSplitAssignments([]);
-      setDinerNames([]);
-      setDinerNameInput("");
+      setUserNames([]);
+      setUserNameInput("");
       setSplitMessage("");
       setSplitError("");
       setTipOptionsOpen(false);
@@ -1038,20 +1040,20 @@ export default function ReceiptScanner() {
     });
   }
 
-  function addDiner(event: React.FormEvent<HTMLFormElement>) {
+  function addUser(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const name = dinerNameInput.trim();
+    const name = userNameInput.trim();
     if (!name) return;
     if (
-      dinerNames.some(
+      userNames.some(
         (existingName) => existingName.toLocaleLowerCase() === name.toLocaleLowerCase()
       )
     ) {
-      setDinerNameInput("");
+      setUserNameInput("");
       return;
     }
-    setDinerNames((names) => [...names, name]);
-    setDinerNameInput("");
+    setUserNames((names) => [...names, name]);
+    setUserNameInput("");
   }
 
   function toggleItemAssignment(itemIndex: number, person: string) {
@@ -1129,7 +1131,7 @@ export default function ReceiptScanner() {
         ? `${result.reply} ${result.clarification}`
         : result.reply;
       setSplitAssignments(result.assignments);
-      setDinerNames((existingNames) => {
+      setUserNames((existingNames) => {
         const names = [...existingNames];
         for (const person of result.assignments.flatMap(
           (assignment) => assignment.people
@@ -1178,8 +1180,8 @@ export default function ReceiptScanner() {
     setSplitAssistantOpen(false);
     setSplitMessages([]);
     setSplitAssignments([]);
-    setDinerNames([]);
-    setDinerNameInput("");
+    setUserNames([]);
+    setUserNameInput("");
     setSplitMessage("");
     setSplitError("");
     setProgress(0);
@@ -1562,32 +1564,52 @@ export default function ReceiptScanner() {
                   </tbody>
                 </table>
               </div>
-              <section className="space-y-4 rounded-xl border border-blue-200 bg-blue-50/60 p-3 sm:p-4">
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  aria-expanded={itemAssignmentsOpen}
+                  aria-controls="interactive-item-assignments"
+                  onClick={() => setItemAssignmentsOpen((open) => !open)}
+                  className="min-h-12 w-full rounded-lg border px-4 py-3 text-left font-semibold sm:w-auto"
+                >
+                  {itemAssignmentsOpen
+                    ? "Hide item assignments"
+                    : `Assign items manually · ${
+                        splitAssignments.filter(
+                          (assignment) => assignment.people.length > 0
+                        ).length
+                      }/${receiptRows.length} assigned`}
+                </button>
+                {itemAssignmentsOpen && (
+              <section
+                id="interactive-item-assignments"
+                className="space-y-4 rounded-xl border border-blue-200 bg-blue-50/60 p-3 sm:p-4"
+              >
                 <div>
                   <h3 className="font-semibold">Assign receipt items</h3>
                   <p className="mt-1 text-sm text-gray-600">
-                    Add diners, then select everyone who shared each item. You
-                    can also describe assignments in the split chat below.
+                    Add users, then select who shares each item. You can also
+                    describe assignments in the split chat below.
                   </p>
                 </div>
-                <form onSubmit={addDiner} className="flex flex-wrap gap-2">
-                  <label htmlFor="diner-name" className="sr-only">
-                    Diner name
+                <form onSubmit={addUser} className="flex flex-wrap gap-2">
+                  <label htmlFor="user-name" className="sr-only">
+                    User name
                   </label>
                   <input
-                    id="diner-name"
-                    value={dinerNameInput}
-                    onChange={(event) => setDinerNameInput(event.target.value)}
+                    id="user-name"
+                    value={userNameInput}
+                    onChange={(event) => setUserNameInput(event.target.value)}
                     maxLength={40}
-                    placeholder="Add a diner"
+                    placeholder="Add a user"
                     className="min-h-11 min-w-0 flex-1 rounded-lg border bg-white px-3 py-2 text-base"
                   />
                   <button
                     type="submit"
-                    disabled={!dinerNameInput.trim()}
+                    disabled={!userNameInput.trim()}
                     className="min-h-11 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Add diner
+                    Add user
                   </button>
                 </form>
                 <div className="space-y-3">
@@ -1612,13 +1634,13 @@ export default function ReceiptScanner() {
                             {row.amount.trim() || "Amount needs review"}
                           </span>
                         </div>
-                        {dinerNames.length > 0 ? (
+                        {userNames.length > 0 ? (
                           <div
                             className="mt-3 flex flex-wrap gap-2"
                             role="group"
-                            aria-label={`Assign ${row.description || `item ${index + 1}`} to diners`}
+                            aria-label={`Assign ${row.description || `item ${index + 1}`} to users`}
                           >
-                            {dinerNames.map((person) => {
+                            {userNames.map((person) => {
                               const selected = assignment?.people.some(
                                 (name) =>
                                   name.toLocaleLowerCase() ===
@@ -1646,7 +1668,7 @@ export default function ReceiptScanner() {
                           </div>
                         ) : (
                           <p className="mt-2 text-sm text-gray-600">
-                            Add diners here or name them in the split chat to
+                            Add users here or name them in the split chat to
                             assign this item.
                           </p>
                         )}
@@ -1726,7 +1748,7 @@ export default function ReceiptScanner() {
                     </div>
                   ) : (
                     <p className="text-sm text-gray-600">
-                      Add diners and assign items to see everyone&apos;s
+                      Add users and assign items to see everyone&apos;s
                       calculated share.
                     </p>
                   )}
@@ -1749,6 +1771,8 @@ export default function ReceiptScanner() {
                   )}
                 </div>
               </section>
+                )}
+              </div>
               <div className="space-y-2">
                 <h3 className="font-semibold">Receipt totals</h3>
                 <div className="grid grid-cols-2 gap-3">

@@ -48,10 +48,10 @@ AI parsing requires a Gemini API key and may incur API charges depending on
 your account and usage. OCR extraction and raw text remain available without
 an API key.
 
-After AI parsing, select **Split items with chat** to assign receipt items
-directly by adding diners and selecting them on each item, or use the split chat
-to assign items with natural-language instructions. Both controls stay in sync,
-and each person's item shares, tax, tip, and total update in the receipt review.
+After AI parsing, open **Assign items manually** to add users and select them
+on each receipt item, or open **Split items with chat** to assign items with
+natural-language instructions. Both controls stay in sync, and each person's
+item shares, tax, tip, and total update in the receipt review.
 Shared items are split equally; parsed tax is allocated proportionally to each
 person's share of the item amounts.
 While typing split instructions, item-name suggestions are based on the
