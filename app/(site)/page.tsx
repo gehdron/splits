@@ -60,22 +60,6 @@ export default function Home() {
                 <a className="btn btn-a" href={APP_URL}>Start splitting</a>
               </div>
             </div>
-            <div className="device">
-              <div className="tri a" aria-hidden="true"><i /></div>
-              <div className="tri b" aria-hidden="true"><i /></div>
-              <div className="phone-in">
-                <div className="phone">
-                  <div className="screen">
-                    <span className="sk" style={{ top: 84, width: "46%" }} />
-                    <span className="sk" style={{ top: 116 }} />
-                    <span className="sk" style={{ top: 144, right: 90 }} />
-                    <span className="sk" style={{ bottom: 96 }} />
-                    <span className="sk" style={{ bottom: 68, right: 120 }} />
-                    App screen placeholder
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </Hero>
