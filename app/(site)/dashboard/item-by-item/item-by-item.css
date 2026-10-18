@@ -148,8 +148,27 @@
 .db .receipt-chat-message strong{font-size:12px}
 .db .receipt-chat-pending{font-size:13px;color:var(--mut)}
 .db .receipt-chat-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}
-.db .receipt-chat-form .lbl{grid-column:1/-1;margin:0}
-.db .receipt-chat-form textarea{grid-column:1/-1;min-height:84px;padding:12px;resize:vertical}
+.db .receipt-chat-input-heading{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.db .receipt-chat-input-heading .lbl{margin:0}
+.db .receipt-suggestion-toggle{min-height:40px;padding:7px 10px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink2);font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.db .receipt-suggestion-toggle:hover{border-color:var(--vio)}
+.db .receipt-suggestion-field{position:relative;grid-column:1/-1;min-width:0}
+.db .receipt-suggestion-preview{position:absolute;inset:0;z-index:0;overflow:hidden;border:1px solid transparent;border-radius:12px;color:var(--ink);pointer-events:none}
+.db .receipt-suggestion-preview>div{min-height:84px;padding:12px;overflow-wrap:anywhere;white-space:pre-wrap;font:inherit;font-size:15px;line-height:normal}
+.db .receipt-suggestion-completion{color:#74809C}
+.db .receipt-suggestion-replaced{color:#74809C;text-decoration:line-through}
+.db .receipt-suggestion-match{color:#4630B8;font-weight:700}
+.db .receipt-chat-form .receipt-suggestion-textarea{position:relative;z-index:1;display:block;min-height:84px;padding:12px;resize:vertical;font-size:15px;line-height:normal}
+.db .receipt-chat-form .receipt-suggestion-textarea.has-suggestion{background:transparent;color:transparent;caret-color:var(--ink)}
+.db .receipt-chat-form .receipt-suggestion-textarea.has-suggestion::selection{background:rgba(108,77,255,.22);color:transparent}
+.db .receipt-suggestion-hint,.db .receipt-item-suggestions{grid-column:1/-1;margin:0}
+.db .receipt-suggestion-hint{color:var(--mut);font-size:12px}
+.db .receipt-suggestion-hint kbd{padding:1px 5px;border:1px solid var(--line);border-radius:4px;background:#fff;color:var(--ink);font:inherit}
+.db .receipt-suggestion-hint strong{color:var(--ink2)}
+.db .receipt-item-suggestions{padding:0;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:#fff;list-style:none}
+.db .receipt-item-suggestions button{width:100%;min-height:44px;padding:9px 12px;border:0;background:#fff;color:var(--ink2);text-align:left;font:inherit;font-size:13px;cursor:pointer}
+.db .receipt-item-suggestions li+li{border-top:1px solid var(--line)}
+.db .receipt-item-suggestions button:hover,.db .receipt-item-suggestions button:focus-visible{outline:none;background:#ECE8FF}
 .db .receipt-chat-form .btn{grid-column:2}
 .db .raw{margin-top:16px}
 .db .raw summary{cursor:pointer;font-weight:700}
