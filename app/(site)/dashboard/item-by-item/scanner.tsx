@@ -2,7 +2,14 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useActionState, useEffect, useRef, useState } from "react";
+import {
+  Suspense,
+  useActionState,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { signOut } from "../../auth/actions";
@@ -164,6 +171,7 @@ type ScannerProps = {
   people: string[];
   charge: ScannerCharge | null;
   loadError: string | null;
+  startCameraOnLoad?: boolean;
 };
 
 // The AI returns amounts as text ("36.97" or "$36.97"); show them with one leading "$". Display only.
@@ -268,11 +276,20 @@ function SaveReceiptButton({ rows, group, listName }: { rows: AiReceiptItem[]; g
   );
 }
 
-export function ReceiptScanner({ me, groups, group, people, charge, loadError }: ScannerProps) {
+export function ReceiptScanner({
+  me,
+  groups,
+  group,
+  people,
+  charge,
+  loadError,
+  startCameraOnLoad = false,
+}: ScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const receiptFileInputRef = useRef<HTMLInputElement>(null);
+  const autoCameraStarted = useRef(false);
 
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraFacingMode, setCameraFacingMode] =
@@ -381,10 +398,10 @@ export function ReceiptScanner({ me, groups, group, people, charge, loadError }:
     setTipSplitMode(mode);
   }
 
-  async function startCamera(
+  const startCamera = useCallback(async (
     facingMode: CameraFacingMode = cameraFacingMode,
     deviceId?: string
-  ) {
+  ) => {
     let stream: MediaStream | null = null;
     readRun.current += 1;
 
@@ -468,7 +485,7 @@ export function ReceiptScanner({ me, groups, group, people, charge, loadError }:
       setStatus(message);
       setCameraError(message);
     }
-  }
+  }, [cameraFacingMode, people]);
 
   function stopCamera() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -1110,6 +1127,15 @@ export function ReceiptScanner({ me, groups, group, people, charge, loadError }:
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
+
+  useEffect(() => {
+    if (!startCameraOnLoad || autoCameraStarted.current) return;
+    const timeoutId = window.setTimeout(() => {
+      autoCameraStarted.current = true;
+      void startCamera();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [startCamera, startCameraOnLoad]);
 
   const step: 1 | 2 | 3 =
     aiParsed && receiptRows.length > 0 ? 3 : receiptDocumentDataUrl ? 2 : 1;
