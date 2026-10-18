@@ -116,6 +116,7 @@
    .db .pop{position:fixed;inset:0;width:min(420px,calc(100% - 32px));height:fit-content;max-height:calc(100dvh - 32px);margin:auto;padding:0;border:0;border-radius:24px;background:#fff;color:var(--ink);overflow:auto}
    .db .pop::backdrop{background:rgba(11,16,32,.45)}
    .db .pop form{display:grid;gap:14px;margin:0;padding:28px}
+   .db .pop .lbl{margin-top:0}
    .db .pop h2{font-size:32px;letter-spacing:-0.03em}
    .db .pop p{margin:0;color:var(--mut)}
    .db .pop-acts{display:grid;gap:8px}

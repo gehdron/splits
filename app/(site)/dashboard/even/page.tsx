@@ -1,9 +1,10 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
 import "./even.css";
 
-/* Split evenly: static UI only, no functionality yet.
-   Sample data: the Amazon charge ($38.97) split with Brayden and Maya.
-   TODO: load the real charge from the URL, real contacts, and wire up the buttons. */
+/* Sample charge: Amazon $38.97. Money is computed here, never by a model. */
 
 /* ------------------------------------------------------------- helpers */
 
@@ -54,23 +55,41 @@ const LogoMark = () => (
 
 /* ---------------------------------------------------------- sample data */
 
-const splitWith = [
+const TOTAL = 3897;
+
+type Person = { name: string; sub: string };
+type Mode = "even" | "amount" | "percent";
+
+const starter: Person[] = [
   { name: "Brayden", sub: "(555) 010-0142" },
   { name: "Maya", sub: "(555) 010-0178" },
 ];
 
-const suggestions = [
+const starterContacts: Person[] = [
   { name: "Jay", sub: "jay@example.com" },
   { name: "Riley", sub: "(555) 010-0133" },
   { name: "Priya", sub: "(555) 010-0190" },
   { name: "Marcus", sub: "marcus@example.com" },
 ];
 
-const shares = [
-  { name: ME, label: "Gordon (you)", note: "You paid, so your share stays with you.", amount: "$12.99" },
-  { name: "Brayden", label: "Brayden", note: "Gets a link at (555) 010-0142", amount: "$12.99" },
-  { name: "Maya", label: "Maya", note: "Gets a link at (555) 010-0178", amount: "$12.99" },
-];
+function money(cents: number): string {
+  const abs = Math.abs(cents);
+  return `${cents < 0 ? "-" : ""}$${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
+}
+
+function splitEven(cents: number, count: number): number[] {
+  if (count <= 0) return [];
+  const base = Math.floor(cents / count);
+  const extra = cents - base * count;
+  return Array.from({ length: count }, (_, index) => base + (index < extra ? 1 : 0));
+}
+
+function centsFromDollars(value: string): number {
+  const cleaned = value.replace(/[^0-9.]/g, "");
+  if (!cleaned) return 0;
+  const [dollars, fraction = ""] = cleaned.split(".");
+  return Number(dollars || "0") * 100 + Number((fraction + "00").slice(0, 2));
+}
 
 /* ------------------------------------------------------------- sidebar */
 
@@ -175,6 +194,81 @@ function Sidebar() {
 /* ---------------------------------------------------------------- page */
 
 export default function EvenSplitPage() {
+  const [others, setOthers] = useState(starter);
+  const [contacts, setContacts] = useState(starterContacts);
+  const [includeMe, setIncludeMe] = useState(true);
+  const [mode, setMode] = useState<Mode>("even");
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [percents, setPercents] = useState<Record<string, string>>({});
+  const [query, setQuery] = useState("");
+  const [sent, setSent] = useState(false);
+
+  const names = includeMe ? [ME, ...others.map((person) => person.name)] : others.map((person) => person.name);
+  const evenParts = splitEven(TOTAL, names.length);
+  const percentDefaults = splitEven(100, names.length);
+  const amountCents = names.map((name, index) =>
+    amounts[name] === undefined ? (evenParts[index] ?? 0) : centsFromDollars(amounts[name]),
+  );
+  const percentNumbers = names.map((name, index) =>
+    percents[name] === undefined ? (percentDefaults[index] ?? 0) : Math.min(100, Number(percents[name] || "0")),
+  );
+  const percentSum = percentNumbers.reduce((sum, value) => sum + value, 0);
+  const percentParts = names.map((_, index) => Math.floor((TOTAL * percentNumbers[index]) / 100));
+  if (percentSum === 100) {
+    let left = TOTAL - percentParts.reduce((sum, value) => sum + value, 0);
+    const order = percentParts
+      .map((value, index) => ({ index, frac: (TOTAL * percentNumbers[index]) / 100 - value }))
+      .sort((a, b) => b.frac - a.frac);
+    for (const slot of order) {
+      if (left <= 0) break;
+      percentParts[slot.index] += 1;
+      left -= 1;
+    }
+  }
+  const shares = names.map((name, index) => {
+    const person = others.find((entry) => entry.name === name);
+    const cents = mode === "even" ? evenParts[index] ?? 0 : mode === "amount" ? amountCents[index] : percentParts[index];
+    return {
+      name,
+      label: name === ME ? "Gordon (you)" : name,
+      note: name === ME ? "You paid, so your share stays with you." : `Gets a link at ${person?.sub ?? "the address you added"}`,
+      cents,
+    };
+  });
+  const covered =
+    names.length > 0 &&
+    (mode === "even" ||
+      (mode === "amount" && amountCents.reduce((sum, value) => sum + value, 0) === TOTAL) ||
+      (mode === "percent" && percentSum === 100));
+  const request = shares.filter((share) => share.name !== ME).reduce((sum, share) => sum + share.cents, 0);
+  const requestCount = shares.filter((share) => share.name !== ME && share.cents > 0).length;
+  const shown = contacts.filter((contact) => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return true;
+    return contact.name.toLowerCase().includes(needle) || contact.sub.toLowerCase().includes(needle);
+  });
+
+  function resetSent() {
+    setSent(false);
+  }
+
+  function addPerson(person: Person) {
+    if (others.some((entry) => entry.name === person.name) || person.name === ME) return;
+    setOthers((current) => [...current, person]);
+    setContacts((current) => current.filter((entry) => entry.name !== person.name));
+    setQuery("");
+    resetSent();
+  }
+
+  function addTyped() {
+    const value = query.trim();
+    if (!value) return;
+    const known = contacts.find(
+      (contact) => contact.name.toLowerCase() === value.toLowerCase() || contact.sub.toLowerCase() === value.toLowerCase(),
+    );
+    addPerson(known ?? { name: value, sub: value });
+  }
+
   return (
     <div className="db">
       <Sidebar />
@@ -197,7 +291,7 @@ export default function EvenSplitPage() {
 
           <header className="top">
             <div>
-              <h1>Split $38.97</h1>
+              <h1>Split {money(TOTAL)}</h1>
               <p className="meta">Add people from your contacts, choose how to split, and send everyone a link.</p>
             </div>
           </header>
@@ -208,7 +302,7 @@ export default function EvenSplitPage() {
                 <h2 id="split-with-h">Split with</h2>
                 <p className="sub">Anyone in your contacts. They don’t need the app to pay.</p>
               </div>
-              <button className="chip on" type="button" aria-pressed="true">
+              <button className={`chip${includeMe ? " on" : ""}`} type="button" aria-pressed={includeMe} onClick={() => { setIncludeMe((value) => !value); resetSent(); }}>
                 <Avatar name={ME} />
                 Include my share
                 <span className="tick">
@@ -217,82 +311,152 @@ export default function EvenSplitPage() {
               </button>
             </div>
             <div className="pchips">
-              {splitWith.map((p) => (
-                <span key={p.name} className="pchip">
-                  <Avatar name={p.name} />
-                  {p.name}
-                  <button className="xb" type="button" aria-label={`Remove ${p.name}`}>
+              {others.map((person) => (
+                <span key={person.name} className="pchip">
+                  <Avatar name={person.name} />
+                  {person.name}
+                  <button
+                    className="xb"
+                    type="button"
+                    aria-label={`Remove ${person.name}`}
+                    onClick={() => {
+                      setOthers((current) => current.filter((entry) => entry.name !== person.name));
+                      resetSent();
+                    }}
+                  >
                     <CloseIcon />
                   </button>
                 </span>
               ))}
             </div>
-            <div className="addp">
+            <form
+              className="addp"
+              onSubmit={(event) => {
+                event.preventDefault();
+                addTyped();
+              }}
+            >
               <label className="lbl" htmlFor="contact-search">
                 Add people
               </label>
-              <input id="contact-search" className="field" type="text" placeholder="Search your contacts, or type a phone number or email" />
+              <div className="inrow">
+                <input
+                  id="contact-search"
+                  className="field"
+                  type="text"
+                  placeholder="Search your contacts, or type a phone number or email"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+                <button className="btn" type="submit" disabled={!query.trim()}>
+                  Add
+                </button>
+              </div>
               <p className="sugg-h">From your contacts</p>
               <ul className="sugg">
-                {suggestions.map((c) => (
-                  <li key={c.name}>
-                    <button className="sg-row" type="button">
-                      <Avatar name={c.name} />
-                      <span>
-                        <b>{c.name}</b>
-                        <small>{c.sub}</small>
-                      </span>
-                      <span className="addtag">Add</span>
+                {shown.map((contact) => (
+                  <li key={contact.name} className="sg-row">
+                    <Avatar name={contact.name} />
+                    <span>
+                      <b>{contact.name}</b>
+                      <small>{contact.sub}</small>
+                    </span>
+                    <button className="mini" type="button" onClick={() => addPerson(contact)}>
+                      Add
                     </button>
                   </li>
                 ))}
               </ul>
-            </div>
+            </form>
           </section>
 
           <section className="sec" aria-labelledby="how-h">
             <div className="shead">
               <div>
                 <h2 id="how-h">How to split</h2>
-                <p className="sub">Everyone pays the same. Any extra cents go to the first people.</p>
+                <p className="sub">
+                  {mode === "even"
+                    ? "Everyone pays the same. Any extra cents go to the first people."
+                    : mode === "amount"
+                      ? "Type what each person pays. The amounts need to add up to the charge."
+                      : "Type a percent for each person. The percents need to add up to 100."}
+                </p>
               </div>
               <div className="seg inline" role="group" aria-label="Split method">
-                <button className="sg on" type="button" aria-pressed="true">
-                  Evenly
-                </button>
-                <button className="sg" type="button" aria-pressed="false">
-                  By amount
-                </button>
-                <button className="sg" type="button" aria-pressed="false">
-                  By percent
-                </button>
+                {(
+                  [
+                    ["even", "Evenly"],
+                    ["amount", "By amount"],
+                    ["percent", "By percent"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button key={value} className={`sg${mode === value ? " on" : ""}`} type="button" aria-pressed={mode === value} onClick={() => { setMode(value); resetSent(); }}>
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
 
             <ul className="shares">
-              {shares.map((s) => (
-                <li key={s.label} className="sh-row">
-                  <Avatar name={s.name} large />
+              {shares.map((share) => (
+                <li key={share.name} className="sh-row">
+                  <Avatar name={share.name} large />
                   <div>
-                    <b>{s.label}</b>
-                    <small>{s.note}</small>
+                    <b>{share.label}</b>
+                    <small>{share.note}</small>
                   </div>
-                  <span className="sh-amt">{s.amount}</span>
+                  {mode === "even" ? (
+                    <span className="sh-amt">{money(share.cents)}</span>
+                  ) : mode === "amount" ? (
+                    <input
+                      className="sh-input"
+                      aria-label={`${share.label} amount`}
+                      inputMode="decimal"
+                      value={amounts[share.name] ?? ((evenParts[names.indexOf(share.name)] ?? 0) / 100).toFixed(2)}
+                      onChange={(event) => {
+                        setAmounts((current) => ({ ...current, [share.name]: event.target.value }));
+                        resetSent();
+                      }}
+                    />
+                  ) : (
+                    <input
+                      className="sh-input"
+                      aria-label={`${share.label} percent`}
+                      inputMode="numeric"
+                      value={percents[share.name] ?? String(percentDefaults[names.indexOf(share.name)] ?? 0)}
+                      onChange={(event) => {
+                        setPercents((current) => ({ ...current, [share.name]: event.target.value.replace(/[^0-9]/g, "") }));
+                        resetSent();
+                      }}
+                    />
+                  )}
                 </li>
               ))}
             </ul>
-            <p className="status ok">Every cent of $38.97 is covered.</p>
+            <p className={`status${covered ? " ok" : ""}`}>
+              {names.length === 0
+                ? "Add at least one person to split this charge."
+                : covered && requestCount === 0
+                  ? "This stays with you. Add someone if you want to request a share."
+                  : covered
+                    ? `Every cent of ${money(TOTAL)} is covered.`
+                    : mode === "percent"
+                      ? `These percents add up to ${percentSum}. They need to add up to 100.`
+                      : `These shares add up to ${money(amountCents.reduce((sum, value) => sum + value, 0))}. They need to add up to ${money(TOTAL)}.`}
+            </p>
           </section>
 
           <div className="sumbar">
             <div>
-              <small>You’ll request</small>
-              <b>$25.98</b>
-              <small>from 2 people</small>
+              <small>{sent ? "Requested" : "You’ll request"}</small>
+              <b>{money(request)}</b>
+              <small>
+                {sent ? "Links sent" : `from ${requestCount} ${requestCount === 1 ? "person" : "people"}`}
+              </small>
             </div>
-            <button className="btn" type="button">
+            <button className="btn" type="button" disabled={!covered || sent || requestCount === 0} onClick={() => setSent(true)}>
               <SendIcon />
-              Send payment links
+              {sent ? "Links sent" : "Send payment links"}
             </button>
           </div>
         </div>

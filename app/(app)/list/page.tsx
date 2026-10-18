@@ -1,12 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { normalizePhone } from "@/lib/phone";
+import { createClient } from "@/lib/supabase/client";
 import "./list.css";
 
 // TODO: lists have no group yet. This mirrors the dashboard's sample group until groups come from Supabase.
 const GROUP_NAME = "Apartment 4B";
 const OTHER_GROUPS = ["Lisbon trip"];
+const ME = "You";
+
+type Person = { id: string; name: string; detail: string };
+
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type ApiItem = {
   id: string;
@@ -189,7 +196,7 @@ function Sidebar({ me, people }: { me: string; people: string[] }) {
       <div className="me">
         <span className="av lgav p0">{initials(me)}</span>
         <div>
-          <b>{me || "Add your name"}</b>
+          <b>{me}</b>
         </div>
         <button className="btn txt" type="button">
           Sign out
@@ -224,8 +231,16 @@ function receiptToItems(rows: ReceiptRow[]) {
 export default function ListPage() {
   const [listId, setListId] = useState<string | null>(null);
   const [data, setData] = useState<ListData | null>(null);
-  const [me, setMe] = useState("");
+  const me = ME;
+  const [friends, setFriends] = useState<Person[]>([]);
+  const [added, setAdded] = useState<Person[]>([]);
+  const [openItem, setOpenItem] = useState<string | null>(null);
+  const [contactBy, setContactBy] = useState<"phone" | "email">("phone");
+  const [contact, setContact] = useState("");
   const [name, setName] = useState("");
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [title, setTitle] = useState("");
+  const savingTitle = useRef(false);
   const [price, setPrice] = useState("");
   const [msg, setMsg] = useState("");
   const [scan, setScan] = useState(false);
@@ -235,7 +250,6 @@ export default function ListPage() {
   useEffect(() => {
     (async () => {
       await Promise.resolve(); // keeps state updates out of the synchronous effect body
-      setMe(localStorage.getItem("splits-name") ?? "");
       const params = new URLSearchParams(window.location.search);
       const wantScan = params.get("scan") === "1";
       setScan(wantScan);
@@ -247,6 +261,29 @@ export default function ListPage() {
       window.history.replaceState(null, "", next);
       setListId(list.id);
     })();
+  }, []);
+
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      try {
+        const supabase = createClient();
+        const { data: rows, error } = await supabase.rpc("list_friends");
+        if (cancel || error || !rows) return;
+        setFriends(
+          (rows as { friend_id: string; display_name: string; phone: string }[]).map((friend) => ({
+            id: friend.friend_id,
+            name: friend.display_name,
+            detail: friend.phone,
+          })),
+        );
+      } catch {
+        // Friends stay empty when Supabase is not signed in.
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
   }, []);
 
   const refresh = useCallback(async () => {
@@ -313,6 +350,37 @@ export default function ListPage() {
     }
   }
 
+  function startRename() {
+    if (!data) return;
+    setTitle(data.list.name);
+    setEditingTitle(true);
+  }
+
+  async function saveTitle(event?: React.FormEvent) {
+    event?.preventDefault();
+    if (savingTitle.current) return;
+    savingTitle.current = true;
+    const next = title.trim();
+    setEditingTitle(false);
+    if (!listId || !data || !next || next === data.list.name) {
+      setTitle(data?.list.name ?? "");
+      savingTitle.current = false;
+      return;
+    }
+    const res = await fetch(`/api/lists/${listId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: next }),
+    });
+    savingTitle.current = false;
+    if (!res.ok) {
+      setTitle(data.list.name);
+      setMsg((await res.json()).error ?? "The list name could not be saved.");
+      return;
+    }
+    setData({ ...data, list: { ...data.list, name: next } });
+  }
+
   async function addItem(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
@@ -327,9 +395,43 @@ export default function ListPage() {
     refresh();
   }
 
-  async function act(id: string, action: "claim" | "unclaim") {
-    if (!me.trim()) return setMsg("Enter your name first.");
-    const res = await fetch(`/api/items/${id}`, { method: "PATCH", body: JSON.stringify({ action, user: me }) });
+  const roster = [...friends, ...added];
+
+  useEffect(() => {
+    if (!openItem) return;
+    function close(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Element) || !target.closest(".asg")) setOpenItem(null);
+    }
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [openItem]);
+
+  function remember(person: Person) {
+    setAdded((current) => (current.some((entry) => entry.id === person.id) || friends.some((entry) => entry.id === person.id) ? current : [...current, person]));
+    setContact("");
+    setMsg("");
+  }
+
+  function addContact(event: React.FormEvent, item: Item) {
+    event.preventDefault();
+    if (contactBy === "phone") {
+      const phone = normalizePhone(contact);
+      if (!phone) return setMsg("Enter a phone number, including the area code.");
+      const person = { id: `phone:${phone}`, name: phone, detail: "Phone" };
+      remember(person);
+      void assignPerson(item, person.name);
+      return;
+    }
+    const email = contact.trim();
+    if (!emailPattern.test(email)) return setMsg("Enter a valid email.");
+    const person = { id: `email:${email.toLowerCase()}`, name: email, detail: "Email" };
+    remember(person);
+    void assignPerson(item, person.name);
+  }
+
+  async function act(id: string, action: "claim" | "unclaim", user: string) {
+    const res = await fetch(`/api/items/${id}`, { method: "PATCH", body: JSON.stringify({ action, user }) });
     setMsg(res.ok ? "" : (await res.json()).error);
     refresh();
   }
@@ -339,10 +441,26 @@ export default function ListPage() {
     refresh();
   }
 
-  // The API only lets you claim an open item or unclaim your own; anyone else's item stays as it is.
-  function toggleClaim(item: Item) {
-    if (!item.who) return act(item.id, "claim");
-    if (item.who === me) return act(item.id, "unclaim");
+  async function assignPerson(item: Item, user: string) {
+    setOpenItem(null);
+    if (item.who === user) return;
+    if (item.who) {
+      const cleared = await fetch(`/api/items/${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ action: "unclaim", user: item.who }),
+      });
+      if (!cleared.ok) {
+        setMsg((await cleared.json()).error ?? "That item could not be reassigned.");
+        return;
+      }
+    }
+    return act(item.id, "claim", user);
+  }
+
+  function clearPerson(item: Item) {
+    if (!item.who) return;
+    setOpenItem(null);
+    return act(item.id, "unclaim", item.who);
   }
 
   const list: SharedList = {
@@ -383,29 +501,45 @@ export default function ListPage() {
 
           <header className="top">
             <div>
-              <h1>{list.name}</h1>
+              {editingTitle ? (
+                <form className="rename-form" onSubmit={saveTitle}>
+                  <label className="sr" htmlFor="list-name">
+                    List name
+                  </label>
+                  <input
+                    id="list-name"
+                    className="field title"
+                    value={title}
+                    autoFocus
+                    onChange={(event) => setTitle(event.target.value)}
+                    onBlur={() => saveTitle()}
+                  />
+                  <button className="btn txt" type="submit">
+                    Save
+                  </button>
+                </form>
+              ) : (
+                <h1>
+                  {data ? (
+                    <button className="rename" type="button" onClick={startRename}>
+                      {list.name}
+                    </button>
+                  ) : (
+                    list.name
+                  )}
+                </h1>
+              )}
               <div className="meta">
                 <span>
                   {mine ? "You paid." : `${list.paidBy} paid.`} {plural(list.items.length, "item")}.
                 </span>
               </div>
-              <label className="lbl" htmlFor="me">
-                Your name
-              </label>
-              <input
-                id="me"
-                className="field"
-                style={{ maxWidth: 280 }}
-                placeholder="Your name"
-                value={me}
-                onChange={(e) => {
-                  setMe(e.target.value);
-                  localStorage.setItem("splits-name", e.target.value);
-                }}
-              />
             </div>
             <div className="acts">
               {/* TODO: there is no delete-list API route yet. */}
+              <button className="btn txt" type="button" onClick={startRename} disabled={!data || editingTitle}>
+                Rename
+              </button>
               <button className="btn txt" type="button">
                 Delete list
               </button>
@@ -496,7 +630,7 @@ export default function ListPage() {
               <div>
                 <h2 id="it-h">Items</h2>
                 <p className="sub">
-                  Assign each item to whoever has it. {mine ? "They owe you for their items." : `You owe ${list.paidBy} for yours.`}
+                  Assign each item to a friend, or to a phone number or email. {mine ? "They owe you for their items." : `You owe ${list.paidBy} for yours.`}
                 </p>
               </div>
             </div>
@@ -540,10 +674,12 @@ export default function ListPage() {
                   <span className="r">{money(item.cents)}</span>
                   <div className="asg">
                     <button
-                      className="asg-btn"
+                      className={`asg-btn${openItem === item.id ? " is-open" : ""}`}
                       type="button"
+                      aria-expanded={openItem === item.id}
+                      aria-haspopup="menu"
                       aria-label={item.who ? `${item.name}, assigned to ${item.who}. Change` : `Assign ${item.name}`}
-                      onClick={() => toggleClaim(item)}
+                      onClick={() => setOpenItem(openItem === item.id ? null : item.id)}
                     >
                       {item.who ? (
                         <>
@@ -559,6 +695,52 @@ export default function ListPage() {
                         </>
                       )}
                     </button>
+                    {openItem === item.id ? (
+                      <div className="menu" role="menu" aria-label={`Assign ${item.name}`}>
+                        {roster.length > 0 ? <p className="menu-h">Friends and contacts</p> : null}
+                        {roster.map((person) => (
+                          <button key={person.id} className="opt" type="button" role="menuitem" onClick={() => assignPerson(item, person.name)}>
+                            <Avatar name={person.name} me={me} />
+                            <span className="on">
+                              {person.name}
+                              {person.detail && person.detail !== person.name ? <small>{person.detail}</small> : null}
+                            </span>
+                          </button>
+                        ))}
+                        {item.who ? (
+                          <button className="opt un" type="button" role="menuitem" onClick={() => clearPerson(item)}>
+                            Unassign
+                          </button>
+                        ) : null}
+                        <form onSubmit={(event) => addContact(event, item)}>
+                          <div className="seg" role="group" aria-label="Add a contact by">
+                            <button className={`sg${contactBy === "phone" ? " on" : ""}`} type="button" aria-pressed={contactBy === "phone"} onClick={() => setContactBy("phone")}>
+                              Phone
+                            </button>
+                            <button className={`sg${contactBy === "email" ? " on" : ""}`} type="button" aria-pressed={contactBy === "email"} onClick={() => setContactBy("email")}>
+                              Email
+                            </button>
+                          </div>
+                          <div className="inrow">
+                            <label className="sr" htmlFor={`contact-${item.id}`}>
+                              {contactBy === "phone" ? "Phone number" : "Email"}
+                            </label>
+                            <input
+                              id={`contact-${item.id}`}
+                              className="field"
+                              type={contactBy === "phone" ? "tel" : "email"}
+                              autoComplete={contactBy === "phone" ? "tel" : "email"}
+                              placeholder={contactBy === "phone" ? "(555) 123-4567" : "name@example.com"}
+                              value={contact}
+                              onChange={(event) => setContact(event.target.value)}
+                            />
+                            <button className="btn" type="submit">
+                              Add
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                    ) : null}
                   </div>
                   <button className="xb" type="button" aria-label={`Delete ${item.name}`} onClick={() => remove(item.id)}>
                     <CloseIcon />
