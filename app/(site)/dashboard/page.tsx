@@ -17,8 +17,6 @@ const friends = [
   { name: "Riley", inGroup: false },
 ];
 
-const members = [ME, "Brayden", "Maya", "Jay"];
-
 type Charge = { merchant: string; date: string; amount: string; status: "split" | "none" | "settled"; label?: string };
 const charges: Charge[] = [
   { merchant: "Noodle House", date: "Today", amount: "$142.60", status: "split", label: "2 of 3 paid" },
@@ -237,29 +235,6 @@ export default function DashboardPage() {
       {/* ------------------------------------------------------------- main */}
       <main className="main">
         <div className="wrap">
-          <header className="top">
-            <div>
-              <h1>{groupName}</h1>
-              <div className="meta">
-                <div className="stack">
-                  {members.map((m) => (
-                    <Avatar key={m} name={m} />
-                  ))}
-                </div>
-                <span>You own this group. {members.length} people.</span>
-              </div>
-            </div>
-            <div className="acts">
-              <button className="btn txt" type="button">
-                Delete group
-              </button>
-              <button className="btn lg" type="button">
-                <PlusIcon />
-                Split a bill
-              </button>
-            </div>
-          </header>
-
           <section className="sec" aria-labelledby="rc-h">
             <div className="shead">
               <div>
