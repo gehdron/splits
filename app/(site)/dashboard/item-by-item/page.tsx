@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { loadPrivateDashboard } from "../load";
 import {
@@ -15,9 +16,19 @@ function firstValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-export default async function ItemByItemPage({
+export default function ItemByItemPage({
   searchParams,
 }: PageProps<"/dashboard/item-by-item">) {
+  return (
+    <Suspense fallback={<p className="dash-loading">Loading receipt scanner…</p>}>
+      <ItemByItemContent searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+async function ItemByItemContent({
+  searchParams,
+}: Pick<PageProps<"/dashboard/item-by-item">, "searchParams">) {
   const [data, params] = await Promise.all([
     loadPrivateDashboard(),
     searchParams,

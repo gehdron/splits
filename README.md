@@ -64,8 +64,11 @@ items keep their associated tax and tip under **Unassigned** until they are
 assigned.
 After editing the receipt subtotal, tax, or tip, the displayed receipt total
 updates automatically as their sum.
-The scanner currently performs OCR and displays editable text; it does not yet
-identify structured fields such as the merchant, line items, or total.
+
+From the dashboard, choose **New list → Scan a receipt** to open the dedicated
+camera and upload screen. After reviewing the parsed items, choose **Continue
+to split chat** to return the receipt items and totals to `/detect`, where the
+chat and manual assignment controls are available.
 
 ## Routes
 
@@ -74,6 +77,8 @@ identify structured fields such as the merchant, line items, or total.
 | `/` | Marketing site home (`app/(site)/page.tsx`) |
 | `/payment-complete` | Shown after a friend pays. Fill it with `?friend=Maya&event=Dinner&amount=24.50&method=Apple%20Pay` |
 | `/scan` | Receipt scanner (moved from `/`) |
+| `/dashboard/item-by-item` | Dedicated receipt camera and upload screen (requires sign-in) |
+| `/detect` | Receipt review, manual assignment, and split chat |
 | `/list` | Shared list |
 | any other URL | 404 page (`app/global-not-found.tsx`) |
 

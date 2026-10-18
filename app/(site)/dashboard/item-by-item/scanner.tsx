@@ -11,7 +11,7 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signOut } from "../../auth/actions";
 import { createListFromReceipt, importReceipt } from "../actions";
 import Tesseract from "tesseract.js";
@@ -43,6 +43,7 @@ type ReceiptProcessingStage =
   | "error";
 
 const MAX_PDF_BYTES = 4 * 1024 * 1024;
+const RECEIPT_HANDOFF_KEY = "splits:receipt-handoff:v1";
 
 function isAiParsedReceipt(value: unknown): value is AiParsedReceipt {
   if (
@@ -285,6 +286,7 @@ export function ReceiptScanner({
   loadError,
   startCameraOnLoad = false,
 }: ScannerProps) {
+  const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -1219,6 +1221,19 @@ export function ReceiptScanner({
     receiptFileInputRef.current?.click();
   }
 
+  function continueToSplitChat() {
+    try {
+      window.sessionStorage.setItem(
+        RECEIPT_HANDOFF_KEY,
+        JSON.stringify({ items: receiptRows, totals: receiptTotals })
+      );
+      router.push("/detect?receiptImported=1");
+    } catch (error) {
+      console.error(error);
+      setAiError("Could not return these items to the split chat. Try again.");
+    }
+  }
+
   // PDFs skip OCR, and a failed AI pass after good OCR only needs the AI step again.
   function readReceipt() {
     if (isPdfReceipt || (processingStage === "error" && ocrCompleted)) {
@@ -1604,6 +1619,13 @@ export function ReceiptScanner({
                   <Suspense fallback={null}>
                     <SaveReceiptButton rows={receiptRows} group={group} listName={charge?.merchant ?? "Receipt"} />
                   </Suspense>
+                  <button
+                    className="btn lg"
+                    type="button"
+                    onClick={continueToSplitChat}
+                  >
+                    Continue to split chat
+                  </button>
                 </section>
                 <aside className="col" aria-label="Your receipt">
                   {photoCard}
