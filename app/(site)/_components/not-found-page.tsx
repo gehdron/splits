@@ -50,7 +50,7 @@ export function NotFoundPage() {
             <Link href="/">Terms</Link>
           </nav>
         </footer>
-        <div className="fine">Payments are simulated in this demo. Apple Pay is a trademark of Apple Inc.</div>
+        <div className="fine">Live demo: payments are real, kept to a few dollars, and refunded. Apple Pay is a trademark of Apple Inc.</div>
       </div>
     </div>
   );

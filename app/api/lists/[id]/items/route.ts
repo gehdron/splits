@@ -1,4 +1,5 @@
 import { addItems, listExists, type NewItem } from "@/lib/store";
+import { reconcileList } from "@/lib/settle";
 
 export async function POST(req: Request, ctx: RouteContext<"/api/lists/[id]/items">) {
   const { id } = await ctx.params;
@@ -9,5 +10,8 @@ export async function POST(req: Request, ctx: RouteContext<"/api/lists/[id]/item
   if (incoming.length === 0 || incoming.some((i) => !i?.name || typeof i.name !== "string")) {
     return Response.json({ error: "Each item needs a name" }, { status: 400 });
   }
-  return Response.json(addItems(id, incoming), { status: 201 });
+  const added = addItems(id, incoming);
+  // New claimed items change what people owe, so their pay links are re-checked.
+  await reconcileList(id);
+  return Response.json(added, { status: 201 });
 }

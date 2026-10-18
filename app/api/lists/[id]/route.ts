@@ -6,7 +6,10 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/lists/[id]">) {
   const { id } = await ctx.params;
   const data = getList(id);
   if (!data) return Response.json({ error: "List not found" }, { status: 404 });
-  return Response.json(data);
+  // The organizer's user id isn't anyone else's business.
+  const list = { ...data.list };
+  delete list.ownerId;
+  return Response.json({ ...data, list });
 }
 
 export async function PATCH(req: Request, ctx: RouteContext<"/api/lists/[id]">) {

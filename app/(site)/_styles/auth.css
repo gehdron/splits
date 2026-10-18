@@ -75,3 +75,23 @@
   text-underline-offset: 4px;
   text-decoration-color: var(--vio);
 }
+.p2 .auth .payouts {
+  display: grid;
+  gap: 12px;
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.p2 .auth .payouts h2 {
+  margin: 0;
+  font-family: var(--font-outfit), sans-serif;
+  font-size: 26px;
+  letter-spacing: -0.03em;
+}
+.p2 .auth .payouts form {
+  margin-top: 4px;
+}
+.p2 .auth .payouts-bank {
+  display: grid;
+  gap: 10px;
+}

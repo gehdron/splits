@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 
-type Details = {
+export type Details = {
   friend: string;
   event: string;
   method: string;
@@ -35,12 +35,12 @@ export function PaymentDetails() {
   return <Lines details={details} />;
 }
 
-export function Lines({ details }: { details: Details }) {
+export function Lines({ details, seenBy = false }: { details: Details; seenBy?: boolean }) {
   return (
     <>
       <p className="lead">
         Your share of <span id="pc-event">{details.event}</span> is paid.{" "}
-        <span id="pc-friend">{details.friend}</span> has been notified.
+        <span id="pc-friend">{details.friend}</span> {seenBy ? "can see it in Splits." : "has been notified."}
       </p>
       <p className="paid">
         <span id="pc-amount">{details.amount}</span> paid with{" "}

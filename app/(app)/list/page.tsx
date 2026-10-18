@@ -12,6 +12,7 @@ const OTHER_GROUPS = ["Lisbon trip"];
 const ME = "You";
 
 type Person = { id: string; name: string; detail: string };
+type PayLink = { id: string; personName: string; amountCents: number; status: "unpaid" | "sent" | "paid" | "void"; url: string };
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -245,6 +246,12 @@ export default function ListPage() {
   const [msg, setMsg] = useState("");
   const [scan, setScan] = useState(false);
   const [scanning, setScanning] = useState(false);
+  // Pay links: one per person who owes. The amount is worked out on the server from this list.
+  const [payLinks, setPayLinks] = useState<PayLink[]>([]);
+  const [requestFor, setRequestFor] = useState<string | null>(null);
+  const [requestHandle, setRequestHandle] = useState("");
+  const [requestBusy, setRequestBusy] = useState(false);
+  const [requestMsg, setRequestMsg] = useState("");
 
   // On load: use ?id= from the URL, or create a new list and put its id in the URL
   useEffect(() => {
@@ -291,6 +298,8 @@ export default function ListPage() {
     const res = await fetch(`/api/lists/${listId}`);
     if (res.status === 404) return setMsg("List not found (the server may have restarted). Open /list for a new one.");
     setData(await res.json());
+    const links = await fetch(`/api/shares?list=${listId}`).catch(() => null);
+    if (links?.ok) setPayLinks(((await links.json()) as { shares: PayLink[] }).shares);
   }, [listId]);
 
   // Poll every 3 seconds so everyone sees claims quickly
@@ -428,6 +437,56 @@ export default function ListPage() {
     const person = { id: `email:${email.toLowerCase()}`, name: email, detail: "Email" };
     remember(person);
     void assignPerson(item, person.name);
+  }
+
+  // What this person has paid on the list, what's left, and their open link (if it's for what's left).
+  function payStatus(person: string, cents: number) {
+    const mine = payLinks.filter((link) => link.personName === person && link.status !== "void");
+    const paid = mine.filter((link) => link.status === "paid").reduce((sum, link) => sum + link.amountCents, 0);
+    const due = cents - paid;
+    const open = mine.filter((link) => link.status !== "paid" && link.amountCents === due).at(-1) ?? null;
+    return { paid, due, open };
+  }
+
+  function openRequest(person: string) {
+    if (requestFor === person) return setRequestFor(null);
+    // People added by phone or email are named by it; saved friends carry their phone.
+    const known = [...friends, ...added].find((entry) => entry.name === person);
+    const looksLikeHandle = emailPattern.test(person) || normalizePhone(person) !== null;
+    setRequestHandle(looksLikeHandle ? person : known && normalizePhone(known.detail) ? known.detail : "");
+    setRequestMsg("");
+    setRequestFor(person);
+  }
+
+  async function requestPay(person: string, send: boolean) {
+    if (!listId) return;
+    setRequestBusy(true);
+    setRequestMsg("");
+    try {
+      const res = await fetch("/api/shares", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ listId, personName: person, handle: requestHandle, send }),
+      });
+      const result = (await res.json()) as { share?: PayLink; sent?: boolean; error?: string; note?: string };
+      if (result.share) setPayLinks((links) => [...links.filter((link) => link.id !== result.share?.id), result.share as PayLink]);
+      if (result.error) return setRequestMsg(result.error);
+      if (result.note) return setRequestMsg(result.note);
+      if (result.sent) {
+        setRequestMsg(`Sent. ${person} got a link to pay ${money(result.share?.amountCents ?? 0)}.`);
+      } else if (result.share) {
+        // Phones often block the clipboard after a network wait, so only say "copied" when it worked.
+        const copied = await navigator.clipboard
+          .writeText(result.share.url)
+          .then(() => true)
+          .catch(() => false);
+        setRequestMsg(copied ? `Link copied: ${result.share.url}` : `Here’s the link to send: ${result.share.url}`);
+      }
+    } catch {
+      setRequestMsg("Couldn’t reach Splits. Check your connection and try again.");
+    } finally {
+      setRequestBusy(false);
+    }
   }
 
   async function act(id: string, action: "claim" | "unclaim", user: string) {
@@ -573,20 +632,69 @@ export default function ListPage() {
                   <span>{money(s.owedCents)}</span>
                 </div>
                 <ul className="plist">
-                  {s.owedToYou.map((o) => (
-                    <li key={o.name} className="pr">
-                      <Avatar name={o.name} me={me} large />
-                      <div>
-                        <b>{o.name}</b>
-                        <small>{o.what}</small>
-                      </div>
-                      <span className="pa">{money(o.cents)}</span>
-                      {/* TODO: reminders (Photon + Grok copy) are not wired to this page yet. */}
-                      <button className="btn line" type="button">
-                        Remind
-                      </button>
-                    </li>
-                  ))}
+                  {s.owedToYou.map((o) => {
+                    const pay = payStatus(o.name, o.cents);
+                    const link = pay.open;
+                    const settled = pay.due <= 0 && pay.paid > 0;
+                    const open = requestFor === o.name;
+                    return (
+                      <li key={o.name} className="pr">
+                        <Avatar name={o.name} me={me} large />
+                        <div>
+                          <b>{o.name}</b>
+                          <small>{o.what}</small>
+                          {settled ? (
+                            <span className="pill pg">Paid</span>
+                          ) : link ? (
+                            <span className={`pill ${link.status === "sent" ? "pv" : "pn"}`}>{link.status === "sent" ? "Link sent" : "Link ready"}</span>
+                          ) : null}
+                          {pay.paid > 0 && !settled ? <span className="pill pg">Paid {money(pay.paid)} so far</span> : null}
+                        </div>
+                        <span className="pa">{money(o.cents)}</span>
+                        {settled ? (
+                          <span />
+                        ) : (
+                          <button className="btn line" type="button" aria-expanded={open} onClick={() => openRequest(o.name)}>
+                            {link?.status === "sent" ? "Send again" : "Request"}
+                          </button>
+                        )}
+                        {open ? (
+                          <form
+                            className="req"
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              void requestPay(o.name, true);
+                            }}
+                          >
+                            <label className="lbl" htmlFor={`req-${o.name}`}>
+                              Text or email {o.name} a link to pay {money(pay.due)}
+                            </label>
+                            <div className="inrow">
+                              <input
+                                id={`req-${o.name}`}
+                                className="field"
+                                value={requestHandle}
+                                onChange={(event) => setRequestHandle(event.target.value)}
+                                placeholder="(555) 123-4567 or name@email.com"
+                                autoComplete="off"
+                              />
+                              <button className="btn" type="submit" disabled={requestBusy || !requestHandle.trim()}>
+                                {requestBusy ? "Sending…" : "Send pay link"}
+                              </button>
+                            </div>
+                            <button className="btn txt" type="button" disabled={requestBusy} onClick={() => void requestPay(o.name, false)}>
+                              Copy link instead
+                            </button>
+                            {requestMsg ? (
+                              <p className="msg" role="status">
+                                {requestMsg}
+                              </p>
+                            ) : null}
+                          </form>
+                        ) : null}
+                      </li>
+                    );
+                  })}
                 </ul>
                 {s.owedToYou.length === 0 && (
                   <p className="sub note">

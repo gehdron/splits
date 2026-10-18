@@ -147,4 +147,11 @@
 .db .lh span:nth-child(3){display:none}
 .db .menu{left:0;right:auto}
 }
+/* "Request": send someone their pay link */
+.db .pr .pill{margin-top:6px}
+.db .req{grid-column:1/-1;display:grid;gap:8px;padding:4px 0 6px}
+.db .req .lbl{margin:0}
+.db .req .btn.txt{justify-self:start}
+.db .req .msg{margin:0;overflow-wrap:anywhere}
+.db .req .btn[disabled]{background:#E3E7F3;color:#5A6385;cursor:not-allowed}
 @media (max-width:640px){.db .main{padding:28px 16px 56px}.db .sec{padding:22px 18px}.db h1{font-size:42px}.db .addrow{grid-template-columns:minmax(0,1fr) 110px}.db .addrow .btn{grid-column:1/-1}}

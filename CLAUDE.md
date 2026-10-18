@@ -39,7 +39,7 @@ Project guide for Claude, Cursor and teammates. Read this before writing code or
 - **Web app, mobile first.** Responsive website with mobile-friendly checkout pages. TypeScript frontend. Framework **[confirm: Next.js]**.
 - **Money math is code, not AI.** Totals, tax and tip allocation, and per-person amounts are computed deterministically. After parsing a receipt, verify the items sum to the total and flag mismatches. The model may explain a number but never produces it.
 - **Receipt parsing** uses vision to return structured JSON (item, quantity, price, tax, tip). Validate the JSON shape before using it. Show low-confidence lines to the user for confirmation.
-- **Payments are simulated (demo-safe mode).** No real charges and no real transactions. Use hosted checkout in test mode (Stripe or equivalent). Apple Pay appears on supported mobile browsers through the hosted checkout. Never handle raw card numbers in our code.
+- **Payments are live, kept tiny.** Friends pay through Stripe Checkout in live mode at https://splits.select/pay/sh_… (see `lib/shares.ts`, `lib/stripe.ts`). Demo amounts stay at $1 to $5 and are refunded after demos; links are capped by `SPLITS_MAX_SHARE_CENTS`. Organizers get paid through Stripe Connect Express. Apple Pay appears on supported mobile browsers through the hosted checkout. Never handle raw card numbers in our code.
 - **Secrets** (Grok key, payment keys, Photon keys) live in environment variables, never in the client bundle or the repo.
 - **Messaging** through Photon dispatches claim and payment links to iMessage, SMS or email.
 - Keep AI output friendly and non-judgmental. Reminders never shame or threaten.
@@ -142,7 +142,7 @@ Brand colors stay **green and purple**. Neutrals carry everything else.
 - Placeholders are explicit: `[Friend name]`, `[your email address]`, `$--.--`. Never invent statistics, testimonials or prices.
 - Avoid: em dashes, three-beat slogans, buzzwords (seamless, effortless, unlock, game-changing), exclamation marks.
 - Errors name the problem and the way out ("We can't find that page. The link may be old or mistyped.").
-- Footer always carries: "Payments are simulated in this demo. Apple Pay is a trademark of Apple Inc."
+- Footer always carries: "Live demo: payments are real, kept to a few dollars, and refunded. Apple Pay is a trademark of Apple Inc."
 
 ### 4.9 Apple Pay
 - Until launch, write "Apple Pay" as plain text and show the choice as an **Apple Pay | Card** toggle.

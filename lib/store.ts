@@ -14,10 +14,35 @@ export type Item = {
   purchased: boolean;
 };
 
-export type List = { id: string; name: string; createdAt: number };
+// ownerId is the signed-in organizer who may request money on this list (null for lists made while signed out).
+export type List = { id: string; name: string; createdAt: number; ownerId?: string | null };
 
-type DB = { lists: Map<string, List>; items: Map<string, Item> };
-type Saved = { lists: [string, List][]; items: [string, Item][] };
+// One person's share of a bill, behind https://splits.select/pay/sh_... (see lib/shares.ts).
+// This file keeps them only for local runs; production stores them in Supabase.
+// "void": replaced by a newer link after the amount changed. It can no longer be paid.
+export type ShareStatus = "unpaid" | "sent" | "paid" | "void";
+export type Share = {
+  id: string;
+  amountCents: number;
+  currency: string;
+  personName: string;
+  title: string;
+  status: ShareStatus;
+  recipientHandle: string | null;
+  organizerId: string | null;
+  organizerName: string | null;
+  stripeConnectAccountId: string | null;
+  stripeSessionId: string | null;
+  stripePaymentIntentId: string | null;
+  source: "list";
+  sourceRef: string | null;
+  createdAt: string;
+  sentAt: string | null;
+  paidAt: string | null;
+};
+
+type DB = { lists: Map<string, List>; items: Map<string, Item>; shares: Map<string, Share> };
+type Saved = { lists: [string, List][]; items: [string, Item][]; shares?: [string, Share][] };
 
 function storePath(): string {
   return join(process.cwd(), "data", "store.json");
@@ -26,10 +51,10 @@ function storePath(): string {
 function load(): DB {
   try {
     const saved = JSON.parse(readFileSync(storePath(), "utf8")) as Saved;
-    return { lists: new Map(saved.lists ?? []), items: new Map(saved.items ?? []) };
+    return { lists: new Map(saved.lists ?? []), items: new Map(saved.items ?? []), shares: new Map(saved.shares ?? []) };
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return { lists: new Map(), items: new Map() };
+      return { lists: new Map(), items: new Map(), shares: new Map() };
     }
     throw error;
   }
@@ -38,7 +63,7 @@ function load(): DB {
 function save(db: DB): void {
   const path = storePath();
   mkdirSync(dirname(path), { recursive: true });
-  const saved: Saved = { lists: [...db.lists], items: [...db.items] };
+  const saved: Saved = { lists: [...db.lists], items: [...db.items], shares: [...db.shares] };
   writeFileSync(path, `${JSON.stringify(saved, null, 2)}\n`, "utf8");
 }
 
@@ -51,9 +76,9 @@ export function renameList(id: string, name: string): List | null {
   return list;
 }
 
-export function createList(name: string): List {
+export function createList(name: string, ownerId: string | null = null): List {
   const db = load();
-  const list = { id: crypto.randomUUID(), name, createdAt: Date.now() };
+  const list = { id: crypto.randomUUID(), name, createdAt: Date.now(), ownerId };
   db.lists.set(list.id, list);
   save(db);
   return list;
@@ -63,9 +88,10 @@ export function listAll(): List[] {
   return [...load().lists.values()].sort((a, b) => a.createdAt - b.createdAt);
 }
 
-// The agent and /list share this list so a text shows up without a new id.
+// The iMessage agent's list. It never returns an organizer's own list, so texts from unrelated
+// chats can't land on (and be billed from) someone's private list.
 export function defaultList(): List {
-  return listAll()[0] ?? createList("Shared list");
+  return listAll().find((list) => !list.ownerId) ?? createList("Shared list");
 }
 
 export function getList(id: string) {
@@ -167,6 +193,34 @@ export function deleteItem(id: string) {
   return removed;
 }
 
+export function itemListId(id: string): string | null {
+  return load().items.get(id)?.listId ?? null;
+}
+
 export function listExists(id: string) {
   return load().lists.has(id);
+}
+
+export function fileSaveShare(share: Share): Share {
+  const db = load();
+  db.shares.set(share.id, share);
+  save(db);
+  return share;
+}
+
+export function fileGetShare(id: string): Share | null {
+  return load().shares.get(id) ?? null;
+}
+
+export function fileUpdateShare(id: string, patch: Partial<Share>): Share | null {
+  const db = load();
+  const share = db.shares.get(id);
+  if (!share) return null;
+  Object.assign(share, patch);
+  save(db);
+  return share;
+}
+
+export function fileListShares(source: Share["source"], sourceRef: string): Share[] {
+  return [...load().shares.values()].filter((share) => share.source === source && share.sourceRef === sourceRef);
 }
