@@ -110,7 +110,8 @@
 
 /* "How to split" */
 .db .shares{margin:0;padding:0;list-style:none;border-top:1px solid var(--line)}
-.db .sh-row{display:grid;grid-template-columns:36px minmax(0,1fr) 170px;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+.db .sh-row{display:grid;grid-template-columns:36px minmax(0,1fr) minmax(108px,170px) auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+.db .sh-row .remind{min-height:44px;padding:0 16px}
 .db .sh-row b{display:block;line-height:1.25}
 .db .sh-row small{font-size:13px;color:var(--mut)}
 .db .sh-amt{display:block;font-family:var(--font-outfit),"Outfit",system-ui,sans-serif;font-weight:600;font-size:22px;text-align:right}
@@ -127,5 +128,6 @@
 .db .sec{padding:22px 18px}
 .db h1{font-size:42px}
 .db .sh-row{grid-template-columns:36px minmax(0,1fr) auto}
+.db .sh-row .remind{grid-column:1/-1;justify-self:start}
 }
 @media (prefers-reduced-motion:reduce){.db *{transition:none !important}}

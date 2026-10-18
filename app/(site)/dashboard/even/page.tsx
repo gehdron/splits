@@ -202,6 +202,7 @@ export default function EvenSplitPage() {
   const [percents, setPercents] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
   const [sent, setSent] = useState(false);
+  const [reminded, setReminded] = useState<Record<string, boolean>>({});
 
   const names = includeMe ? [ME, ...others.map((person) => person.name)] : others.map((person) => person.name);
   const evenParts = splitEven(TOTAL, names.length);
@@ -429,6 +430,18 @@ export default function EvenSplitPage() {
                         resetSent();
                       }}
                     />
+                  )}
+                  {share.name !== ME && share.cents > 0 ? (
+                    <button
+                      className="btn line remind"
+                      type="button"
+                      disabled={reminded[share.name]}
+                      onClick={() => setReminded((current) => ({ ...current, [share.name]: true }))}
+                    >
+                      {reminded[share.name] ? "Reminded" : "Remind"}
+                    </button>
+                  ) : (
+                    <span />
                   )}
                 </li>
               ))}
