@@ -4,7 +4,6 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { exitGroup } from "./actions";
-import { DashboardListAssistant, SharedListAssistant } from "./list-assistant";
 import { DashSidebar } from "./sidebar";
 import type { DashboardData } from "./types";
 
@@ -289,7 +288,7 @@ export function Board({ data }: { data: DashboardData }) {
                 <div className="shead">
                   <div>
                     <h2 id="sl-h">Shared lists</h2>
-                    <p className="sub">Only you and the people added to a list can see it. Open a list’s AI bot to assign its items by chat.</p>
+                    <p className="sub">Only you and the people added to a list can see it. Open a list to add or assign items.</p>
                   </div>
                   <button className="btn" type="button" onClick={() => newListDialog.current?.showModal()}>
                     <PlusIcon />
@@ -307,19 +306,14 @@ export function Board({ data }: { data: DashboardData }) {
                           <span className="lmain">
                             <b>{list.name}</b>
                             <small>{list.itemCount === 1 ? "1 item" : `${list.itemCount} items`}</small>
+                            {list.itemCount === 0 ? (
+                              <small className="list-empty-hint">No items yet. Open this list to add items.</small>
+                            ) : null}
                           </span>
                           <span className="chev">
                             <Icon d="M9 6l6 6-6 6" />
                           </span>
                         </Link>
-                        <SharedListAssistant
-                          list={list}
-                          currentUser={data.me.name}
-                          people={[
-                            ...members.map((member) => member.name),
-                            ...data.friends.map((friend) => friend.name),
-                          ]}
-                        />
                       </li>
                     ))}
                   </ul>
@@ -335,9 +329,6 @@ export function Board({ data }: { data: DashboardData }) {
                 {visibleLists.length > 0 ? (
                   <ul className="rows">
                     {visibleLists.map((list) => {
-                      const listItems = data.items.filter(
-                        (item) => item.listId === list.id,
-                      );
                       return (
                         <li key={list.id}>
                           <Link className="lrow slist" href={`/list?id=${encodeURIComponent(list.id)}`}>
@@ -351,18 +342,14 @@ export function Board({ data }: { data: DashboardData }) {
                                 {" · "}
                                 {money(list.totalCents)}
                               </small>
+                              {list.itemCount === 0 ? (
+                                <small className="list-empty-hint">No items yet. Open this list to add items.</small>
+                              ) : null}
                             </span>
                             <span className="chev">
                               <Icon d="M9 6l6 6-6 6" />
                             </span>
                           </Link>
-                          <DashboardListAssistant
-                            list={list}
-                            items={listItems}
-                            members={members}
-                            currentUser={data.me.name}
-                            canAssign={group?.role === "owner"}
-                          />
                         </li>
                       );
                     })}

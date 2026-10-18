@@ -28,7 +28,7 @@ type ApiItem = {
   claimedBy: string | null;
 };
 type ListMember = { name: string; userId?: string };
-type ListData = { list: { id: string; name: string; members?: ListMember[] }; items: ApiItem[]; totals: Record<string, number> };
+type ListData = { list: { id: string; name: string; groupId?: string; members?: ListMember[] }; items: ApiItem[]; totals: Record<string, number> };
 
 type Item = { id: string; name: string; quantity: number; cents: number; who: string | null };
 type SharedList = { name: string; paidBy: string; items: Item[] };
@@ -297,10 +297,11 @@ function receiptToItems(rows: ReceiptRow[]) {
 export default function ListPage() {
   const [listId, setListId] = useState<string | null>(null);
   const [data, setData] = useState<ListData | null>(null);
-  const me = ME;
   const [friends, setFriends] = useState<Person[]>([]);
   const [added, setAdded] = useState<Person[]>([]);
   const [meId, setMeId] = useState<string | null>(null);
+  const me =
+    data?.list.members?.find((member) => member.userId === meId)?.name ?? ME;
   const [openItem, setOpenItem] = useState<string | null>(null);
   const [contactBy, setContactBy] = useState<"phone" | "email">("phone");
   const [contact, setContact] = useState("");
@@ -470,14 +471,42 @@ export default function ListPage() {
       method: "POST",
       body: JSON.stringify({ name, priceCents: Math.round(parseFloat(price || "0") * 100) }),
     });
-    const { duplicates } = await res.json();
-    setMsg(duplicates?.length ? `Heads up: "${duplicates[0]}" is already on the list.` : "");
+    const result: unknown = await res.json().catch(() => null);
+    if (!res.ok) {
+      const error =
+        typeof result === "object" &&
+        result !== null &&
+        "error" in result &&
+        typeof result.error === "string"
+          ? result.error
+          : "That item could not be added.";
+      setMsg(error);
+      return;
+    }
+    const duplicates =
+      typeof result === "object" &&
+      result !== null &&
+      "duplicates" in result &&
+      Array.isArray(result.duplicates)
+        ? result.duplicates.filter(
+            (duplicate): duplicate is string => typeof duplicate === "string",
+          )
+        : [];
+    setMsg(duplicates.length ? `Heads up: "${duplicates[0]}" is already on the list.` : "");
     setName("");
     setPrice("");
     refresh();
   }
 
-  const roster = [...friends, ...added];
+  const roster = data?.list.groupId
+    ? (data.list.members ?? []).map((member) => ({
+        id: member.userId
+          ? `group-member:${member.userId}`
+          : `group-member:${member.name.toLocaleLowerCase()}`,
+        name: member.name,
+        detail: "",
+      }))
+    : [...friends, ...added];
 
   useEffect(() => {
     if (!openItem) return;
@@ -676,6 +705,7 @@ export default function ListPage() {
           participants: [
             ...new Set([
               me,
+              ...(data.list.members ?? []).map((member) => member.name),
               ...friends.map((friend) => friend.name),
               ...added.map((person) => person.name),
               ...list.items.flatMap((item) => (item.who ? [item.who] : [])),

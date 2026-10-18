@@ -11,6 +11,18 @@ export async function PATCH(req: Request, ctx: RouteContext<"/api/items/[id]">) 
       const r = await claimItem(id, user);
       if (r === null) return Response.json({ error: "Item not found" }, { status: 404 });
       if (r === "taken") return Response.json({ error: "Already claimed" }, { status: 409 });
+      if (r === "not-member") {
+        return Response.json(
+          { error: "Choose someone who belongs to this list." },
+          { status: 400 },
+        );
+      }
+      if (r === "not-allowed") {
+        return Response.json(
+          { error: "Only the group owner can assign items to another member." },
+          { status: 403 },
+        );
+      }
       await reconcileList(r.listId);
       return Response.json(r);
     }

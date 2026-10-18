@@ -19,7 +19,14 @@ export type ListMember = { name: string; userId?: string; phone?: string; email?
 export type ListViewer = { userId: string; phone?: string; email?: string };
 
 // ownerId is the signed-in organizer who may request money on this list (null for lists made while signed out).
-export type List = { id: string; name: string; createdAt: number; ownerId?: string | null; members?: ListMember[] };
+export type List = {
+  id: string;
+  name: string;
+  createdAt: number;
+  ownerId?: string | null;
+  groupId?: string;
+  members?: ListMember[];
+};
 
 function digits(value: string): string {
   return value.replace(/\D/g, "");
