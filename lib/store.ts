@@ -47,7 +47,7 @@ export function sameListMember(a: ListMember, b: ListMember): boolean {
   return false;
 }
 
-// One person's share of a bill, behind https://splits.select/pay/sh_... (see lib/shares.ts).
+// One person's share of a bill, behind https://splits.select/pay/sh_... (see app/(site)/stripe/shares.ts).
 // This file keeps them only for local runs; production stores them in Supabase.
 // "void": replaced by a newer link after the amount changed. It can no longer be paid.
 export type ShareStatus = "unpaid" | "sent" | "paid" | "void";

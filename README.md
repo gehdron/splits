@@ -74,6 +74,28 @@ Dashboard shared lists also have an **AI bot** panel for chat-based item
 assignments. It uses the group members as the available assignees and is
 available to group owners.
 
+## Where the payment code lives
+
+All Stripe code is in `app/(site)/stripe/` and all Plaid code is in `app/(site)/plaid/`.
+The files under `app/api/…` and `app/(site)/pay/` are one-line pointers into those folders,
+because a file's location sets its web address and the webhook and Plaid redirect addresses
+are saved in the Stripe and Plaid dashboards.
+
+| File | What it does |
+| --- | --- |
+| `stripe/checkout.ts` | Stripe client, Checkout sessions, voiding old links, payment method label |
+| `stripe/shares.ts` | The share record and link id, the $0.50 minimum and the cap |
+| `stripe/settle.ts` | Works out what each person still owes and retires out-of-date links |
+| `stripe/shares-api.ts` | The Request button's API (`/api/shares`) |
+| `stripe/webhook.ts` | Stripe's webhook (`/api/stripe/webhook`) |
+| `stripe/pay-page.tsx`, `stripe/pay.css` | The page a friend opens at `/pay/sh_…` |
+| `stripe/paid-details.tsx` | The Stripe part of `/payment-complete` |
+| `stripe/organizer.ts` | The organizer's Stripe Connect account and payout record |
+| `stripe/payouts.ts`, `stripe/payouts-panel.tsx`, `stripe/payout-status.ts` | "Set up payouts" on `/account` |
+| `plaid/plaid.ts` | All Plaid calls |
+| `plaid/link-token.ts`, `plaid/exchange.ts`, `plaid/oauth.ts` | The Plaid APIs and the bank's return page |
+| `plaid/bank-link.tsx` | The "Link your bank with Plaid" button |
+
 ## Routes
 
 | Route | What it is |
