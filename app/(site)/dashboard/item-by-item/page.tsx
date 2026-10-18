@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import "./item-by-item.css";
 
 // Sample charge: Amazon $38.97. Shares are computed from the items.
@@ -68,6 +68,9 @@ const starterItems: ReceiptItem[] = [
   { id: "towels", name: "Paper towels, 12 pack", cents: 1149, who: "Brayden" },
   { id: "batteries", name: "AA batteries", cents: 799, who: null },
 ];
+
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_PDF_BYTES = 4 * 1024 * 1024;
 
 function money(cents: number): string {
   const abs = Math.abs(cents);
@@ -148,6 +151,8 @@ function Sidebar() {
 }
 
 export default function ItemByItemPage() {
+  const cameraInput = useRef<HTMLInputElement>(null);
+  const uploadInput = useRef<HTMLInputElement>(null);
   const [people, setPeople] = useState(starterPeople);
   const [contacts, setContacts] = useState(starterContacts);
   const [items, setItems] = useState(starterItems);
@@ -156,6 +161,114 @@ export default function ItemByItemPage() {
   const [itemName, setItemName] = useState("");
   const [itemPrice, setItemPrice] = useState("");
   const [sent, setSent] = useState(false);
+  const [receiptFileName, setReceiptFileName] = useState("");
+  const [receiptError, setReceiptError] = useState("");
+  const [scanning, setScanning] = useState(false);
+
+  async function scanReceipt(file: File) {
+    const isPdf = file.type === "application/pdf";
+    const isImage = ["image/jpeg", "image/png", "image/webp"].includes(file.type);
+    if (!isPdf && !isImage) {
+      setReceiptError("Choose a JPEG, PNG, WebP, or PDF receipt.");
+      return;
+    }
+    if (file.size > (isPdf ? MAX_PDF_BYTES : MAX_IMAGE_BYTES)) {
+      setReceiptError(
+        isPdf
+          ? "PDF receipts must be 4 MB or smaller."
+          : "Image receipts must be 8 MB or smaller."
+      );
+      return;
+    }
+
+    setScanning(true);
+    setReceiptError("");
+    try {
+      let response: Response;
+      if (isPdf) {
+        const formData = new FormData();
+        formData.append("receiptFile", file);
+        response = await fetch("/api/parse-receipt", {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        const imageDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = () => reject(new Error("That image could not be read."));
+          reader.readAsDataURL(file);
+        });
+        response = await fetch("/api/parse-receipt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageDataUrl }),
+        });
+      }
+
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        const message =
+          typeof result === "object" &&
+          result !== null &&
+          "error" in result &&
+          typeof result.error === "string"
+            ? result.error
+            : "The receipt could not be read. Try another image or PDF.";
+        throw new Error(message);
+      }
+      if (
+        typeof result !== "object" ||
+        result === null ||
+        !("items" in result) ||
+        !Array.isArray(result.items)
+      ) {
+        throw new Error("The receipt parser returned an invalid result. Try again.");
+      }
+
+      const parsedItems = result.items.flatMap((item, index): ReceiptItem[] => {
+        if (
+          typeof item !== "object" ||
+          item === null ||
+          !("description" in item) ||
+          typeof item.description !== "string" ||
+          !("amount" in item) ||
+          typeof item.amount !== "string"
+        ) {
+          return [];
+        }
+        const name = item.description.trim();
+        if (!name || !item.amount.trim()) return [];
+        return [{
+          id: `receipt-${Date.now()}-${index}`,
+          name,
+          cents: centsFromDollars(item.amount),
+          who: null,
+        }];
+      });
+
+      if (parsedItems.length === 0) {
+        throw new Error("No receipt items were found. Upload a clearer receipt.");
+      }
+      setItems(parsedItems);
+      setReceiptFileName(file.name);
+      setSent(false);
+    } catch (error) {
+      setReceiptError(
+        error instanceof Error
+          ? error.message
+          : "The receipt could not be read. Try again."
+      );
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  function handleReceiptSelection(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (file) void scanReceipt(file);
+  }
 
   useEffect(() => {
     if (!openId) return;
@@ -224,17 +337,61 @@ export default function ItemByItemPage() {
           </header>
 
           <section className="sec rcpt" aria-labelledby="scan-h">
+            <input
+              ref={cameraInput}
+              className="sr-only"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,application/pdf"
+              capture="environment"
+              aria-label="Take a photo of a receipt"
+              onChange={handleReceiptSelection}
+            />
+            <input
+              ref={uploadInput}
+              className="sr-only"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,application/pdf"
+              aria-label="Upload a receipt photo or PDF"
+              onChange={handleReceiptSelection}
+            />
             <div className="rc-ph" role="img" aria-label="Receipt photo placeholder">
-              <ReceiptIcon /><b>Receipt photo</b><small>[Placeholder for the scanned receipt]</small>
+              <ReceiptIcon />
+              <b>{receiptFileName || "Receipt photo"}</b>
+              <small>
+                {receiptFileName
+                  ? "Receipt uploaded"
+                  : "[Placeholder for the scanned receipt]"}
+              </small>
             </div>
             <div>
               <h2 id="scan-h">Scan the receipt</h2>
               <p className="sub">Take a photo of the receipt and Splits lists every item and price for you. Check them below and fix anything that’s off.</p>
               <div className="acts2">
-                <button className="btn" type="button"><CameraIcon />Scan receipt</button>
-                <button className="btn line" type="button">Upload a photo</button>
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => cameraInput.current?.click()}
+                  disabled={scanning}
+                >
+                  <CameraIcon />{scanning ? "Reading receipt…" : "Scan receipt"}
+                </button>
+                <button
+                  className="btn line"
+                  type="button"
+                  onClick={() => uploadInput.current?.click()}
+                  disabled={scanning}
+                >
+                  Upload a photo
+                </button>
               </div>
-              <p className="scanned"><span className="pill">Scanned</span>Found {items.length} {items.length === 1 ? "item" : "items"}, plus tax and shipping.</p>
+              {receiptError ? (
+                <p className="scanned" role="alert">{receiptError}</p>
+              ) : receiptFileName ? (
+                <p className="scanned" role="status">
+                  <span className="pill">Scanned</span>Found {items.length}{" "}
+                  {items.length === 1 ? "item" : "items"}.
+                </p>
+              ) : null}
             </div>
           </section>
 
