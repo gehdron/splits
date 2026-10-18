@@ -57,7 +57,7 @@ The "Daylight" concept is the chosen direction. Source designs live in the **Spl
 
 **Decisions already made**
 - No contact page, no thank-you page for sign-ups, no early-access waitlist. The primary call to action is **Try Splits**, linking to the live app **[confirm app URL; currently https://app.example.com]**.
-- Contact is by email only **[confirm address; currently hello@example.com]**, with the promise "We reply within 2 business days."
+- Contact is by email only at help@splitsselect.com, with the promise "We reply within 2 business days."
 - Conversion items: CTA above the fold, sticky mobile CTA bar, floating contact button (opens email).
 - On hold: team photo, real reviews. Skipped: maps, last-updated date, breadcrumbs.
 - Not built yet: privacy policy and terms pages. Footer links are placeholders.
@@ -142,7 +142,6 @@ Brand colors stay **green and purple**. Neutrals carry everything else.
 - Placeholders are explicit: `[Friend name]`, `[your email address]`, `$--.--`. Never invent statistics, testimonials or prices.
 - Avoid: em dashes, three-beat slogans, buzzwords (seamless, effortless, unlock, game-changing), exclamation marks.
 - Errors name the problem and the way out ("We can't find that page. The link may be old or mistyped.").
-- Footer always carries: "Live demo: payments are real, kept to a few dollars, and refunded. Apple Pay is a trademark of Apple Inc."
 
 ### 4.9 Apple Pay
 - Until launch, write "Apple Pay" as plain text and show the choice as an **Apple Pay | Card** toggle.

@@ -229,22 +229,28 @@ export async function POST(request: Request) {
   if (messages.length === 0 || messages[messages.length - 1].role !== "user") {
     return Response.json({ error: "Enter a split instruction first." }, { status: 400 });
   }
-  if (
-    isSharedList &&
-    currentAssignments.some((assignment) => assignment.people.length > 1)
-  ) {
-    return Response.json(
-      { error: "Shared-list items can only have one assignee." },
-      { status: 400 }
-    );
-  }
-
   const participants = requestedParticipants ?? [
     ...new Set([
       currentUser,
       ...currentAssignments.flatMap((assignment) => assignment.people),
     ]),
   ];
+  const participantNames = new Set(
+    participants.map((person) => person.toLocaleLowerCase()),
+  );
+  if (
+    isSharedList &&
+    currentAssignments.some((assignment) =>
+      assignment.people.some(
+        (person) => !participantNames.has(person.toLocaleLowerCase()),
+      ),
+    )
+  ) {
+    return Response.json(
+      { error: "Current assignments must use people on this list." },
+      { status: 400 },
+    );
+  }
   const input = JSON.stringify({
     items,
     totals,
@@ -360,12 +366,28 @@ export async function POST(request: Request) {
     console.error("Gemini split assistant returned invalid item assignments.");
     return Response.json({ error: "Gemini returned invalid item assignments." }, { status: 502 });
   }
-  if (isSharedList && assignments.some((assignment) => assignment.people.length !== 1)) {
-    console.error("Gemini split assistant returned an invalid shared-list assignment.");
-    return Response.json(
-      { error: "Gemini returned an invalid shared-list assignment." },
-      { status: 502 }
-    );
+  if (isSharedList) {
+    const participantsByName = new Map(participants.map((person) => [person.toLocaleLowerCase(), person]));
+    const canonicalAssignments: ReceiptAssignment[] = [];
+    for (const assignment of assignments) {
+      const seenPeople = new Set<string>();
+      const people: string[] = [];
+      for (const person of assignment.people) {
+        const key = person.toLocaleLowerCase();
+        const canonical = participantsByName.get(key);
+        if (!canonical || seenPeople.has(key)) {
+          console.error("Gemini split assistant returned an unknown or duplicate participant.");
+          return Response.json(
+            { error: "Gemini returned an invalid person assignment. Check the names on this list and try again." },
+            { status: 502 },
+          );
+        }
+        seenPeople.add(key);
+        people.push(canonical);
+      }
+      canonicalAssignments.push({ ...assignment, people });
+    }
+    assignments.splice(0, assignments.length, ...canonicalAssignments);
   }
 
   const assistantResult: SplitAssistantResult = {

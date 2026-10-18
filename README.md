@@ -11,13 +11,15 @@ npm run dev
 ```
 
 Open [http://localhost:3001](http://localhost:3001) and allow camera access.
-Use **Switch camera** to change cameras. For better live recognition, place the
+The camera guide follows the device orientation, and captured photos are
+rotated to match it when the camera stream uses the opposite orientation. Use
+**Switch camera** to change cameras. For better live recognition, place the
 receipt inside the on-screen guide, fill as much of it as possible, keep it
 flat, hold the camera steady, and use bright even lighting. The live scanner
 focuses on the guided area, enlarges it, and boosts image contrast before OCR.
-After you select **Freeze frame**, the full original photo remains visible.
-Select **Extract text** to prepare a higher-resolution, contrast-enhanced OCR
-image and show recognized word boxes over the photo. OCR first uses a small
+After you select **Take photo**, the full original photo remains visible and
+OCR starts automatically. It prepares a higher-resolution, contrast-enhanced
+image and shows recognized word boxes over the photo. OCR first uses a small
 internal preview to estimate the text's horizontal bounds, then may crop the
 image internally for a higher-resolution pass; the crop preserves the full
 image height. AI parsing starts automatically after text extraction completes.
@@ -35,11 +37,10 @@ For optional AI parsing, create `.env.local` in the project root and add:
 GEMINI_API_KEY=your_gemini_api_key
 ```
 
-Restart the development server, freeze a receipt, and select **Extract text**.
-The app sends the frozen photo and extracted text to Gemini 3.8 Flash after OCR
-completes. You can also use **Upload receipt image or PDF** instead of the
-camera. Select **Extract text** after uploading a JPEG, PNG, or WebP image to
-run OCR and start automatic AI parsing; PDFs are parsed directly after upload
+Restart the development server and take a receipt photo. The app sends the
+frozen photo and extracted text to Gemini 3.8 Flash after OCR completes. You can
+also use **Upload receipt image or PDF** instead of the camera. Image uploads
+start OCR and AI parsing automatically; PDFs are parsed directly after upload
 using a binary upload to avoid base64 request-size overhead. PDF files must be
 4 MB or smaller; image files can be up to 8 MB.
 The scanner shows extraction, AI parsing, and review progress; if AI parsing
@@ -48,22 +49,10 @@ AI parsing requires a Gemini API key and may incur API charges depending on
 your account and usage. OCR extraction and raw text remain available without
 an API key.
 
-After AI parsing, open **Assign items yourself** to add people and select them
-on each receipt item. Each person's item shares, tax, tip, and total update in
-the receipt review.
-Shared items are split equally; parsed tax is allocated proportionally to each
-person's share of the item amounts.
-Open **Tip options** to split the receipt tip proportionally, set a custom tip
-amount for each person, or leave the tip out of split totals. Any unassigned
-items keep their associated tax and tip under **Unassigned** until they are
-assigned.
-After editing the receipt subtotal, tax, or tip, the displayed receipt total
-updates automatically as their sum.
-
 From the dashboard, choose **New list → Scan a receipt** to open the dedicated
-camera and upload screen. After reviewing the parsed items, choose **Continue
-to split chat** to open the AI split chat and manual assignment controls on the
-same page. Save the receipt to a named group list from the receipt review.
+camera and upload screen. After reviewing the parsed items and totals, save the
+receipt to a named group list from the receipt review. Item assignment and the
+AI split chat are available on the list page.
 
 On `/list`, enter a name before creating a list. **AI suggest name** uses
 Gemini to suggest one from the current items or receipt. Receipt item names
@@ -72,6 +61,9 @@ suggestion to correct a partial or mistyped item name. Assign an item to
 multiple people from its assignee menu; its price is split evenly, and tax and
 tip are allocated proportionally. Subtotal, tax, tip, and total appear below
 the item list, and scanned receipt totals are checked against the item amounts.
+The AI split chat can assign an item to multiple people. The list owner can
+delete a list; unpaid payment links are expired first, while completed payments
+remain recorded.
 
 If you already use the production file-backed shared-list tables in Supabase,
 re-run `supabase/shared-lists.sql` to add the receipt-total columns used by the

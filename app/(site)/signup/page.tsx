@@ -15,7 +15,8 @@ export default function SignupPage() {
         <SignupForm />
       ) : (
         <p className="note">
-          Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY to .env.local, then restart the dev server.
+          Account creation is temporarily unavailable. Please try again later or contact{" "}
+          <a href="mailto:help@splitsselect.com">help@splitsselect.com</a>.
         </p>
       )}
     </AuthShell>

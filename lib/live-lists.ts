@@ -10,6 +10,7 @@ import {
   claimItem as fileClaimItem,
   createList as fileCreateList,
   deleteItem as fileDeleteItem,
+  deleteList as fileDeleteList,
   getList as fileGetList,
   itemListId as fileItemListId,
   listExists as fileListExists,
@@ -144,6 +145,42 @@ export async function createList(name: string, ownerId: string | null = null, me
     raise(memberError);
   }
   return toList(row, [saved]);
+}
+
+export async function deleteList(
+  id: string,
+  ownerId: string | null,
+): Promise<"deleted" | "not-found" | "forbidden"> {
+  const group = await groupListContext(id);
+  if (group) {
+    const currentMember = group.members.find(
+      (member) => member.userId === group.currentUserId,
+    );
+    if (!currentMember || currentMember.role !== "owner") return "forbidden";
+
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("lists")
+      .delete()
+      .eq("id", id)
+      .select("id");
+    if (error) throw new Error(error.message);
+    if (!data?.length) return "not-found";
+    refreshGroupDashboards(group.members);
+    return "deleted";
+  }
+
+  if (!isRemoteEnabled()) return fileDeleteList(id, ownerId);
+  const row = await listRow(id);
+  if (!row) return "not-found";
+  if (row.owner_id !== ownerId) return "forbidden";
+  const { data, error } = await db()
+    .from("bill_lists")
+    .delete()
+    .eq("id", id)
+    .select("id");
+  raise(error);
+  return data?.length ? "deleted" : "not-found";
 }
 
 export async function listSummaries(): Promise<(List & { itemCount: number })[]> {

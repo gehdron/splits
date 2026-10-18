@@ -2,7 +2,7 @@ import Link from "next/link";
 import { LogoMark } from "./logo";
 import "../_styles/404.css";
 
-const EMAIL = "hello@example.com";
+const EMAIL = "help@splitsselect.com";
 
 export function NotFoundPage() {
   return (
@@ -46,11 +46,10 @@ export function NotFoundPage() {
           <nav className="links" aria-label="Footer">
             <Link href="/">Home</Link>
             <a href={`mailto:${EMAIL}`}>Contact</a>
-            <Link href="/">Privacy</Link>
+            <Link href="/privacy">Privacy</Link>
             <Link href="/">Terms</Link>
           </nav>
         </footer>
-        <div className="fine">Live demo: payments are real, kept to a few dollars, and refunded. Apple Pay is a trademark of Apple Inc.</div>
       </div>
     </div>
   );

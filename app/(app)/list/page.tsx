@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { normalizePhone } from "@/lib/phone";
 import { createClient } from "@/lib/supabase/client";
@@ -380,9 +382,21 @@ function receiptToItems(rows: ReceiptRow[]) {
   });
 }
 
-export default function ListPage() {
-  const [listId, setListId] = useState<string | null>(null);
+function ListPageContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const requestedListId = searchParams.get("id");
+  const requestedScan = searchParams.get("scan") === "1";
+  const listId = requestedListId;
   const [data, setData] = useState<ListData | null>(null);
+  const [listLoadFailure, setListLoadFailure] = useState<{
+    listId: string;
+    message: string;
+  } | null>(null);
+  const listLoadError =
+    listLoadFailure?.listId === listId ? listLoadFailure.message : "";
+  const listLoading = Boolean(listId && data?.list.id !== listId && !listLoadError);
+  const listLoadRun = useRef(0);
   const [friends, setFriends] = useState<Person[]>([]);
   const [added, setAdded] = useState<Person[]>([]);
   const [meId, setMeId] = useState<string | null>(null);
@@ -397,11 +411,11 @@ export default function ListPage() {
   const [newListTitle, setNewListTitle] = useState("");
   const [creatingList, setCreatingList] = useState(false);
   const [suggestingNewTitle, setSuggestingNewTitle] = useState(false);
-  const [startWithScan, setStartWithScan] = useState(false);
+  const startWithScan = requestedScan;
   const savingTitle = useRef(false);
   const [price, setPrice] = useState("");
   const [msg, setMsg] = useState("");
-  const [scan, setScan] = useState(false);
+  const [scan, setScan] = useState(requestedScan);
   const [scanning, setScanning] = useState(false);
   const [splitChatOpen, setSplitChatOpen] = useState(false);
   const [splitMessages, setSplitMessages] = useState<SplitInstructionMessage[]>([]);
@@ -416,6 +430,9 @@ export default function ListPage() {
   const [tipInput, setTipInput] = useState("");
   const [savingTotals, setSavingTotals] = useState(false);
   const [suggestingName, setSuggestingName] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deletingList, setDeletingList] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   // Pay links: one per person who owes. The amount is worked out on the server from this list.
   const [payLinks, setPayLinks] = useState<PayLink[]>([]);
   const [requestFor, setRequestFor] = useState<string | null>(null);
@@ -423,18 +440,10 @@ export default function ListPage() {
   const [requestBusy, setRequestBusy] = useState(false);
   const [requestMsg, setRequestMsg] = useState("");
 
-  // On load: use ?id= from the URL. New lists are only created after a name is supplied.
+  // Invalidate an in-flight request when Next.js navigates between list query strings.
   useEffect(() => {
-    (async () => {
-      await Promise.resolve(); // keeps state updates out of the synchronous effect body
-      const params = new URLSearchParams(window.location.search);
-      const wantScan = params.get("scan") === "1";
-      setStartWithScan(wantScan);
-      setScan(wantScan);
-      const id = params.get("id");
-      if (id) setListId(id);
-    })();
-  }, []);
+    listLoadRun.current += 1;
+  }, [requestedListId]);
 
   useEffect(() => {
     let cancel = false;
@@ -463,18 +472,56 @@ export default function ListPage() {
 
   const refresh = useCallback(async () => {
     if (!listId) return;
-    const res = await fetch(`/api/lists/${listId}`);
-    if (res.status === 404) return setMsg("List not found (the server may have restarted). Open /list for a new one.");
-    const json: ListData = await res.json();
-    setData(json);
-    if (json.list.name === "Shared list") {
-      setTitle((current) => current || json.list.name);
-      setEditingTitle(true);
+    const run = ++listLoadRun.current;
+    try {
+      const res = await fetch(`/api/lists/${encodeURIComponent(listId)}`, {
+        cache: "no-store",
+      });
+      const result: unknown = await res.json().catch(() => null);
+      if (!res.ok) {
+        const message =
+          typeof result === "object" && result !== null && "error" in result &&
+          typeof result.error === "string"
+            ? result.error
+            : "This list could not be loaded.";
+        throw new Error(message);
+      }
+      if (
+        typeof result !== "object" ||
+        result === null ||
+        !("list" in result) ||
+        typeof result.list !== "object" ||
+        result.list === null ||
+        !("id" in result.list) ||
+        result.list.id !== listId ||
+        !("name" in result.list) ||
+        typeof result.list.name !== "string" ||
+        !("items" in result) ||
+        !Array.isArray(result.items)
+      ) {
+        throw new Error("The server returned incomplete list data.");
+      }
+      if (run !== listLoadRun.current) return;
+      const json = result as ListData;
+      setData(json);
+      setListLoadFailure(null);
+      if (json.list.name === "Shared list") {
+        setTitle((current) => current || json.list.name);
+        setEditingTitle(true);
+      }
+      setTaxInput((prev) => (prev === "" && json.list.taxCents !== undefined ? (json.list.taxCents / 100).toFixed(2) : prev));
+      setTipInput((prev) => (prev === "" && json.list.tipCents !== undefined ? (json.list.tipCents / 100).toFixed(2) : prev));
+      const links = await fetch(`/api/shares?list=${encodeURIComponent(listId)}`).catch(() => null);
+      if (run !== listLoadRun.current) return;
+      if (links?.ok) setPayLinks(((await links.json()) as { shares: PayLink[] }).shares);
+    } catch (error) {
+      if (run !== listLoadRun.current) return;
+      console.error("Could not load the selected list.", error);
+      setListLoadFailure({
+        listId,
+        message: error instanceof Error ? error.message : "This list could not be loaded.",
+      });
     }
-    setTaxInput((prev) => (prev === "" && json.list?.taxCents !== undefined ? (json.list.taxCents / 100).toFixed(2) : prev));
-    setTipInput((prev) => (prev === "" && json.list?.tipCents !== undefined ? (json.list.tipCents / 100).toFixed(2) : prev));
-    const links = await fetch(`/api/shares?list=${listId}`).catch(() => null);
-    if (links?.ok) setPayLinks(((await links.json()) as { shares: PayLink[] }).shares);
   }, [listId]);
 
   // Poll every 3 seconds so everyone sees claims quickly
@@ -760,6 +807,28 @@ export default function ListPage() {
       return;
     }
     setData({ ...data, list: { ...data.list, name: next } });
+  }
+
+  async function removeList() {
+    if (!listId || deletingList) return;
+    setDeletingList(true);
+    setDeleteError("");
+    try {
+      const response = await fetch(`/api/lists/${listId}`, { method: "DELETE" });
+      const result: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message =
+          typeof result === "object" && result !== null && "error" in result &&
+          typeof result.error === "string"
+            ? result.error
+            : "The list could not be deleted. Please try again.";
+        throw new Error(message);
+      }
+      router.push("/dashboard");
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "The list could not be deleted.");
+      setDeletingList(false);
+    }
   }
 
   async function addItem(e: React.FormEvent) {
@@ -1121,7 +1190,7 @@ export default function ListPage() {
   }
 
   const list: SharedList = {
-    name: data ? data.list.name : "Loading...",
+    name: data?.list.name ?? "",
     paidBy: me,
     items: (data?.items ?? []).map((i) => ({
       id: i.id,
@@ -1301,9 +1370,8 @@ export default function ListPage() {
       const nextUrl = startWithScan
         ? `/list?id=${encodeURIComponent(result.id)}&scan=1`
         : `/list?id=${encodeURIComponent(result.id)}`;
-      window.history.replaceState(null, "", nextUrl);
+      router.replace(nextUrl);
       setScan(startWithScan);
-      setListId(result.id);
     } catch (error) {
       setMsg(error instanceof Error ? error.message : "The list could not be created.");
     } finally {
@@ -1337,6 +1405,40 @@ export default function ListPage() {
       event.preventDefault();
       selectSplitItemSuggestion(splitInlineSuggestion.description);
     }
+  }
+
+  if (listId && data?.list.id !== listId) {
+    return (
+      <div className="db">
+        <main className="main">
+          <div className="wrap">
+            <section className="sec list-start" aria-live="polite" aria-busy={listLoading}>
+              {listLoadError ? (
+                <>
+                  <h1>We couldn’t open this list</h1>
+                  <p className="msg" role="alert">{listLoadError}</p>
+                  <div className="acts">
+                    <button
+                      className="btn"
+                      type="button"
+                      onClick={() => void refresh()}
+                    >
+                      Try again
+                    </button>
+                    <Link className="btn line" href="/dashboard">Back to dashboard</Link>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h1>Loading your list…</h1>
+                  <p className="sub">Getting its items and assignments.</p>
+                </>
+              )}
+            </section>
+          </div>
+        </main>
+      </div>
+    );
   }
 
   if (!listId) {
@@ -1435,7 +1537,6 @@ export default function ListPage() {
               </div>
             </div>
             <div className="acts">
-              {/* TODO: there is no delete-list API route yet. */}
               <button
                 className="btn txt"
                 type="button"
@@ -1447,11 +1548,31 @@ export default function ListPage() {
               <button className="btn txt" type="button" onClick={startRename} disabled={!data || editingTitle}>
                 Rename
               </button>
-              <button className="btn txt" type="button">
+              <button
+                className="btn txt"
+                type="button"
+                onClick={() => {
+                  setConfirmingDelete((value) => !value);
+                  setDeleteError("");
+                }}
+                disabled={!data || deletingList}
+              >
                 Delete list
               </button>
             </div>
           </header>
+          {confirmingDelete ? (
+            <div className="delete-confirm" role="group" aria-label="Confirm list deletion">
+              <p>This permanently deletes the list and expires its unpaid payment links.</p>
+              <button className="btn txt" type="button" onClick={() => setConfirmingDelete(false)} disabled={deletingList}>
+                Keep list
+              </button>
+              <button className="btn txt delete-action" type="button" onClick={() => void removeList()} disabled={deletingList}>
+                {deletingList ? "Deleting…" : "Delete permanently"}
+              </button>
+              {deleteError ? <p className="msg" role="alert">{deleteError}</p> : null}
+            </div>
+          ) : null}
 
           <section className="sec" aria-labelledby="wo-h">
             <h2 id="wo-h" className="sh" style={{ fontSize: 14 }}>
@@ -1968,5 +2089,24 @@ export default function ListPage() {
         </div>
       </main>
     </div>
+  );
+}
+export default function ListPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="db">
+          <main className="main">
+            <div className="wrap">
+              <section className="sec list-start" aria-live="polite" aria-busy="true">
+                <h1>Loading your list…</h1>
+              </section>
+            </div>
+          </main>
+        </div>
+      }
+    >
+      <ListPageContent />
+    </Suspense>
   );
 }
