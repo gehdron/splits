@@ -1541,6 +1541,435 @@ export default function ReceiptScanner() {
                           onChange={(event) => setUserNameInput(event.target.value)}
                           maxLength={40}
                           placeholder="[Friend name]"
+              <div className="flex flex-col gap-3">
+                <div className="order-2">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    aria-expanded={itemAssignmentsOpen}
+                    aria-controls="interactive-item-assignments"
+                    onClick={() => setItemAssignmentsOpen((open) => !open)}
+                    className="min-h-12 min-w-0 flex-1 rounded-lg border px-4 py-3 text-left font-semibold"
+                  >
+                    {itemAssignmentsOpen
+                      ? "Hide item assignments"
+                      : `Assign items manually · ${
+                          splitAssignments.filter(
+                            (assignment) => assignment.people.length > 0
+                          ).length
+                        }/${receiptRows.length} assigned`}
+                  </button>
+                  <button
+                    type="button"
+                    aria-expanded={splitAssistantOpen}
+                    aria-controls="split-assistant-panel"
+                    onClick={() => setSplitAssistantOpen((open) => !open)}
+                    className="min-h-12 min-w-0 flex-1 rounded-lg border px-4 py-3 text-left font-semibold"
+                  >
+                    {splitAssistantOpen
+                      ? "Hide split chat"
+                      : "Split items with chat"}
+                  </button>
+                </div>
+                </div>
+                <div className="order-3">
+                {itemAssignmentsOpen && (
+              <section
+                id="interactive-item-assignments"
+                className="space-y-4 rounded-xl border border-blue-200 bg-blue-50/60 p-3 sm:p-4"
+              >
+                <div>
+                  <h3 className="font-semibold">Assign receipt items</h3>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Add users, then select who shares each item. You can also
+                    describe assignments in the split chat below.
+                  </p>
+                </div>
+                <form onSubmit={addUser} className="flex flex-wrap gap-2">
+                  <label htmlFor="user-name" className="sr-only">
+                    User name
+                  </label>
+                  <input
+                    id="user-name"
+                    value={userNameInput}
+                    onChange={(event) => setUserNameInput(event.target.value)}
+                    maxLength={40}
+                    placeholder="Add a user"
+                    className="min-h-11 min-w-0 flex-1 rounded-lg border bg-white px-3 py-2 text-base"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!userNameInput.trim()}
+                    className="min-h-11 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Add user
+                  </button>
+                </form>
+                <div className="space-y-3">
+                  {receiptRows.map((row, index) => {
+                    const assignment = splitAssignments.find(
+                      (entry) => entry.itemIndex === index
+                    );
+                    const line = splitCalculation.lines[index];
+                    return (
+                      <article
+                        key={`assignment-${index}`}
+                        className="rounded-lg border bg-white p-3 transition-shadow"
+                      >
+                        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                          <h4 className="font-medium">
+                            {row.quantity.trim()
+                              ? `${row.quantity.trim()} × `
+                              : ""}
+                            {row.description || `Receipt item ${index + 1}`}
+                          </h4>
+                          <span className="text-sm font-semibold">
+                            {row.amount.trim() || "Amount needs review"}
+                          </span>
+                        </div>
+                        {userNames.length > 0 ? (
+                          <div
+                            className="mt-3 flex flex-wrap gap-2"
+                            role="group"
+                            aria-label={`Assign ${row.description || `item ${index + 1}`} to users`}
+                          >
+                            {userNames.map((person) => {
+                              const selected = assignment?.people.some(
+                                (name) =>
+                                  name.toLocaleLowerCase() ===
+                                  person.toLocaleLowerCase()
+                              ) ?? false;
+                              return (
+                                <button
+                                  key={person}
+                                  type="button"
+                                  aria-pressed={selected}
+                                  onClick={() =>
+                                    toggleItemAssignment(index, person)
+                                  }
+                                  className={`min-h-10 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                                    selected
+                                      ? "border-blue-700 bg-blue-700 text-white"
+                                      : "border-gray-300 bg-white text-gray-800 hover:bg-gray-100"
+                                  }`}
+                                >
+                                  {selected ? "✓ " : ""}
+                                  {person}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-sm text-gray-600">
+                            Add users here or name them in the split chat to
+                            assign this item.
+                          </p>
+                        )}
+                        <p
+                          className="mt-2 text-sm text-gray-600 transition-all"
+                          aria-live="polite"
+                        >
+                          {line.amountCents === null
+                            ? "Check this item's amount before splitting."
+                            : line.shares.length > 0
+                              ? line.shares
+                                  .map(
+                                    (share) =>
+                                      `${share.person}: ${formatCents(share.amountCents)}`
+                                  )
+                                  .join(" · ")
+                              : "Unassigned"}
+                        </p>
+                      </article>
+                    );
+                  })}
+                </div>
+                <div className="space-y-3 border-t border-blue-200 pt-4">
+                  <h3 className="font-semibold">Each person&apos;s share</h3>
+                  {splitCalculation.people.length > 0 ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {splitCalculation.people.map((person) => {
+                        const personKey = person.person.toLocaleLowerCase();
+                        const personItems = splitCalculation.lines.flatMap(
+                          (line) =>
+                            line.shares
+                              .filter(
+                                (share) =>
+                                  share.person.toLocaleLowerCase() === personKey
+                              )
+                              .map((share) => ({
+                                description: line.description,
+                                amountCents: share.amountCents,
+                              }))
+                        );
+                        const totalCents =
+                          person.itemsCents + person.taxCents + person.tipCents;
+                        return (
+                          <article
+                            key={personKey}
+                            className="rounded-lg border bg-white p-3 transition-all"
+                          >
+                            <div className="flex items-baseline justify-between gap-2">
+                              <h4 className="font-semibold">{person.person}</h4>
+                              <span className="text-lg font-bold">
+                                {formatCents(totalCents)}
+                              </span>
+                            </div>
+                            <ul className="mt-2 space-y-1 text-sm text-gray-700">
+                              {personItems.map((item, itemIndex) => (
+                                <li
+                                  key={`${item.description}-${itemIndex}`}
+                                  className="flex justify-between gap-2"
+                                >
+                                  <span className="min-w-0 break-words">
+                                    {item.description}
+                                  </span>
+                                  <span className="shrink-0">
+                                    {formatCents(item.amountCents)}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                            <p className="mt-2 border-t pt-2 text-xs text-gray-600">
+                              Items {formatCents(person.itemsCents)} · Tax{" "}
+                              {formatCents(person.taxCents)} · Tip{" "}
+                              {formatCents(person.tipCents)}
+                            </p>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-600">
+                      Add users and assign items to see everyone&apos;s
+                      calculated share.
+                    </p>
+                  )}
+                  {splitCalculation.unassignedCents > 0 && (
+                    <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                      Unassigned items:{" "}
+                      {formatCents(
+                        splitCalculation.unassignedCents +
+                          splitCalculation.unassignedTaxCents +
+                          splitCalculation.unassignedTipCents
+                      )}
+                      . Their share of tax and tip stays unassigned too.
+                    </p>
+                  )}
+                  {!splitCalculation.canAllocateTaxAndTip && (
+                    <p className="text-xs text-amber-800">
+                      Enter a valid, non-negative amount for every item to
+                      allocate tax and tip proportionally.
+                    </p>
+                  )}
+                </div>
+              </section>
+                )}
+              </div>
+              <div className="order-1 space-y-2">
+                <h3 className="font-semibold">Receipt totals</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {(
+                    [
+                      ["subtotal", "Subtotal"],
+                      ["tax", "Tax"],
+                      ["tip", "Tip / gratuity"],
+                      ["total", "Total"],
+                    ] as const
+                  ).map(([field, label]) => (
+                    <label key={field} className="space-y-1 text-sm">
+                      <span className="block">{label}</span>
+                      <input
+                        value={
+                          field === "total"
+                            ? displayedReceiptTotal
+                            : receiptTotals[field]
+                        }
+                        readOnly={field === "total"}
+                        onChange={
+                          field === "total"
+                            ? undefined
+                            : (event) => {
+                                setReceiptTotalEdited(true);
+                                setReceiptTotals((currentTotals) => ({
+                                  ...currentTotals,
+                                  [field]: event.target.value,
+                                }));
+                              }
+                        }
+                        className={`w-full min-w-0 rounded border px-2 py-2 text-base ${
+                          field === "total" ? "bg-gray-100" : ""
+                        }`}
+                        aria-label={label}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-600">
+                  Total updates from subtotal, tax, and tip when you edit them.
+                </p>
+              </div>
+              </div>
+              <Suspense fallback={null}>
+                <SaveReceiptButton rows={receiptRows} />
+              </Suspense>
+            </>
+          )}
+          {aiParsed && receiptRows.length > 0 && splitAssistantOpen && (
+            <div
+              id="split-assistant-panel"
+              className="space-y-4 rounded-lg bg-gray-50 p-3 sm:p-4"
+            >
+                  <div>
+                    <h3 className="font-semibold">Split items with chat</h3>
+                    <p className="mt-1 text-sm text-gray-600">
+                      Tell the assistant who had each item. For example:
+                      “Sandy gets the burger, John gets the fries, and Bob and
+                      Joe split the pizza.” Shared items are divided equally.
+                      Tax and tip are allocated in proportion to each person’s
+                      share of the item subtotal.
+                    </p>
+                  </div>
+
+                  <div
+                    aria-live="polite"
+                    className="max-h-64 space-y-3 overflow-y-auto rounded-lg border bg-white p-3"
+                  >
+                    {splitMessages.length === 0 && (
+                      <p className="text-sm text-gray-600">
+                        Start by naming the person or people for an item. If an
+                        item is unclear, the assistant will ask you to clarify.
+                      </p>
+                    )}
+                    {splitMessages.map((message, index) => (
+                      <div
+                        key={`${index}-${message.role}`}
+                        className={`max-w-[90%] break-words rounded-lg px-3 py-2 text-sm ${
+                          message.role === "user"
+                            ? "ml-auto bg-blue-100 text-blue-950"
+                            : "bg-gray-100 text-gray-900"
+                        }`}
+                      >
+                        <div className="mb-1 text-xs font-semibold">
+                          {message.role === "user" ? "You" : "Split assistant"}
+                        </div>
+                        {message.content}
+                      </div>
+                    ))}
+                    {splitParsing && (
+                      <p className="text-sm text-gray-500" role="status">
+                        Checking the receipt items...
+                      </p>
+                    )}
+                  </div>
+
+                  <form onSubmit={sendSplitMessage} className="space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <label htmlFor="split-instruction" className="text-sm font-medium">
+                        Describe how to split the receipt items
+                      </label>
+                      <button
+                        type="button"
+                        aria-pressed={splitSuggestionsEnabled}
+                        onClick={() =>
+                          setSplitSuggestionsEnabled((enabled) => !enabled)
+                        }
+                        className="min-h-10 rounded-lg border px-3 py-2 text-sm font-medium"
+                      >
+                        Receipt item suggestions:{" "}
+                        {splitSuggestionsEnabled ? "On" : "Off"}
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="relative">
+                        {splitInlineSuggestion && (
+                          <div
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent"
+                          >
+                            <div
+                              className="whitespace-pre-wrap break-words px-3 py-3 font-sans text-base leading-6 text-gray-900"
+                              style={{
+                                transform: `translateY(-${splitInputScrollTop}px)`,
+                              }}
+                            >
+                              <span>
+                                {splitMessage.slice(0, splitTokenStart)}
+                              </span>
+                              {splitInlineSuggestion.matchedWord?.startsWith(
+                                splitSuggestionQuery
+                              ) && splitInlineSuggestion.matchedWordStart ===
+                                0 ? (
+                                <>
+                                  <span>
+                                    {splitTokenBeforeCursor +
+                                      splitTokenAfterCursor}
+                                  </span>
+                                  <span className="text-gray-400">
+                                    {splitInlineSuggestion.description.slice(
+                                      splitInlineSuggestion.matchedWordStart +
+                                        splitSuggestionQuery.length
+                                    )}
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-gray-500 line-through">
+                                    {splitTokenBeforeCursor +
+                                      splitTokenAfterCursor}
+                                  </span>
+                                  <span className="font-semibold text-blue-700">
+                                    {splitInlineSuggestion.description}
+                                  </span>
+                                </>
+                              )}
+                              <span>
+                                {splitMessage.slice(splitTokenEnd) || "\u200b"}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                        <textarea
+                          ref={splitInputRef}
+                          id="split-instruction"
+                          value={splitMessage}
+                          onChange={(event) => {
+                            setSplitMessage(event.target.value);
+                            setSplitCursorPosition(
+                              event.currentTarget.selectionStart
+                            );
+                          }}
+                          onClick={(event) =>
+                            setSplitCursorPosition(
+                              event.currentTarget.selectionStart
+                            )
+                          }
+                          onSelect={(event) =>
+                            setSplitCursorPosition(
+                              event.currentTarget.selectionStart
+                            )
+                          }
+                          onKeyUp={(event) =>
+                            setSplitCursorPosition(
+                              event.currentTarget.selectionStart
+                            )
+                          }
+                          onKeyDown={handleSplitInputKeyDown}
+                          onScroll={(event) =>
+                            setSplitInputScrollTop(
+                              event.currentTarget.scrollTop
+                            )
+                          }
+                          placeholder="e.g. Sandy gets the burger; Bob and Joe split the pizza"
+                          rows={3}
+                          maxLength={1000}
+                          aria-autocomplete="list"
+                          aria-controls="split-item-suggestions"
+                          className={`relative w-full min-w-0 rounded-lg border p-3 text-base leading-6 ${
+                            splitInlineSuggestion
+                              ? "bg-transparent text-transparent caret-gray-900 selection:bg-blue-200"
+                              : ""
+                          }`}
                         />
                         <button className="btn" type="submit" disabled={!userNameInput.trim()}>
                           Add
@@ -1757,12 +2186,23 @@ export default function ReceiptScanner() {
                         {tipSplitMode === "disabled" && (
                           <p className="sub">The receipt tip will not be included in anyone’s total.</p>
                         )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </section>
-            </>
+                      </ul>
+                      {!splitCalculation.canAllocateTaxAndTip && (
+                        <p className="text-sm text-amber-800">
+                          Some item amounts could not be read as numbers, so
+                          tax and tip cannot be allocated reliably. Review the
+                          item amounts above.
+                        </p>
+                      )}
+                      {splitCalculation.manualTipNeedsReview && (
+                        <p className="text-sm text-amber-800" role="alert">
+                          Enter a valid non-negative amount for each tip share.
+                          Invalid amounts are not included in the totals.
+                        </p>
+                      )}
+                    </div>
+              )}
+            </div>
           )}
         </div>
       </main>

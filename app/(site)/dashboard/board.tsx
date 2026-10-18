@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signOut } from "../auth/actions";
-import { addGroupMember, addSavedFriend, createGroup, exitGroup, removeFriend, saveFriend } from "./actions";
+import { addSavedFriend, createGroup, exitGroup, removeFriend, saveFriend } from "./actions";
 import type { DashboardData } from "./types";
 
 const charges = [
@@ -13,6 +14,8 @@ const charges = [
   { merchant: "Amazon", date: "Oct 10", amount: "$38.97", status: "none" as const },
   { merchant: "Comcast Internet", date: "Oct 1", amount: "$60.00", status: "settled" as const, label: "Settled" },
 ];
+
+type Charge = (typeof charges)[number];
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -56,15 +59,16 @@ export function Board({ data }: { data: DashboardData }) {
   const router = useRouter();
   const search = useSearchParams();
   const newListDialog = useRef<HTMLDialogElement>(null);
+  const splitDialog = useRef<HTMLDialogElement>(null);
+  const [splitTarget, setSplitTarget] = useState<Charge | null>(null);
+  const [splitGroupId, setSplitGroupId] = useState<string | null>(null);
   const selected = search.get("group");
   const group = data.groups.find((entry) => entry.id === selected) ?? data.groups[0] ?? null;
   const members = data.members.filter((member) => member.groupId === group?.id);
-  const [addBy, setAddBy] = useState<"phone" | "email">("phone");
   const [friendBy, setFriendBy] = useState<"phone" | "email">("phone");
   const [chargeFilter, setChargeFilter] = useState<"all" | "none" | "split">("all");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [createState, createAction, createPending] = useActionState(createGroup, undefined);
-  const [addState, addAction, addPending] = useActionState(addGroupMember, undefined);
   const [friendState, friendAction, friendPending] = useActionState(saveFriend, undefined);
   const [removeState, removeAction, removePending] = useActionState(removeFriend, undefined);
   const [savedState, savedAction, savedPending] = useActionState(addSavedFriend, undefined);
@@ -74,6 +78,21 @@ export function Board({ data }: { data: DashboardData }) {
     newListDialog.current?.close();
     router.push(scan ? "/list?scan=1" : "/list");
   }
+
+  function openSplit(charge: Charge) {
+    setSplitGroupId(null);
+    setSplitTarget(charge);
+  }
+
+  const groupQuery = splitGroupId ? `?group=${encodeURIComponent(splitGroupId)}` : "";
+  const itemSplitHref = `/dashboard/item-by-item${groupQuery}`;
+  const evenSplitHref = `/dashboard/even${groupQuery}`;
+
+  useEffect(() => {
+    const dialog = splitDialog.current;
+    if (!splitTarget || !dialog || dialog.open) return;
+    dialog.showModal();
+  }, [splitTarget]);
 
   const visibleCharges = charges.filter((charge) => {
     if (chargeFilter === "all") return true;
@@ -191,38 +210,6 @@ export function Board({ data }: { data: DashboardData }) {
               {friendPending ? "Saving…" : "Save friend"}
             </button>
           </form>
-          {group?.role === "owner" ? (
-            <form action={addAction}>
-              <input type="hidden" name="groupId" value={group.id} />
-              <input type="hidden" name="by" value={addBy} />
-              <p className="lbl">Add someone to {group.name}</p>
-              <div className="seg" role="group" aria-label="Add by">
-                <button className={`sg${addBy === "phone" ? " on" : ""}`} type="button" aria-pressed={addBy === "phone"} onClick={() => setAddBy("phone")}>
-                  Phone
-                </button>
-                <button className={`sg${addBy === "email" ? " on" : ""}`} type="button" aria-pressed={addBy === "email"} onClick={() => setAddBy("email")}>
-                  Email
-                </button>
-              </div>
-              <label className="lbl" htmlFor="ct">
-                {addBy === "phone" ? "Phone number" : "Email"}
-              </label>
-              <input
-                id="ct"
-                key={addBy}
-                className="field"
-                name="contact"
-                type={addBy === "phone" ? "tel" : "email"}
-                autoComplete={addBy === "phone" ? "tel" : "email"}
-                required
-              />
-              {addState?.error ? <p className="err">{addState.error}</p> : null}
-              <button className="btn full" type="submit" disabled={addPending}>
-                <PlusIcon />
-                {addPending ? "Adding…" : "Add to group"}
-              </button>
-            </form>
-          ) : null}
         </section>
 
         <div className="me">
@@ -246,14 +233,8 @@ export function Board({ data }: { data: DashboardData }) {
               <h1>We couldn&apos;t load your groups.</h1>
               <p>{data.loadError}</p>
             </>
-          ) : !group ? (
-            <>
-              <h1>You are not in a group yet.</h1>
-              <p className="sub">Create a group, or ask an owner to add the phone number on your account.</p>
-            </>
-          ) : (
-            <>
-              <header className="top">
+          ) : group ? (
+            <header className="top">
                 <div>
                   <h1>{group.name}</h1>
                   <div className="meta">
@@ -287,12 +268,13 @@ export function Board({ data }: { data: DashboardData }) {
                   )}
                 </div>
               </header>
+          ) : null}
 
               <section className="sec" aria-labelledby="rc-h">
                 <div className="shead">
                   <div>
                     <h2 id="rc-h">Recent charges</h2>
-                    <p className="sub">Sample charges. Splitting a charge is not connected yet.</p>
+                    <p className="sub">Sample charges. Choose item by item or an even split.</p>
                   </div>
                   <div className="seg inline" role="group" aria-label="Filter charges">
                     {(
@@ -321,7 +303,7 @@ export function Board({ data }: { data: DashboardData }) {
                       <span className="amt">{charge.amount}</span>
                       <div className="stc">
                         {charge.status === "none" ? (
-                          <button className="btn" type="button" disabled>
+                          <button className="btn" type="button" onClick={() => openSplit(charge)}>
                             Split this charge
                           </button>
                         ) : (
@@ -339,14 +321,69 @@ export function Board({ data }: { data: DashboardData }) {
                     <h2 id="sl-h">Shared lists</h2>
                     <p className="sub">A new list opens on its own page, blank or from a receipt.</p>
                   </div>
-                  {group.role === "owner" ? (
-                    <button className="btn" type="button" onClick={() => newListDialog.current?.showModal()}>
-                      <PlusIcon />
-                      New list
-                    </button>
-                  ) : null}
+                  <button className="btn" type="button" onClick={() => newListDialog.current?.showModal()}>
+                    <PlusIcon />
+                    New list
+                  </button>
                 </div>
               </section>
+              <dialog
+                ref={splitDialog}
+                className="pop"
+                aria-labelledby="split-how"
+                onClose={() => {
+                  setSplitTarget(null);
+                  setSplitGroupId(null);
+                }}
+              >
+                <form method="dialog">
+                  <h2 id="split-how">How do you want to split it?</h2>
+                  <p>
+                    {splitTarget ? `${splitTarget.merchant}, ${splitTarget.amount}. ` : null}
+                    Assign a group if you want. You can also split it on its own.
+                  </p>
+                  {data.groups.length > 0 ? (
+                    <fieldset className="split-groups">
+                      <legend className="lbl">Group</legend>
+                      <label className={`gpick${splitGroupId === null ? " on" : ""}`}>
+                        <input type="radio" name="split-group" value="" checked={splitGroupId === null} onChange={() => setSplitGroupId(null)} />
+                        No group
+                      </label>
+                      {data.groups.map((entry) => (
+                        <label key={entry.id} className={`gpick${splitGroupId === entry.id ? " on" : ""}`}>
+                          <input
+                            type="radio"
+                            name="split-group"
+                            value={entry.id}
+                            checked={splitGroupId === entry.id}
+                            onChange={() => setSplitGroupId(entry.id)}
+                          />
+                          {entry.name}
+                        </label>
+                      ))}
+                    </fieldset>
+                  ) : null}
+                  <div className="pop-acts">
+                    <Link className="choice" href={itemSplitHref}>
+                      <span>
+                        <b>Item by item</b>
+                        <small>Scan the receipt and give each item to whoever had it.</small>
+                      </span>
+                      <Icon d="M9 6l6 6-6 6" />
+                    </Link>
+                    <Link className="choice" href={evenSplitHref}>
+                      <span>
+                        <b>Split evenly</b>
+                        <small>Everyone pays the same share{splitTarget ? ` of ${splitTarget.amount}` : ""}.</small>
+                      </span>
+                      <Icon d="M9 6l6 6-6 6" />
+                    </Link>
+                  </div>
+                  <button className="btn txt" type="submit">
+                    Cancel
+                  </button>
+                </form>
+              </dialog>
               <dialog ref={newListDialog} className="pop">
                 <form method="dialog">
                   <h2>New list</h2>
@@ -364,8 +401,6 @@ export function Board({ data }: { data: DashboardData }) {
                   </button>
                 </form>
               </dialog>
-            </>
-          )}
         </div>
       </main>
     </div>

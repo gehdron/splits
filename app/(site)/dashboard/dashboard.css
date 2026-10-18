@@ -105,28 +105,6 @@
    .db .stc{grid-column:2/-1;justify-self:start}
    }
    @media (max-width:640px){.db .main{padding:28px 16px 56px}.db .sec{padding:22px 18px}.db h1{font-size:42px}}
-<<<<<<< HEAD
-   .db a.lrow{color:inherit;text-decoration:none}
-
-   /* "Split this charge" chooser (native popover, sits in the top layer) */
-   .db .sdlg{width:min(520px,calc(100% - 32px));max-height:calc(100dvh - 32px);margin:auto;padding:24px 28px 28px;border:0;border-radius:24px;background:#fff;color:var(--ink);text-align:left;overflow:auto;box-shadow:0 0 0 1px var(--line),0 30px 60px -24px rgba(11,16,32,.45);opacity:1;transform:none;transition:opacity .3s var(--ease),transform .5s var(--ease),overlay .5s allow-discrete,display .5s allow-discrete}
-   .db .sdlg:not(:popover-open){opacity:0;transform:translateY(14px)}
-   @starting-style{.db .sdlg:popover-open{opacity:0;transform:translateY(14px)}}
-   .db .sdlg::backdrop{background:rgba(11,16,32,.45)}
-   .db .sd-top{display:grid;grid-template-columns:44px minmax(0,1fr) 36px;gap:14px;align-items:center;padding-bottom:18px;margin-bottom:22px;border-bottom:1px solid var(--line)}
-   .db .sd-top b{display:block;font-weight:700;line-height:1.25}
-   .db .sd-top small{font-size:13px;color:var(--mut)}
-   .db .sdlg h2{text-wrap:balance}
-   .db .sd-opts{margin:20px 0 0;padding:0;list-style:none;border-top:1px solid var(--line)}
-   .db .sd-opt{display:grid;grid-template-columns:44px minmax(0,1fr) 20px;gap:14px;align-items:center;min-height:76px;padding:12px 10px;border-bottom:1px solid var(--line);color:inherit;text-decoration:none;transition:background-color .2s ease}
-   .db .sd-opt:hover{background:var(--soft)}
-   .db .sd-opt:hover .chev{transform:translateX(3px);color:var(--ink)}
-   .db .sd-opt b{display:block;font-weight:700;line-height:1.3}
-   .db .sd-opt small{display:block;font-size:13px;color:var(--mut)}
-   .db .sd-ic{display:flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:12px;background:#E7E2FF;color:var(--vtx)}
-   .db .sd-opt:hover .sd-ic{background:var(--vio);color:#fff}
-   @media (max-width:640px){.db .sdlg{margin:auto 0 0;width:100%;max-width:none;border-radius:24px 24px 0 0;padding:20px 18px 28px}}
-=======
    .db a.lrow,.db a.gbtn,.db a.btn{color:inherit;text-decoration:none}
    .db a.btn{color:#fff}
    .db .err{margin:8px 0 0;color:#9b1c1c;font-weight:700;font-size:14px}
@@ -135,11 +113,21 @@
    .db .irow b{flex:1;min-width:140px}
    .db .choices{display:grid;gap:12px}
    .db .side form{margin:0}
-   .db .pop{width:min(420px,calc(100% - 32px));padding:0;border:0;border-radius:24px;background:#fff;color:var(--ink)}
+   .db .pop{position:fixed;inset:0;width:min(420px,calc(100% - 32px));height:fit-content;max-height:calc(100dvh - 32px);margin:auto;padding:0;border:0;border-radius:24px;background:#fff;color:var(--ink);overflow:auto}
    .db .pop::backdrop{background:rgba(11,16,32,.45)}
    .db .pop form{display:grid;gap:14px;margin:0;padding:28px}
    .db .pop h2{font-size:32px;letter-spacing:-0.03em}
    .db .pop p{margin:0;color:var(--mut)}
    .db .pop-acts{display:grid;gap:8px}
    .db .pop .btn.line{color:var(--ink)}
->>>>>>> f21ef641efe320a9a8d9166022881bcf12e8e756
+   .db .split-groups{margin:0;padding:0;border:0;display:grid;gap:8px}
+   .db .split-groups .lbl{margin:0}
+   .db .gpick{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 12px;border-radius:12px;background:#fff;font-weight:700;cursor:pointer;box-shadow:inset 0 0 0 1.5px #B9C1DA}
+   .db .gpick.on{background:#ECE8FF;box-shadow:inset 0 0 0 1.5px var(--vio)}
+   .db .gpick input{width:18px;height:18px;margin:0;accent-color:var(--vio)}
+   .db .choice{display:grid;grid-template-columns:minmax(0,1fr) 20px;gap:12px;align-items:center;min-height:72px;padding:12px 14px;border-radius:12px;background:#fff;color:inherit;text-decoration:none;box-shadow:inset 0 0 0 1.5px #B9C1DA}
+   .db .choice.off{opacity:.45;cursor:default}
+   .db .choice:hover{box-shadow:inset 0 0 0 1.5px var(--ink)}
+   .db .choice.off:hover{box-shadow:inset 0 0 0 1.5px #B9C1DA}
+   .db .choice b{display:block;font-weight:700;line-height:1.3}
+   .db .choice small{display:block;font-size:13px;color:var(--mut)}
