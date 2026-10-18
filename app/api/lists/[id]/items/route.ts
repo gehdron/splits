@@ -1,6 +1,6 @@
 import { addItems, listExists } from "@/lib/live-lists";
 import type { NewItem } from "@/lib/store";
-import { reconcileList } from "@/lib/settle";
+import { reconcileList } from "@/app/(site)/stripe/settle";
 
 export async function POST(req: Request, ctx: RouteContext<"/api/lists/[id]/items">) {
   const { id } = await ctx.params;

@@ -1,9 +1,9 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { createAdminClient, supabaseAdminConfigured } from "./supabase/admin";
-import { fileGetShare, fileListShares, fileSaveShare, fileUpdateShare, type Share } from "./store";
+import { createAdminClient, supabaseAdminConfigured } from "@/lib/supabase/admin";
+import { fileGetShare, fileListShares, fileSaveShare, fileUpdateShare, type Share } from "@/lib/store";
 
-export type { Share, ShareStatus } from "./store";
+export type { Share, ShareStatus } from "@/lib/store";
 
 // Live payments: keep demo amounts tiny. Stripe's minimum for USD is $0.50.
 export const MIN_SHARE_CENTS = 50;

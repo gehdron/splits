@@ -1,5 +1,5 @@
 import { claimItem, unclaimItem, updateItem, deleteItem, itemListId } from "@/lib/live-lists";
-import { reconcileList } from "@/lib/settle";
+import { reconcileList } from "@/app/(site)/stripe/settle";
 
 export async function PATCH(req: Request, ctx: RouteContext<"/api/items/[id]">) {
   const { id } = await ctx.params;

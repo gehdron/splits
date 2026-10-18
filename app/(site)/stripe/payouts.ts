@@ -2,10 +2,10 @@
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { ensureConnectAccount, savePayoutAccount, signedInUser } from "@/lib/organizer";
-import { appUrl } from "@/lib/shares";
+import { ensureConnectAccount, savePayoutAccount, signedInUser } from "@/app/(site)/stripe/organizer";
+import { appUrl } from "@/app/(site)/stripe/shares";
 import { supabaseAdminConfigured } from "@/lib/supabase/admin";
-import { stripe } from "@/lib/stripe";
+import { stripe } from "@/app/(site)/stripe/checkout";
 
 export type PayoutState = { error?: string } | undefined;
 

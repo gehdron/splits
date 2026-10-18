@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { redirect } from "next/navigation";
 import { loadPrivateDashboard } from "../load";
 import { ReceiptScanner, type ScannerCharge, type ScannerGroup } from "./scanner";
 
@@ -22,43 +21,6 @@ export default function ItemByItemPage({
   );
 }
 
-async function ItemByItemContent({
-  searchParams,
-}: Pick<PageProps<"/dashboard/item-by-item">, "searchParams">) {
-  const [data, params] = await Promise.all([
-    loadPrivateDashboard(),
-    searchParams,
-  ]);
-  if (!data) redirect("/login");
-
-  const groupId = firstValue(params.group);
-  const selectedGroup =
-    data.groups.find((entry) => entry.id === groupId) ?? data.groups[0] ?? null;
-  const group: ScannerGroup | null = selectedGroup
-    ? {
-        id: selectedGroup.id,
-        name: selectedGroup.name,
-        role: selectedGroup.role,
-      }
-    : null;
-  const people = data.members
-    .filter((member) => member.groupId === group?.id)
-    .map((member) => member.name);
-
-  const merchant = firstValue(params.merchant);
-  const amount = firstValue(params.amount);
-  const date = firstValue(params.date);
-  const charge: ScannerCharge | null =
-    merchant && amount && date ? { merchant, amount, date } : null;
-
-  return (
-    <ReceiptScanner
-      me={{ name: data.me.name, email: data.me.email }}
-      groups={data.groups}
-      group={group}
-      people={people}
-      charge={charge}
-      loadError={data.loadError}
 // Opened from "Split this charge": ?group= is the group picked in the popup, and
 // ?merchant=&amount=&date= describe the charge. ?newList=1 opens the camera for a blank list.
 // Signed out, the scanner still works without a group.

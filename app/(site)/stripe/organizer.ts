@@ -1,8 +1,8 @@
 import "server-only";
-import { supabaseConfigured } from "./supabase/env";
-import { createClient } from "./supabase/server";
-import { createAdminClient, supabaseAdminConfigured } from "./supabase/admin";
-import { stripe } from "./stripe";
+import { supabaseConfigured } from "@/lib/supabase/env";
+import { createClient } from "@/lib/supabase/server";
+import { createAdminClient, supabaseAdminConfigured } from "@/lib/supabase/admin";
+import { stripe } from "./checkout";
 
 export type PayoutAccount = {
   stripeAccountId: string | null;

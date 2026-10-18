@@ -1,7 +1,7 @@
 import "server-only";
-import { getList } from "./store";
+import { getList } from "@/lib/live-lists";
 import { listShares, maxShareCents, MIN_SHARE_CENTS, type Share } from "./shares";
-import { retireShare, syncShare } from "./stripe";
+import { retireShare, syncShare } from "./checkout";
 
 export type Settlement = {
   paidCents: number;
@@ -55,7 +55,7 @@ export async function settlePerson(listId: string, personName: string, owedCents
 // Failures are logged, not thrown, so editing a list never breaks because Stripe or the database blinked.
 export async function reconcileList(listId: string) {
   try {
-    const data = getList(listId);
+    const data = await getList(listId);
     if (!data) return;
     const people = new Set(
       (await listShares("list", listId))
