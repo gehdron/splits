@@ -484,6 +484,7 @@ export default function ReceiptScanner() {
 
   async function readImage(imageUrl: string) {
     let worker: Tesseract.Worker | null = null;
+    let receiptText = "";
 
     try {
       setStatus("Locating the receipt and reading its text...");
@@ -633,7 +634,8 @@ export default function ReceiptScanner() {
         { text: true, blocks: true }
       );
 
-      setExtractedText(result.data.text);
+      receiptText = result.data.text;
+      setExtractedText(receiptText);
       const words: DetectedWord[] = (result.data.blocks ?? [])
         .flatMap((block) =>
           block.paragraphs.flatMap((paragraph) =>
@@ -659,12 +661,12 @@ export default function ReceiptScanner() {
       setDetectedWords(words);
       setStatus(
         words.length > 0
-          ? `Found ${words.length} words. Review the text, then parse it with AI if you want structured items and totals.`
-          : "No text was detected. Move closer, improve the lighting, and hold steady."
+          ? "Text extracted. Organizing receipt items and totals..."
+          : "No text was detected. Trying to read the receipt image with AI..."
       );
     } catch (error) {
       console.error(error);
-      setStatus("OCR failed. Try taking a clearer picture.");
+      setStatus("Text extraction failed. Trying to read the receipt image with AI...");
     } finally {
       if (worker) {
         try {
@@ -674,6 +676,8 @@ export default function ReceiptScanner() {
           setStatus("Could not stop receipt text detection cleanly.");
         }
       }
+
+      await parseWithAi(receiptText, imageUrl);
     }
   }
 
@@ -732,7 +736,8 @@ export default function ReceiptScanner() {
       if (file.type === "application/pdf") {
         setFrozenImage(null);
         setExtractedText("");
-        setStatus("PDF uploaded. Select Parse receipt with AI to read it.");
+        setStatus("PDF uploaded. Organizing receipt items and totals...");
+        await parseWithAi("", dataUrl);
       } else {
         setFrozenImage(dataUrl);
         setStatus("Receipt image uploaded. Reading its text...");
@@ -748,22 +753,22 @@ export default function ReceiptScanner() {
     }
   }
 
-  async function parseWithAi() {
-    if (!receiptDocumentDataUrl || aiParsing) return;
-    if (!extractedText.trim() && !isPdfReceipt) {
-      setAiError("Receipt text could not be read. Extract text and try again.");
-      return;
-    }
+  async function parseWithAi(
+    receiptText: string,
+    documentDataUrl: string | null
+  ) {
+    if (!documentDataUrl || aiParsing) return;
 
     setAiParsing(true);
     setAiError("");
+    setStatus("Organizing receipt items and totals with AI...");
     try {
       const response = await fetch("/api/parse-receipt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          receiptText: extractedText,
-          imageDataUrl: receiptDocumentDataUrl,
+          receiptText,
+          imageDataUrl: documentDataUrl,
         }),
       });
       const result: unknown = await response.json();
@@ -801,6 +806,7 @@ export default function ReceiptScanner() {
           ? error.message
           : "AI parsing failed. Please try again."
       );
+      setStatus("AI parsing failed. Check the error and retry.");
     } finally {
       setAiParsing(false);
     }
@@ -895,8 +901,8 @@ export default function ReceiptScanner() {
         Splits Receipt Scanner
       </h1>
       <p className="text-sm text-gray-600 sm:text-base">
-        Fit the receipt inside the on-screen guide, keep it flat and well lit,
-        then freeze the image to extract its text.
+        Fit the receipt inside the guide, keep it flat and well lit, then freeze
+        it. Text extraction and AI item parsing start automatically.
       </p>
 
       <div className="relative w-full min-w-0 overflow-hidden rounded-xl bg-black">
@@ -1075,13 +1081,15 @@ export default function ReceiptScanner() {
         </div>
       )}
 
-      {(extractedText || isPdfReceipt) && (
+      {receiptDocumentDataUrl && (
         <section className="min-w-0 space-y-3 rounded-xl border p-3 sm:p-4">
           <h2 className="text-xl font-semibold">Receipt text</h2>
           <p className="text-sm text-gray-600">
             {isPdfReceipt
-              ? "Select Parse receipt with AI to send this PDF to Gemini for item and total extraction."
-              : "OCR extracts the printed text. Select Parse receipt with AI to send the receipt image and text to Gemini for item and total extraction."}{" "}
+              ? "The PDF is sent to Gemini for item and total extraction."
+              : "Receipt text is extracted automatically and sent with the image to Gemini for item and total extraction."}{" "}
+            AI parsing sends the receipt to Gemini and may use your project’s API
+            quota.{" "}
             Review the results against the original receipt.
           </p>
           {aiParsed && (
@@ -1502,13 +1510,18 @@ export default function ReceiptScanner() {
             </div>
           )}
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={parseWithAi}
-              disabled={aiParsing || !receiptDocumentDataUrl}
-              className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white disabled:cursor-wait disabled:opacity-60"
-            >
-              {aiParsing ? "Parsing receipt..." : "Parse receipt with AI"}
-            </button>
+            {aiError && !aiParsed && (
+              <button
+                type="button"
+                onClick={() =>
+                  void parseWithAi(extractedText, receiptDocumentDataUrl)
+                }
+                disabled={aiParsing}
+                className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white disabled:cursor-wait disabled:opacity-60"
+              >
+                {aiParsing ? "Retrying..." : "Retry AI parsing"}
+              </button>
+            )}
             {extractedText && (
               <button
                 onClick={() => navigator.clipboard.writeText(extractedText)}
@@ -1531,7 +1544,11 @@ export default function ReceiptScanner() {
             />
           ) : (
             <p className="text-sm text-gray-600">
-              This PDF will be read directly by the AI parser.
+              {isPdfReceipt
+                ? "The PDF will be read directly by the AI parser."
+                : aiParsing
+                  ? "Reading text and organizing receipt items..."
+                  : "No text was extracted from the image. The AI parser will try reading the original image."}
             </p>
           )}
         </section>

@@ -129,13 +129,6 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  if (!receiptText && mimeType !== "application/pdf") {
-    return Response.json(
-      { error: "Receipt text could not be read. Extract text and try parsing again." },
-      { status: 400 }
-    );
-  }
-
   let response: Response;
   try {
     response = await fetch(
@@ -157,7 +150,7 @@ export async function POST(request: Request) {
                 {
                   text:
                     receiptText ||
-                    "No OCR text is available; parse the attached PDF directly.",
+                    "No OCR text is available; parse the attached receipt document directly.",
                 },
                 {
                   inlineData: {
