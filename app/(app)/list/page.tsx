@@ -277,17 +277,17 @@ export default function ListPage() {
   const [msg, setMsg] = useState("");
   const [scan, setScan] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [splitChatOpen, setSplitChatOpen] = useState(false);
+  const [splitMessages, setSplitMessages] = useState<SplitInstructionMessage[]>([]);
+  const [splitMessage, setSplitMessage] = useState("");
+  const [splitParsing, setSplitParsing] = useState(false);
+  const [splitError, setSplitError] = useState("");
   // Pay links: one per person who owes. The amount is worked out on the server from this list.
   const [payLinks, setPayLinks] = useState<PayLink[]>([]);
   const [requestFor, setRequestFor] = useState<string | null>(null);
   const [requestHandle, setRequestHandle] = useState("");
   const [requestBusy, setRequestBusy] = useState(false);
   const [requestMsg, setRequestMsg] = useState("");
-  const [splitChatOpen, setSplitChatOpen] = useState(false);
-  const [splitMessages, setSplitMessages] = useState<SplitInstructionMessage[]>([]);
-  const [splitMessage, setSplitMessage] = useState("");
-  const [splitParsing, setSplitParsing] = useState(false);
-  const [splitError, setSplitError] = useState("");
 
   // On load: use ?id= from the URL, or create a new list and put its id in the URL
   useEffect(() => {
@@ -525,7 +525,6 @@ export default function ListPage() {
     }
   }
 
-  async function act(id: string, action: "claim" | "unclaim", user: string) {
   async function act(
     id: string,
     action: "claim" | "unclaim",

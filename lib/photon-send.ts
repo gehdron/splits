@@ -49,7 +49,11 @@ function spaceId(space: unknown): string {
 
 export async function sendText(handle: string, text: string, subject?: string) {
   const c = photonConfig();
-  const photon = new Photon({ headers: { Authorization: `Bearer ${c.key}` } });
+  // PHOTON_BASE_URL is only for pointing tests at a local fake; leave it unset in production.
+  const photon = new Photon({
+    headers: { Authorization: `Bearer ${c.key}` },
+    ...(process.env.PHOTON_BASE_URL ? { baseUrl: process.env.PHOTON_BASE_URL } : {}),
+  });
   const path = { id: c.project };
 
   const [friend, agent] = await Promise.all([
