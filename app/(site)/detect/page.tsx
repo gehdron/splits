@@ -1564,7 +1564,8 @@ export default function ReceiptScanner() {
                   </tbody>
                 </table>
               </div>
-              <div className="space-y-3">
+              <div className="flex flex-col gap-3">
+                <div className="order-2">
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -1593,6 +1594,8 @@ export default function ReceiptScanner() {
                       : "Split items with chat"}
                   </button>
                 </div>
+                </div>
+                <div className="order-3">
                 {itemAssignmentsOpen && (
               <section
                 id="interactive-item-assignments"
@@ -1786,7 +1789,7 @@ export default function ReceiptScanner() {
               </section>
                 )}
               </div>
-              <div className="space-y-2">
+              <div className="order-1 space-y-2">
                 <h3 className="font-semibold">Receipt totals</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {(
@@ -1828,6 +1831,7 @@ export default function ReceiptScanner() {
                 <p className="text-xs text-gray-600">
                   Total updates from subtotal, tax, and tip when you edit them.
                 </p>
+              </div>
               </div>
               <Suspense fallback={null}>
                 <SaveReceiptButton rows={receiptRows} />
