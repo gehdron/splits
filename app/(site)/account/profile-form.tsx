@@ -10,10 +10,26 @@ type Profile = {
   avatar_url: string | null;
 };
 
+function isProfile(value: unknown): value is Profile {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "display_name" in value &&
+    typeof value.display_name === "string" &&
+    "phone" in value &&
+    typeof value.phone === "string" &&
+    "bio" in value &&
+    typeof value.bio === "string" &&
+    "avatar_url" in value &&
+    (typeof value.avatar_url === "string" || value.avatar_url === null)
+  );
+}
+
 export function ProfileForm({ initialProfile }: { initialProfile: Profile }) {
   const [profile, setProfile] = useState(initialProfile);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [warning, setWarning] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const photoInput = useRef<HTMLInputElement>(null);
@@ -35,6 +51,7 @@ export function ProfileForm({ initialProfile }: { initialProfile: Profile }) {
     event.preventDefault();
     setSaving(true);
     setError("");
+    setWarning("");
     setMessage("");
 
     try {
@@ -42,16 +59,34 @@ export function ProfileForm({ initialProfile }: { initialProfile: Profile }) {
         method: "PATCH",
         body: new FormData(event.currentTarget),
       });
-      const result = await response.json() as { error?: string; warning?: string; profile?: Profile };
-      if (!response.ok || !result.profile) {
-        setError(result.error ?? "Profile could not be saved. Try again.");
+      const result: unknown = await response.json().catch(() => null);
+      if (
+        typeof result !== "object" ||
+        result === null ||
+        !("profile" in result) ||
+        !isProfile(result.profile)
+      ) {
+        const serverError =
+          typeof result === "object" &&
+          result !== null &&
+          "error" in result &&
+          typeof result.error === "string"
+            ? result.error
+            : `The server could not save your profile (response ${response.status}). Try again or contact support.`;
+        setError(serverError);
         return;
       }
-      if (result.warning) {
-        setError(result.warning);
+      const savedProfile = result.profile;
+      if (!response.ok) {
+        setError("The server could not save your profile. Try again or contact support.");
         return;
       }
-      setProfile(result.profile);
+      if ("warning" in result && typeof result.warning === "string") {
+        setProfile(savedProfile);
+        setWarning(result.warning);
+        return;
+      }
+      setProfile(savedProfile);
       if (photoPreviewUrl.current) URL.revokeObjectURL(photoPreviewUrl.current);
       photoPreviewUrl.current = null;
       setPhotoPreview(null);
@@ -83,6 +118,7 @@ export function ProfileForm({ initialProfile }: { initialProfile: Profile }) {
             onChange={(event) => {
               selectPhoto(event.currentTarget.files?.[0] ?? null);
               setError("");
+              setWarning("");
               setMessage("");
             }}
             type="file"
@@ -125,6 +161,7 @@ export function ProfileForm({ initialProfile }: { initialProfile: Profile }) {
         <small>Up to 280 characters.</small>
       </label>
       {error ? <p className="err" role="alert">{error}</p> : null}
+      {warning ? <p className="note" role="status">{warning}</p> : null}
       {message ? <p className="ok" role="status">{message}</p> : null}
       <button className="btn btn-b" disabled={saving} type="submit">
         {saving ? "Saving…" : "Save profile"}

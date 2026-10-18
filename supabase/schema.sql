@@ -401,6 +401,10 @@ create policy "update your profile"
   using (id = auth.uid())
   with check (id = auth.uid() and phone ~ '^\+[1-9][0-9]{9,14}$');
 
+create policy "insert your profile"
+  on public.profiles for insert to authenticated
+  with check (id = auth.uid() and phone ~ '^\+[1-9][0-9]{9,14}$');
+
 create policy "read your friends"
   on public.friends for select to authenticated
   using (user_id = auth.uid());

@@ -9,6 +9,11 @@ alter table public.profiles
 alter table public.profiles
   add constraint profiles_bio_length check (char_length(bio) <= 280);
 
+drop policy if exists "insert your profile" on public.profiles;
+create policy "insert your profile"
+  on public.profiles for insert to authenticated
+  with check (id = auth.uid() and phone ~ '^\+[1-9][0-9]{9,14}$');
+
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
   'profile-photos',
