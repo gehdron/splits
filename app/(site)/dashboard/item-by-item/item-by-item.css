@@ -108,13 +108,19 @@
 .db .receipt-image img{display:block;width:100%;height:auto;max-height:420px;object-fit:contain}
 .db .receipt-image-words{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .db .receipt-image-button>span{position:absolute;right:10px;bottom:10px;padding:5px 10px;border-radius:999px;background:rgba(11,16,32,.8);color:#fff;font-size:12px;font-weight:700}
-.db .receipt-lightbox{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:24px;background:rgba(11,16,32,.94)}
+.db .receipt-lightbox{position:fixed;inset:0;z-index:1000;display:grid;grid-template-rows:minmax(0,1fr);padding:12px;background:rgba(11,16,32,.96)}
 .db .receipt-lightbox-close{position:absolute;top:16px;right:16px;display:grid;place-items:center;width:48px;height:48px;border:1px solid rgba(255,255,255,.4);border-radius:50%;background:#121A36;color:#fff;cursor:pointer}
 .db .receipt-lightbox-close svg{width:22px;height:22px}
-.db .receipt-lightbox-content{display:grid;justify-items:center;gap:12px;width:100%}
-.db .receipt-lightbox-content .receipt-image{width:min(92vw,1200px);height:min(82vh,900px);max-height:none}
-.db .receipt-lightbox-content .receipt-image img{width:100%;height:100%;max-height:none}
-.db .receipt-lightbox-content p{margin:0;color:#fff;text-align:center;font-size:14px}
+.db .receipt-lightbox-content{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:10px;width:100%;height:100%;min-height:0;padding-top:58px}
+.db .receipt-zoom-controls{display:flex;justify-content:center;align-items:center;gap:8px;padding:0 58px}
+.db .receipt-zoom-button,.db .receipt-zoom-level{display:grid;place-items:center;min-width:44px;height:44px;padding:0 12px;border:1px solid rgba(255,255,255,.4);border-radius:10px;background:#121A36;color:#fff;font:inherit;font-size:18px;font-weight:700;cursor:pointer}
+.db .receipt-zoom-level{min-width:72px;font-size:14px}
+.db .receipt-zoom-button:disabled{opacity:.45;cursor:default}
+.db .receipt-lightbox-viewport{display:flex;min-width:0;min-height:0;overflow:auto;overscroll-behavior:contain;touch-action:pan-x pan-y}
+.db .receipt-lightbox-image{flex:none;margin:auto}
+.db .receipt-lightbox-image .receipt-image{width:100%;height:100%;max-height:none;aspect-ratio:auto}
+.db .receipt-lightbox-image .receipt-image img{width:100%;height:100%;max-height:none;object-fit:contain}
+.db .receipt-lightbox-content>p{margin:0;color:#fff;text-align:center;font-size:14px}
 .db .shot>div{display:grid;gap:6px;text-align:center}
 .db .shot>div b{font-size:24px}
 .db .sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}

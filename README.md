@@ -75,6 +75,10 @@ natural-language instructions, or keep using the per-item controls. Each list
 item has one assignee; chat assignments are saved through the same controls
 and update the list totals.
 
+Dashboard shared lists also have an **AI bot** panel for chat-based item
+assignments. It uses the group members as the available assignees and is
+available to group owners.
+
 ## Routes
 
 | Route | What it is |

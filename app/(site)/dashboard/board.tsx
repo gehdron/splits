@@ -4,6 +4,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { exitGroup } from "./actions";
+import { DashboardListAssistant } from "./list-assistant";
 import { DashSidebar } from "./sidebar";
 import type { DashboardData } from "./types";
 
@@ -46,6 +47,13 @@ const Icon = ({ d }: { d: string }) => (
 );
 const PlusIcon = () => <Icon d="M12 5v14M5 12h14" />;
 
+function money(cents: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(cents / 100);
+}
+
 export function Board({ data }: { data: DashboardData }) {
   const router = useRouter();
   const search = useSearchParams();
@@ -56,6 +64,9 @@ export function Board({ data }: { data: DashboardData }) {
   const selected = search.get("group");
   const group = data.groups.find((entry) => entry.id === selected) ?? data.groups[0] ?? null;
   const members = data.members.filter((member) => member.groupId === group?.id);
+  const visibleLists = data.lists.filter(
+    (entry) => !group || entry.groupId === group.id,
+  );
   const [chargeFilter, setChargeFilter] = useState<"all" | "none" | "split">("all");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [namingList, setNamingList] = useState(false);
@@ -241,13 +252,52 @@ export function Board({ data }: { data: DashboardData }) {
                 <div className="shead">
                   <div>
                     <h2 id="sl-h">Shared lists</h2>
-                    <p className="sub">A new list opens on its own page, blank or from a receipt.</p>
+                    <p className="sub">Open a list’s AI bot to assign its items by chat.</p>
                   </div>
                   <button className="btn" type="button" onClick={() => newListDialog.current?.showModal()}>
                     <PlusIcon />
                     New list
                   </button>
                 </div>
+                {visibleLists.length > 0 ? (
+                  <ul className="dashboard-list-rows">
+                    {visibleLists.map((list) => {
+                      const listItems = data.items.filter(
+                        (item) => item.listId === list.id,
+                      );
+                      return (
+                        <li className="dashboard-list-row" key={list.id}>
+                          <span className="dashboard-list-icon" aria-hidden="true">
+                            {list.name.trim().charAt(0).toUpperCase() || "L"}
+                          </span>
+                          <div className="dashboard-list-info">
+                            <b>{list.name}</b>
+                            <small>
+                              {list.itemCount} {list.itemCount === 1 ? "item" : "items"}
+                              {" · "}
+                              {money(list.totalCents)}
+                            </small>
+                          </div>
+                          <DashboardListAssistant
+                            list={list}
+                            items={listItems}
+                            members={members}
+                            currentUser={data.me.name}
+                            canAssign={group?.role === "owner"}
+                          />
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className="empty">
+                    {data.loadError
+                      ? "Shared lists could not be loaded."
+                      : group
+                        ? "No shared lists in this group yet."
+                        : "Create a group to start a shared list."}
+                  </p>
+                )}
               </section>
               <dialog
                 ref={splitDialog}

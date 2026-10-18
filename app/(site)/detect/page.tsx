@@ -208,7 +208,7 @@ export default function ReceiptScanner() {
   const [aiError, setAiError] = useState("");
   const [itemAssignmentsOpen, setItemAssignmentsOpen] = useState(false);
   const [splitAssistantOpen, setSplitAssistantOpen] = useState(false);
-  const [splitMessages, setSplitMessages] = useState<SplitInstructionMessage[]>([]);
+  const [splitMesHsages, setSplitMessages] = useState<SplitInstructionMessage[]>([]);
   const [splitMessage, setSplitMessage] = useState("");
   const [splitSuggestionsEnabled, setSplitSuggestionsEnabled] = useState(true);
   const [splitCursorPosition, setSplitCursorPosition] = useState(0);

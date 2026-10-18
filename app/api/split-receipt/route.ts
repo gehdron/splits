@@ -43,7 +43,7 @@ Return JSON with exactly this shape:
 Rules:
 - Item indexes are zero-based and must refer to the supplied list items.
 - Each list item can have only one assignee. Distribute items to the named people based on who will use, bring, buy, or take each item.
-- In first-person instructions, "I", "me", and "my" refer to the current user named "You".
+- Assign only people included in the supplied participants. In first-person instructions, "I", "me", and "my" refer to the supplied current user.
 - Use the full conversation and current assignments. Keep existing assignments unless the user changes them.
 - Match only items clearly identifiable from the user's wording and supplied item names. Ask for clarification when an item or person is ambiguous.
 - Never create items, prices, participants, or assignments not supported by the list and conversation.
@@ -164,6 +164,17 @@ function validateAssignments(
   return assignments;
 }
 
+function validateParticipants(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length > 50 || !value.every(isString)) {
+    return null;
+  }
+  const participants = value
+    .map((person) => person.trim())
+    .filter((person) => person.length > 0 && person.length <= 40);
+  if (participants.length !== value.length) return null;
+  return [...new Map(participants.map((person) => [person.toLocaleLowerCase(), person])).values()];
+}
+
 export async function POST(request: Request) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -184,6 +195,14 @@ export async function POST(request: Request) {
   const totals = isRecord(body) ? validateTotals(body.totals) : null;
   const messages = isRecord(body) ? validateMessages(body.messages) : null;
   const isSharedList = isRecord(body) && body.mode === "list";
+  const currentUser =
+    isRecord(body) && isString(body.currentUser) && body.currentUser.trim()
+      ? body.currentUser.trim().slice(0, 40)
+      : "You";
+  const requestedParticipants =
+    isRecord(body) && "participants" in body
+      ? validateParticipants(body.participants)
+      : null;
   const currentAssignments =
     isRecord(body) && Array.isArray(body.assignments)
       ? validateAssignments(body.assignments, items?.length ?? 0)
@@ -199,6 +218,14 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
+  if (
+    isSharedList &&
+    isRecord(body) &&
+    "participants" in body &&
+    !requestedParticipants
+  ) {
+    return Response.json({ error: "List participants are invalid." }, { status: 400 });
+  }
   if (messages.length === 0 || messages[messages.length - 1].role !== "user") {
     return Response.json({ error: "Enter a split instruction first." }, { status: 400 });
   }
@@ -212,7 +239,19 @@ export async function POST(request: Request) {
     );
   }
 
-  const input = JSON.stringify({ items, totals, currentAssignments, messages });
+  const participants = requestedParticipants ?? [
+    ...new Set([
+      currentUser,
+      ...currentAssignments.flatMap((assignment) => assignment.people),
+    ]),
+  ];
+  const input = JSON.stringify({
+    items,
+    totals,
+    currentAssignments,
+    messages,
+    ...(isSharedList ? { currentUser, participants } : {}),
+  });
   let response: Response;
   try {
     response = await fetch(

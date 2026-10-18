@@ -96,6 +96,26 @@
    .db .lpos{font-weight:700;font-size:14px;text-align:right}
    .db .pos{color:var(--gtx)}.db .neg{color:var(--vtx)}.db .zero{color:var(--mut)}
    .db .pv{background:#E8E3FF;color:var(--vtx)}
+   .db .dashboard-list-rows{margin:0;padding:0;list-style:none;border-top:1px solid var(--line)}
+   .db .dashboard-list-row{display:grid;grid-template-columns:44px minmax(0,1fr);gap:12px;align-items:center;padding:14px 0;border-bottom:1px solid var(--line)}
+   .db .dashboard-list-icon{display:flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:12px;background:#E7E2FF;color:var(--vtx);font-family:var(--font-outfit),"Outfit",system-ui,sans-serif;font-size:18px;font-weight:600}
+   .db .dashboard-list-info{min-width:0}
+   .db .dashboard-list-info b,.db .dashboard-list-info small{display:block;overflow:hidden;text-overflow:ellipsis}
+   .db .dashboard-list-info b{font-weight:700}
+   .db .dashboard-list-info small{color:var(--mut);font-size:13px}
+   .db .dash-list-assistant{grid-column:1/-1;display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:center}
+   .db .dash-list-assistant>.sub{margin:0;font-size:13px}
+   .db .dash-list-chat{grid-column:1/-1;display:grid;gap:12px;width:100%;padding:14px;border:1px solid var(--line);border-radius:16px;background:#F9FAFD}
+   .db .dash-list-chat[hidden]{display:none}
+   .db .dash-list-chat-messages{display:grid;gap:8px;max-height:260px;overflow:auto}
+   .db .dash-list-chat-message,.db .dash-list-chat-welcome,.db .dash-list-chat-pending{width:fit-content;max-width:min(90%,620px);margin:0;padding:10px 13px;border-radius:14px;background:#E9EDF6;color:var(--ink2);overflow-wrap:anywhere}
+   .db .dash-list-chat-message.user{justify-self:end;background:#E8E3FF;color:#2F2380}
+   .db .dash-list-chat-pending{font-size:13px;color:var(--mut)}
+   .db .dash-list-chat-error{margin:0;padding:10px 12px;border-radius:10px;background:#FDE8E8;color:#8A2525;font-size:14px;font-weight:600}
+   .db .dash-list-chat-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}
+   .db .dash-list-chat-form textarea{width:100%;min-height:54px;max-height:140px;padding:12px;border:1.5px solid #B9C1DA;border-radius:12px;background:#fff;font:inherit;resize:vertical}
+   .db .dash-list-chat-form textarea:focus{outline:none;border-color:var(--vio);box-shadow:0 0 0 3px rgba(108,77,255,.18)}
+   .db .dash-list-chat-form .btn{min-height:48px}
    .db .chev{color:var(--ph);transition:transform .25s var(--ease),color .2s ease}
    @media (max-width:1100px){.db .lrow{grid-template-columns:44px minmax(0,1fr) auto 20px}.db .lrow .pill,.db .lrow .lpos{display:none}.db .newlist{min-width:0;width:100%}}
    @media (prefers-reduced-motion:reduce){.db *{animation:none !important;transition:none !important}}
@@ -106,7 +126,7 @@
    .db .ch{grid-template-columns:44px minmax(0,1fr) auto}
    .db .stc{grid-column:2/-1;justify-self:start}
    }
-   @media (max-width:640px){.db .main{padding:28px 16px 56px}.db .sec{padding:22px 18px}.db h1{font-size:42px}}
+   @media (max-width:640px){.db .main{padding:28px 16px 56px}.db .sec{padding:22px 18px}.db h1{font-size:42px}.db .dash-list-chat-form{grid-template-columns:1fr}.db .dash-list-chat-form .btn{width:100%}}
    .db a.lrow,.db a.gbtn,.db a.btn{color:inherit;text-decoration:none}
    .db a.btn{color:#fff}
    .db .err{margin:8px 0 0;color:#9b1c1c;font-weight:700;font-size:14px}
