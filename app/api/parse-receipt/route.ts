@@ -2,6 +2,7 @@ import type { AiParsedReceipt } from "../../receipt-types";
 
 const MAX_RECEIPT_TEXT_LENGTH = 20_000;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_PDF_BYTES = 4 * 1024 * 1024;
 const MAX_BASE64_LENGTH = Math.ceil(MAX_IMAGE_BYTES / 3) * 4;
 const MODEL = "gemini-3.8-flash";
 
@@ -67,24 +68,78 @@ export async function POST(request: Request) {
     );
   }
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: "Request body must be valid JSON." }, { status: 400 });
-  }
+  let receiptText = "";
+  let mimeType = "";
+  let imageBytes: Buffer;
+  if (request.headers.get("content-type")?.includes("multipart/form-data")) {
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch {
+      return Response.json({ error: "Receipt upload must be valid form data." }, { status: 400 });
+    }
 
-  const receiptText =
-    isRecord(body) && typeof body.receiptText === "string"
-      ? body.receiptText.trim()
-      : "";
-  const imageDataUrl =
-    isRecord(body) && typeof body.imageDataUrl === "string"
-      ? body.imageDataUrl
-      : "";
+    const receiptFile = formData.get("receiptFile");
+    receiptText =
+      typeof formData.get("receiptText") === "string"
+        ? String(formData.get("receiptText")).trim()
+        : "";
+    if (!(receiptFile instanceof File) || receiptFile.type !== "application/pdf") {
+      return Response.json({ error: "Upload a valid PDF receipt before parsing." }, { status: 400 });
+    }
+    if (receiptFile.size > MAX_PDF_BYTES) {
+      return Response.json({ error: "PDF receipts must be 4 MB or smaller." }, { status: 413 });
+    }
 
-  if (!imageDataUrl) {
-    return Response.json({ error: "Upload a receipt image or PDF before parsing." }, { status: 400 });
+    mimeType = receiptFile.type;
+    imageBytes = Buffer.from(await receiptFile.arrayBuffer());
+  } else {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return Response.json({ error: "Request body must be valid JSON." }, { status: 400 });
+    }
+
+    receiptText =
+      isRecord(body) && typeof body.receiptText === "string"
+        ? body.receiptText.trim()
+        : "";
+    const imageDataUrl =
+      isRecord(body) && typeof body.imageDataUrl === "string"
+        ? body.imageDataUrl
+        : "";
+
+    if (!imageDataUrl) {
+      return Response.json({ error: "Upload a receipt image or PDF before parsing." }, { status: 400 });
+    }
+
+    const imageMatch = imageDataUrl.match(
+      /^data:(image\/(?:jpeg|png|webp)|application\/pdf);base64,([A-Za-z0-9+/]+={0,2})$/
+    );
+    if (!imageMatch) {
+      return Response.json(
+        { error: "Receipt file must be a valid JPEG, PNG, WebP, or PDF." },
+        { status: 400 }
+      );
+    }
+
+    const [, dataMimeType, imageBase64] = imageMatch;
+    if (imageBase64.length > MAX_BASE64_LENGTH) {
+      return Response.json(
+        { error: "Receipt file must be 8 MB or smaller." },
+        { status: 413 }
+      );
+    }
+
+    mimeType = dataMimeType;
+    imageBytes = Buffer.from(imageBase64, "base64");
+    if (imageBytes.toString("base64") !== imageBase64) {
+      return Response.json(
+        { error: "Receipt file must be valid and no larger than 8 MB." },
+        { status: 400 }
+      );
+    }
   }
 
   if (receiptText.length > MAX_RECEIPT_TEXT_LENGTH) {
@@ -94,30 +149,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const imageMatch = imageDataUrl.match(
-    /^data:(image\/(?:jpeg|png|webp)|application\/pdf);base64,([A-Za-z0-9+/]+={0,2})$/
-  );
-  if (!imageMatch) {
-    return Response.json(
-      { error: "Receipt file must be a valid JPEG, PNG, WebP, or PDF." },
-      { status: 400 }
-    );
-  }
-
-  const [, mimeType, imageBase64] = imageMatch;
-  if (imageBase64.length > MAX_BASE64_LENGTH) {
-    return Response.json(
-      { error: "Receipt file must be 8 MB or smaller." },
-      { status: 413 }
-    );
-  }
-
-  const imageBytes = Buffer.from(imageBase64, "base64");
-  if (
-    imageBytes.length === 0 ||
-    imageBytes.length > MAX_IMAGE_BYTES ||
-    imageBytes.toString("base64") !== imageBase64
-  ) {
+  if (imageBytes.length === 0 || imageBytes.length > MAX_IMAGE_BYTES) {
     return Response.json(
       { error: "Receipt file must be valid and no larger than 8 MB." },
       { status: 400 }
@@ -129,6 +161,7 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
+  const imageBase64 = imageBytes.toString("base64");
   let response: Response;
   try {
     response = await fetch(

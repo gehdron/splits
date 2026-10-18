@@ -33,6 +33,8 @@ type ReceiptProcessingStage =
   | "complete"
   | "error";
 
+const MAX_PDF_BYTES = 4 * 1024 * 1024;
+
 function isAiParsedReceipt(value: unknown): value is AiParsedReceipt {
   if (
     typeof value !== "object" ||
@@ -157,6 +159,7 @@ export default function ReceiptScanner() {
   const [receiptDocumentDataUrl, setReceiptDocumentDataUrl] = useState<
     string | null
   >(null);
+  const [receiptPdfFile, setReceiptPdfFile] = useState<File | null>(null);
   const [receiptDocumentName, setReceiptDocumentName] = useState("");
   const [extractedText, setExtractedText] = useState("");
   const [status, setStatus] = useState("Start your camera to scan a receipt.");
@@ -367,6 +370,7 @@ export default function ReceiptScanner() {
       setCameraOn(true);
       setFrozenImage(null);
       setReceiptDocumentDataUrl(null);
+      setReceiptPdfFile(null);
       setReceiptDocumentName("");
       setProcessingStage("idle");
       setOcrCompleted(false);
@@ -473,6 +477,7 @@ export default function ReceiptScanner() {
     const imageUrl = canvas.toDataURL("image/jpeg", 0.95);
     setFrozenImage(imageUrl);
     setReceiptDocumentDataUrl(imageUrl);
+    setReceiptPdfFile(null);
     setReceiptDocumentName("Camera receipt");
     setProcessingStage("idle");
     setOcrCompleted(false);
@@ -829,6 +834,10 @@ export default function ReceiptScanner() {
       setAiError("Choose a JPEG, PNG, WebP, or PDF receipt file.");
       return;
     }
+    if (file.type === "application/pdf" && file.size > MAX_PDF_BYTES) {
+      setAiError("PDF receipts must be 4 MB or smaller. Please choose a smaller PDF.");
+      return;
+    }
     if (file.size > 8 * 1024 * 1024) {
       setAiError("Receipt files must be 8 MB or smaller.");
       return;
@@ -848,6 +857,7 @@ export default function ReceiptScanner() {
 
       stopCamera();
       setReceiptDocumentDataUrl(dataUrl);
+      setReceiptPdfFile(file.type === "application/pdf" ? file : null);
       setReceiptDocumentName(file.name);
       setProcessingStage(
         file.type === "application/pdf" ? "parsing" : "idle"
@@ -874,7 +884,7 @@ export default function ReceiptScanner() {
         setFrozenImage(null);
         setExtractedText("");
         setStatus("PDF uploaded. Organizing receipt items and totals...");
-        await parseWithAi("", dataUrl);
+        await parseWithAi("", dataUrl, file);
       } else {
         setFrozenImage(dataUrl);
         setStatus("Receipt image uploaded. Select Extract text to start reading it.");
@@ -891,7 +901,8 @@ export default function ReceiptScanner() {
 
   async function parseWithAi(
     receiptText: string,
-    documentDataUrl: string | null
+    documentDataUrl: string | null,
+    pdfFile: File | null = null
   ) {
     if (!documentDataUrl || aiParsing) return;
 
@@ -900,13 +911,24 @@ export default function ReceiptScanner() {
     setAiError("");
     setStatus("Organizing receipt items and totals with AI...");
     try {
-      const response = await fetch("/api/parse-receipt", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const headers = new Headers();
+      let body: BodyInit;
+      if (pdfFile) {
+        const formData = new FormData();
+        formData.set("receiptText", receiptText);
+        formData.set("receiptFile", pdfFile);
+        body = formData;
+      } else {
+        headers.set("Content-Type", "application/json");
+        body = JSON.stringify({
           receiptText,
           imageDataUrl: documentDataUrl,
-        }),
+        });
+      }
+      const response = await fetch("/api/parse-receipt", {
+        method: "POST",
+        headers,
+        body,
       });
       const result: unknown = await response.json();
       if (!response.ok) {
@@ -922,6 +944,15 @@ export default function ReceiptScanner() {
 
       if (!isAiParsedReceipt(result)) {
         throw new Error("AI returned an unexpected result. Please try again.");
+      }
+
+      if (result.items.length === 0) {
+        const message =
+          "No receipt data was found. Please reupload a clear receipt image or PDF and try again.";
+        setProcessingStage("error");
+        setAiError(message);
+        setStatus(message);
+        return;
       }
 
       setReceiptRows(result.items);
@@ -1041,6 +1072,7 @@ export default function ReceiptScanner() {
   function retake() {
     setFrozenImage(null);
     setReceiptDocumentDataUrl(null);
+    setReceiptPdfFile(null);
     setReceiptDocumentName("");
     setProcessingStage("idle");
     setOcrCompleted(false);
@@ -1353,7 +1385,7 @@ export default function ReceiptScanner() {
           <h2 className="text-xl font-semibold">Receipt text</h2>
           <p className="text-sm text-gray-600">
             {isPdfReceipt
-              ? "The PDF is sent to Gemini for item and total extraction."
+              ? "The PDF (up to 4 MB) is sent to Gemini for item and total extraction."
               : "Select Extract text to read the receipt. Its image and extracted text are then sent to Gemini for item and total extraction."}{" "}
             AI parsing sends the receipt to Gemini and may use your project’s API
             quota.{" "}
@@ -1912,7 +1944,11 @@ export default function ReceiptScanner() {
               <button
                 type="button"
                 onClick={() =>
-                  void parseWithAi(extractedText, receiptDocumentDataUrl)
+                  void parseWithAi(
+                    extractedText,
+                    receiptDocumentDataUrl,
+                    receiptPdfFile
+                  )
                 }
                 disabled={aiParsing}
                 className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white disabled:cursor-wait disabled:opacity-60"
