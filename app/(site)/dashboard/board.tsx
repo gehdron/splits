@@ -325,24 +325,29 @@ export function Board({ data }: { data: DashboardData }) {
                   </p>
                 )}
                 {visibleLists.length > 0 ? (
-                  <ul className="dashboard-list-rows">
+                  <ul className="rows">
                     {visibleLists.map((list) => {
                       const listItems = data.items.filter(
                         (item) => item.listId === list.id,
                       );
                       return (
-                        <li className="dashboard-list-row" key={list.id}>
-                          <span className="dashboard-list-icon" aria-hidden="true">
-                            {list.name.trim().charAt(0).toUpperCase() || "L"}
-                          </span>
-                          <div className="dashboard-list-info">
-                            <b>{list.name}</b>
-                            <small>
-                              {list.itemCount} {list.itemCount === 1 ? "item" : "items"}
-                              {" · "}
-                              {money(list.totalCents)}
-                            </small>
-                          </div>
+                        <li key={list.id}>
+                          <Link className="lrow slist" href={`/list?id=${encodeURIComponent(list.id)}`}>
+                            <span className="lic" aria-hidden="true">
+                              {list.name.trim().charAt(0).toUpperCase() || "L"}
+                            </span>
+                            <span className="lmain">
+                              <b>{list.name}</b>
+                              <small>
+                                {list.itemCount} {list.itemCount === 1 ? "item" : "items"}
+                                {" · "}
+                                {money(list.totalCents)}
+                              </small>
+                            </span>
+                            <span className="chev">
+                              <Icon d="M9 6l6 6-6 6" />
+                            </span>
+                          </Link>
                           <DashboardListAssistant
                             list={list}
                             items={listItems}

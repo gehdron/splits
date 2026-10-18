@@ -1,5 +1,6 @@
 import "server-only";
 import { createAdminClient, supabaseAdminConfigured } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import {
   addItems as fileAddItems,
   addListMember as fileAddListMember,
@@ -146,21 +147,101 @@ async function itemCounts(listIds: string[]): Promise<Map<string, number>> {
   return counts;
 }
 
+function profileOf(value: unknown): { name: string; phone?: string } {
+  const row = Array.isArray(value) ? value[0] : value;
+  if (!row || typeof row !== "object") return { name: "Member" };
+  const record = row as { display_name?: string | null; phone?: string | null };
+  return { name: record.display_name?.trim() || "Member", phone: record.phone?.trim() || undefined };
+}
+
+function withTotals(list: List, items: Item[]) {
+  const totals: Record<string, number> = {};
+  for (const item of items) {
+    if (item.claimedBy) totals[item.claimedBy] = (totals[item.claimedBy] ?? 0) + item.priceCents * item.quantity;
+  }
+  return { list, items, totals };
+}
+
+// Group bills live in public.lists. The dashboard shows them beside the file-backed lists, and this
+// lets the same /list page open either one.
+async function groupList(id: string): Promise<{ list: List; items: Item[]; totals: Record<string, number> } | null> {
+  try {
+    const supabase = await createClient();
+    const { data: auth } = await supabase.auth.getUser();
+    if (!auth.user) return null;
+    const { data: list, error } = await supabase
+      .from("lists")
+      .select("id, name, group_id, created_by, created_at")
+      .eq("id", id)
+      .maybeSingle();
+    if (error || !list) return null;
+    const { data: itemRows, error: itemError } = await supabase
+      .from("items")
+      .select("id, name, quantity, price_cents, purchased")
+      .eq("list_id", id);
+    if (itemError) return null;
+    const rows = itemRows ?? [];
+    const itemIds = rows.map((item) => item.id);
+    const claimResult = itemIds.length
+      ? await supabase.from("item_claims").select("item_id, member_id").in("item_id", itemIds)
+      : { data: [], error: null };
+    if (claimResult.error) return null;
+    const { data: memberRows, error: memberError } = await supabase
+      .from("group_members")
+      .select("id, user_id, profiles(display_name, phone)")
+      .eq("group_id", list.group_id);
+    if (memberError) return null;
+    const people = new Map<string, { name: string; userId: string; phone?: string }>();
+    for (const member of memberRows ?? []) {
+      const profile = profileOf(member.profiles);
+      people.set(member.id, { name: profile.name, userId: member.user_id, phone: profile.phone });
+    }
+    const claims = new Map<string, string[]>();
+    for (const claim of claimResult.data ?? []) {
+      const person = people.get(claim.member_id);
+      if (!person) continue;
+      claims.set(claim.item_id, [...(claims.get(claim.item_id) ?? []), person.name]);
+    }
+    const items: Item[] = rows.map((item) => ({
+      id: item.id,
+      listId: id,
+      name: item.name,
+      quantity: item.quantity,
+      priceCents: item.price_cents,
+      claimedBy: (claims.get(item.id) ?? []).join(", ") || null,
+      purchased: item.purchased ?? false,
+    }));
+    const members: ListMember[] = [...people.values()].map((person) => {
+      const member: ListMember = { name: person.name, userId: person.userId };
+      if (person.phone) member.phone = person.phone;
+      return member;
+    });
+    return withTotals(
+      {
+        id: list.id,
+        name: list.name,
+        createdAt: Date.parse(list.created_at),
+        ownerId: list.created_by,
+        members,
+      },
+      items,
+    );
+  } catch {
+    return null;
+  }
+}
+
 export async function getList(id: string): Promise<{ list: List; items: Item[]; totals: Record<string, number> } | null> {
-  if (!useRemote()) return fileGetList(id);
+  if (!useRemote()) return fileGetList(id) ?? (await groupList(id));
   const row = await listRow(id);
-  if (!row) return null;
+  if (!row) return groupList(id);
   const [members, itemResult] = await Promise.all([
     membersFor([id]),
     db().from("bill_items").select("id, list_id, name, quantity, price_cents, claimed_by, purchased").eq("list_id", id),
   ]);
   raise(itemResult.error);
   const items = ((itemResult.data ?? []) as ItemRow[]).map(toItem);
-  const totals: Record<string, number> = {};
-  for (const item of items) {
-    if (item.claimedBy) totals[item.claimedBy] = (totals[item.claimedBy] ?? 0) + item.priceCents * item.quantity;
-  }
-  return { list: toList(row, members), items, totals };
+  return withTotals(toList(row, members), items);
 }
 
 export async function renameList(id: string, name: string): Promise<List | null> {
