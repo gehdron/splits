@@ -73,7 +73,9 @@ export function Board({ data }: { data: DashboardData }) {
   const [listName, setListName] = useState("");
   const [listError, setListError] = useState("");
   const [creatingList, setCreatingList] = useState(false);
+  const [sharedLists, setSharedLists] = useState<{ id: string; name: string; itemCount: number }[] | null>(null);
   const listNameInput = useRef<HTMLInputElement>(null);
+  const creatingRef = useRef(false);
   const [exitState, exitAction, exitPending] = useActionState(exitGroup, undefined);
 
   function openNewListScanner() {
@@ -85,6 +87,15 @@ export function Board({ data }: { data: DashboardData }) {
   }
 
   function resetNewList() {
+    // A re-render can close the dialog while create is still running. Keep the name step up.
+    if (creatingRef.current) {
+      requestAnimationFrame(() => {
+        if (!creatingRef.current) return;
+        const dialog = newListDialog.current;
+        if (dialog && !dialog.open) dialog.showModal();
+      });
+      return;
+    }
     setNamingList(false);
     setListName("");
     setListError("");
@@ -102,29 +113,55 @@ export function Board({ data }: { data: DashboardData }) {
 
   async function createBlankList(event?: React.FormEvent) {
     event?.preventDefault();
-    if (creatingList) return;
+    if (creatingRef.current) return;
+    creatingRef.current = true;
     setCreatingList(true);
     setListError("");
-    const name = listName.trim() || "Shared list";
-    const res = await fetch("/api/lists", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    if (!res.ok) {
-      setCreatingList(false);
+    const name = (listNameInput.current?.value ?? listName).trim() || "Shared list";
+    try {
+      const res = await fetch("/api/lists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const body = (await res.json().catch(() => null)) as { id?: string; name?: string; error?: string } | null;
+      if (!res.ok || !body?.id) {
+        setNamingList(true);
+        setListError(body?.error || "The list could not be created.");
+        const dialog = newListDialog.current;
+        if (dialog && !dialog.open) dialog.showModal();
+        return;
+      }
+      const created = { id: body.id, name: body.name || name, itemCount: 0 };
+      setSharedLists((current) => [created, ...(current ?? []).filter((list) => list.id !== created.id)]);
+      creatingRef.current = false;
+      newListDialog.current?.close();
+      router.push(`/list?id=${encodeURIComponent(body.id)}`);
+    } catch {
       setListError("The list could not be created.");
-      return;
+    } finally {
+      creatingRef.current = false;
+      setCreatingList(false);
     }
-    const list = (await res.json()) as { id: string };
-    router.push(`/list?id=${encodeURIComponent(list.id)}`);
-    newListDialog.current?.close();
   }
 
   useEffect(() => {
     if (!namingList) return;
     listNameInput.current?.focus();
   }, [namingList]);
+
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      const res = await fetch("/api/lists");
+      if (!res.ok || cancel) return;
+      const rows = (await res.json()) as { id: string; name: string; itemCount: number }[];
+      if (!cancel && Array.isArray(rows)) setSharedLists(rows);
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, []);
 
   function openSplit(charge: Charge) {
     setSplitGroupId(null);
@@ -252,32 +289,65 @@ export function Board({ data }: { data: DashboardData }) {
                 <div className="shead">
                   <div>
                     <h2 id="sl-h">Shared lists</h2>
-                    <p className="sub">Open a list’s AI bot to assign its items by chat.</p>
+                    <p className="sub">Only you and the people added to a list can see it. Open a list’s AI bot to assign its items by chat.</p>
                   </div>
                   <button className="btn" type="button" onClick={() => newListDialog.current?.showModal()}>
                     <PlusIcon />
                     New list
                   </button>
                 </div>
+                {sharedLists && sharedLists.length > 0 ? (
+                  <ul className="rows">
+                    {sharedLists.map((list) => (
+                      <li key={list.id}>
+                        <Link className="lrow slist" href={`/list?id=${encodeURIComponent(list.id)}`}>
+                          <span className="lic" aria-hidden="true">
+                            {(list.name.trim().charAt(0) || "S").toUpperCase()}
+                          </span>
+                          <span className="lmain">
+                            <b>{list.name}</b>
+                            <small>{list.itemCount === 1 ? "1 item" : `${list.itemCount} items`}</small>
+                          </span>
+                          <span className="chev">
+                            <Icon d="M9 6l6 6-6 6" />
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="empty">
+                    {sharedLists
+                      ? data.loadError
+                        ? "Shared lists could not be loaded."
+                        : "No lists yet."
+                      : "Loading lists…"}
+                  </p>
+                )}
                 {visibleLists.length > 0 ? (
-                  <ul className="dashboard-list-rows">
+                  <ul className="rows">
                     {visibleLists.map((list) => {
                       const listItems = data.items.filter(
                         (item) => item.listId === list.id,
                       );
                       return (
-                        <li className="dashboard-list-row" key={list.id}>
-                          <span className="dashboard-list-icon" aria-hidden="true">
-                            {list.name.trim().charAt(0).toUpperCase() || "L"}
-                          </span>
-                          <div className="dashboard-list-info">
-                            <b>{list.name}</b>
-                            <small>
-                              {list.itemCount} {list.itemCount === 1 ? "item" : "items"}
-                              {" · "}
-                              {money(list.totalCents)}
-                            </small>
-                          </div>
+                        <li key={list.id}>
+                          <Link className="lrow slist" href={`/list?id=${encodeURIComponent(list.id)}`}>
+                            <span className="lic" aria-hidden="true">
+                              {list.name.trim().charAt(0).toUpperCase() || "L"}
+                            </span>
+                            <span className="lmain">
+                              <b>{list.name}</b>
+                              <small>
+                                {list.itemCount} {list.itemCount === 1 ? "item" : "items"}
+                                {" · "}
+                                {money(list.totalCents)}
+                              </small>
+                            </span>
+                            <span className="chev">
+                              <Icon d="M9 6l6 6-6 6" />
+                            </span>
+                          </Link>
                           <DashboardListAssistant
                             list={list}
                             items={listItems}
@@ -289,15 +359,7 @@ export function Board({ data }: { data: DashboardData }) {
                       );
                     })}
                   </ul>
-                ) : (
-                  <p className="empty">
-                    {data.loadError
-                      ? "Shared lists could not be loaded."
-                      : group
-                        ? "No shared lists in this group yet."
-                        : "Create a group to start a shared list."}
-                  </p>
-                )}
+                ) : null}
               </section>
               <dialog
                 ref={splitDialog}
@@ -370,7 +432,10 @@ export function Board({ data }: { data: DashboardData }) {
                         className="field"
                         value={listName}
                         placeholder="Shared list"
-                        onChange={(event) => setListName(event.target.value)}
+                        onChange={(event) => {
+                          setListName(event.target.value);
+                          setListError("");
+                        }}
                       />
                     </div>
                     {listError ? <p className="err">{listError}</p> : null}

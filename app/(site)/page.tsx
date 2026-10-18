@@ -115,7 +115,7 @@ export default function Home() {
               </div>
             </div>
           </div>
-          <div className="fine">Payments are simulated in this demo.</div>
+          <div className="fine">Live demo: payments are real, kept to a few dollars, and refunded.</div>
         </div>
         <div className="sign" aria-hidden="true"><span className="sa">Spl</span><span className="sb">its</span></div>
       </section>

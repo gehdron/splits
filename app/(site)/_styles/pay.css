@@ -1,0 +1,23 @@
+body{margin:0}
+.py{--ink:#0B1020;--ink2:#2A3354;--mut:#454F75;--paper:#F4F6FB;--line:#D3D9EA;--vio:#6C4DFF;--grn:#0FB67F;--gtx:#0A6E4C;--mint:#2EF2A6;--ease:cubic-bezier(.16,1,.3,1);display:flex;flex-direction:column;min-height:100vh;background:var(--paper);color:var(--ink);font-family:var(--font-manrope),sans-serif;font-size:17px;line-height:1.65;font-variant-numeric:tabular-nums}
+.py *{box-sizing:border-box}
+.py a{color:inherit;text-decoration:none}
+.py ::selection{background:var(--mint);color:var(--ink)}
+.py a:focus-visible{outline:3px solid var(--vio);outline-offset:3px;border-radius:8px}
+.py .nav{padding:24px 40px}
+.py .brand{display:inline-flex;align-items:center;gap:10px;font-family:var(--font-outfit),sans-serif;font-weight:600;font-size:24px;letter-spacing:-0.02em}
+.py main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px 64px;text-align:center}
+.py h1{margin:0;font-family:var(--font-outfit),sans-serif;font-weight:600;font-size:clamp(40px,5.6vw,80px);line-height:1;letter-spacing:-0.04em;text-wrap:balance}
+.py .lead{margin:20px 0 0;max-width:34ch;font-size:20px;line-height:1.5;color:var(--ink2)}
+.py .sub{margin:10px 0 0;font-size:16px;color:var(--mut)}
+.py .pay{position:relative;overflow:hidden;isolation:isolate;display:inline-flex;align-items:center;justify-content:center;min-height:56px;margin-top:32px;padding:0 32px;border-radius:12px;background:var(--ink);color:#fff;font-weight:700;font-size:17px;transition:transform .15s ease}
+.py .pay::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--vio);transform:translateY(101%);transition:transform .4s var(--ease)}
+.py .pay:hover::before{transform:none}
+.py .pay:active{transform:scale(.98)}
+.py .pay:focus-visible{outline:3px solid var(--vio);outline-offset:3px}
+.py .ok{display:inline-flex;align-items:center;gap:8px;margin-top:28px;padding:8px 16px;border-radius:999px;background:#E4F8EF;color:var(--gtx);font-weight:700}
+.py .wait{width:28px;height:28px;margin-top:28px;border:3px solid #C8BEFF;border-top-color:var(--vio);border-radius:50%;animation:spin .9s linear infinite}
+.py .fine{padding:0 40px 28px;text-align:center;font-size:14px;color:#5A6385}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.py *{animation:none !important;transition:none !important}}
+@media (max-width:900px){.py .nav{padding:20px 24px}.py .fine{padding:0 24px 24px}}

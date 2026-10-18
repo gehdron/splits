@@ -16,6 +16,7 @@ const OTHER_GROUPS = ["Lisbon trip"];
 const ME = "You";
 
 type Person = { id: string; name: string; detail: string };
+type PayLink = { id: string; personName: string; amountCents: number; status: "unpaid" | "sent" | "paid" | "void"; url: string };
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -26,7 +27,8 @@ type ApiItem = {
   priceCents: number;
   claimedBy: string | null;
 };
-type ListData = { list: { id: string; name: string }; items: ApiItem[]; totals: Record<string, number> };
+type ListMember = { name: string; userId?: string };
+type ListData = { list: { id: string; name: string; members?: ListMember[] }; items: ApiItem[]; totals: Record<string, number> };
 
 type Item = { id: string; name: string; quantity: number; cents: number; who: string | null };
 type SharedList = { name: string; paidBy: string; items: Item[] };
@@ -139,8 +141,33 @@ const LogoMark = () => (
 // TODO: this page has no auth, groups or friends API. People are the names that have claimed items on this list.
 // Create, Add, Remove, Add to group and Sign out have no action until the list page is wired to Supabase
 // (see app/(site)/dashboard/actions.ts).
-function Sidebar({ me, people }: { me: string; people: string[] }) {
+function Sidebar({ me, people, onAdd }: { me: string; people: string[]; onAdd: (person: { name: string; phone?: string; email?: string }) => Promise<string> }) {
   const [by, setBy] = useState<"phone" | "email">("phone");
+  const [contact, setContact] = useState("");
+  const [addError, setAddError] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  async function addPerson(event: React.FormEvent) {
+    event.preventDefault();
+    if (adding) return;
+    if (by === "phone") {
+      const phone = normalizePhone(contact);
+      if (!phone) return setAddError("Enter a phone number, including the area code.");
+      setAdding(true);
+      const error = await onAdd({ name: phone, phone });
+      setAdding(false);
+      setAddError(error);
+      if (!error) setContact("");
+      return;
+    }
+    const email = contact.trim().toLowerCase();
+    if (!emailPattern.test(email)) return setAddError("Enter a valid email.");
+    setAdding(true);
+    const error = await onAdd({ name: email, email });
+    setAdding(false);
+    setAddError(error);
+    if (!error) setContact("");
+  }
   const groups = [
     { name: GROUP_NAME, count: people.length + (me ? 1 : 0), active: true },
     ...OTHER_GROUPS.map((name) => ({ name, count: null, active: false })),
@@ -188,7 +215,7 @@ function Sidebar({ me, people }: { me: string; people: string[] }) {
               <Avatar name={name} me={me} />
               <div>
                 <b>{name}</b>
-                <small>In {GROUP_NAME}</small>
+                <small>On this list</small>
               </div>
               <button className="mini" type="button" disabled>
                 Added
@@ -199,29 +226,37 @@ function Sidebar({ me, people }: { me: string; people: string[] }) {
             </li>
           ))}
         </ul>
-        {people.length === 0 && <p className="sub note">People who claim items show up here.</p>}
-        <p className="lbl">Add someone to {GROUP_NAME}</p>
-        <div className="seg" role="group" aria-label="Add by">
-          <button className={`sg${by === "phone" ? " on" : ""}`} type="button" aria-pressed={by === "phone"} onClick={() => setBy("phone")}>
-            Phone
+        {people.length === 0 && <p className="sub note">People you add can see this list.</p>}
+        <form onSubmit={addPerson}>
+          <p className="lbl">Add someone to this list</p>
+          <div className="seg" role="group" aria-label="Add by">
+            <button className={`sg${by === "phone" ? " on" : ""}`} type="button" aria-pressed={by === "phone"} onClick={() => setBy("phone")}>
+              Phone
+            </button>
+            <button className={`sg${by === "email" ? " on" : ""}`} type="button" aria-pressed={by === "email"} onClick={() => setBy("email")}>
+              Email
+            </button>
+          </div>
+          <label className="lbl" htmlFor="ct">
+            {by === "phone" ? "Phone number" : "Email address"}
+          </label>
+          <input
+            id="ct"
+            className="field"
+            type={by === "phone" ? "tel" : "email"}
+            value={contact}
+            placeholder={by === "phone" ? "(555) 123-4567" : "[friend's email address]"}
+            onChange={(event) => {
+              setContact(event.target.value);
+              setAddError("");
+            }}
+          />
+          {addError ? <p className="sub note">{addError}</p> : null}
+          <button className="btn full" type="submit" disabled={adding}>
+            <PlusIcon />
+            {adding ? "Adding…" : "Add to list"}
           </button>
-          <button className={`sg${by === "email" ? " on" : ""}`} type="button" aria-pressed={by === "email"} onClick={() => setBy("email")}>
-            Email
-          </button>
-        </div>
-        <label className="lbl" htmlFor="ct">
-          {by === "phone" ? "Phone number" : "Email address"}
-        </label>
-        <input
-          id="ct"
-          className="field"
-          type={by === "phone" ? "tel" : "email"}
-          placeholder={by === "phone" ? "(555) 123-4567" : "[friend's email address]"}
-        />
-        <button className="btn full" type="button">
-          <PlusIcon />
-          Add to group
-        </button>
+        </form>
       </section>
 
       <div className="me">
@@ -265,6 +300,7 @@ export default function ListPage() {
   const me = ME;
   const [friends, setFriends] = useState<Person[]>([]);
   const [added, setAdded] = useState<Person[]>([]);
+  const [meId, setMeId] = useState<string | null>(null);
   const [openItem, setOpenItem] = useState<string | null>(null);
   const [contactBy, setContactBy] = useState<"phone" | "email">("phone");
   const [contact, setContact] = useState("");
@@ -276,6 +312,12 @@ export default function ListPage() {
   const [msg, setMsg] = useState("");
   const [scan, setScan] = useState(false);
   const [scanning, setScanning] = useState(false);
+  // Pay links: one per person who owes. The amount is worked out on the server from this list.
+  const [payLinks, setPayLinks] = useState<PayLink[]>([]);
+  const [requestFor, setRequestFor] = useState<string | null>(null);
+  const [requestHandle, setRequestHandle] = useState("");
+  const [requestBusy, setRequestBusy] = useState(false);
+  const [requestMsg, setRequestMsg] = useState("");
   const [splitChatOpen, setSplitChatOpen] = useState(false);
   const [splitMessages, setSplitMessages] = useState<SplitInstructionMessage[]>([]);
   const [splitMessage, setSplitMessage] = useState("");
@@ -304,6 +346,8 @@ export default function ListPage() {
     (async () => {
       try {
         const supabase = createClient();
+        const { data: userData } = await supabase.auth.getUser();
+        if (!cancel) setMeId(userData.user?.id ?? null);
         const { data: rows, error } = await supabase.rpc("list_friends");
         if (cancel || error || !rows) return;
         setFriends(
@@ -327,6 +371,8 @@ export default function ListPage() {
     const res = await fetch(`/api/lists/${listId}`);
     if (res.status === 404) return setMsg("List not found (the server may have restarted). Open /list for a new one.");
     setData(await res.json());
+    const links = await fetch(`/api/shares?list=${listId}`).catch(() => null);
+    if (links?.ok) setPayLinks(((await links.json()) as { shares: PayLink[] }).shares);
   }, [listId]);
 
   // Poll every 3 seconds so everyone sees claims quickly
@@ -443,6 +489,30 @@ export default function ListPage() {
     return () => document.removeEventListener("pointerdown", close);
   }, [openItem]);
 
+  function contactOf(person: Person): { name: string; phone?: string; email?: string } | null {
+    if (person.id.startsWith("phone:")) return { name: person.name, phone: person.id.slice("phone:".length) };
+    if (person.id.startsWith("email:")) return { name: person.name, email: person.id.slice("email:".length) };
+    const phone = normalizePhone(person.detail);
+    if (phone) return { name: person.name, phone };
+    if (emailPattern.test(person.detail)) return { name: person.name, email: person.detail.trim().toLowerCase() };
+    return null;
+  }
+
+  async function addPerson(person: { name: string; phone?: string; email?: string }) {
+    if (!listId) return "Open a list first.";
+    const res = await fetch(`/api/lists/${listId}/members`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(person),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      return body?.error || "That person could not be added.";
+    }
+    refresh();
+    return "";
+  }
+
   function remember(person: Person) {
     setAdded((current) => (current.some((entry) => entry.id === person.id) || friends.some((entry) => entry.id === person.id) ? current : [...current, person]));
     setContact("");
@@ -456,14 +526,64 @@ export default function ListPage() {
       if (!phone) return setMsg("Enter a phone number, including the area code.");
       const person = { id: `phone:${phone}`, name: phone, detail: "Phone" };
       remember(person);
-      void assignPerson(item, person.name);
+      void assignPerson(item, person);
       return;
     }
     const email = contact.trim();
     if (!emailPattern.test(email)) return setMsg("Enter a valid email.");
     const person = { id: `email:${email.toLowerCase()}`, name: email, detail: "Email" };
     remember(person);
-    void assignPerson(item, person.name);
+    void assignPerson(item, person);
+  }
+
+  // What this person has paid on the list, what's left, and their open link (if it's for what's left).
+  function payStatus(person: string, cents: number) {
+    const mine = payLinks.filter((link) => link.personName === person && link.status !== "void");
+    const paid = mine.filter((link) => link.status === "paid").reduce((sum, link) => sum + link.amountCents, 0);
+    const due = cents - paid;
+    const open = mine.filter((link) => link.status !== "paid" && link.amountCents === due).at(-1) ?? null;
+    return { paid, due, open };
+  }
+
+  function openRequest(person: string) {
+    if (requestFor === person) return setRequestFor(null);
+    // People added by phone or email are named by it; saved friends carry their phone.
+    const known = [...friends, ...added].find((entry) => entry.name === person);
+    const looksLikeHandle = emailPattern.test(person) || normalizePhone(person) !== null;
+    setRequestHandle(looksLikeHandle ? person : known && normalizePhone(known.detail) ? known.detail : "");
+    setRequestMsg("");
+    setRequestFor(person);
+  }
+
+  async function requestPay(person: string, send: boolean) {
+    if (!listId) return;
+    setRequestBusy(true);
+    setRequestMsg("");
+    try {
+      const res = await fetch("/api/shares", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ listId, personName: person, handle: requestHandle, send }),
+      });
+      const result = (await res.json()) as { share?: PayLink; sent?: boolean; error?: string; note?: string };
+      if (result.share) setPayLinks((links) => [...links.filter((link) => link.id !== result.share?.id), result.share as PayLink]);
+      if (result.error) return setRequestMsg(result.error);
+      if (result.note) return setRequestMsg(result.note);
+      if (result.sent) {
+        setRequestMsg(`Sent. ${person} got a link to pay ${money(result.share?.amountCents ?? 0)}.`);
+      } else if (result.share) {
+        // Phones often block the clipboard after a network wait, so only say "copied" when it worked.
+        const copied = await navigator.clipboard
+          .writeText(result.share.url)
+          .then(() => true)
+          .catch(() => false);
+        setRequestMsg(copied ? `Link copied: ${result.share.url}` : `Here’s the link to send: ${result.share.url}`);
+      }
+    } catch {
+      setRequestMsg("Couldn’t reach Splits. Check your connection and try again.");
+    } finally {
+      setRequestBusy(false);
+    }
   }
 
   async function act(
@@ -492,9 +612,14 @@ export default function ListPage() {
 
   async function assignPerson(
     item: Item,
-    user: string
+    assignee: Person | string
   ): Promise<{ success: boolean; error?: string }> {
     setOpenItem(null);
+    if (typeof assignee !== "string") {
+      const contact = contactOf(assignee);
+      if (contact) void addPerson(contact);
+    }
+    const user = typeof assignee === "string" ? assignee : assignee.name;
     if (item.who === user) return { success: true };
     if (item.who) {
       const cleared = await fetch(`/api/items/${item.id}`, {
@@ -657,7 +782,12 @@ export default function ListPage() {
       who: i.claimedBy,
     })),
   };
-  const people = [...new Set(list.items.map((i) => i.who).filter((who): who is string => !!who && who !== me))];
+  const people = [
+    ...new Set([
+      ...(data?.list.members ?? []).filter((member) => member.userId !== meId).map((member) => member.name),
+      ...list.items.map((i) => i.who).filter((who): who is string => !!who && who !== me),
+    ]),
+  ];
 
   const mine = list.paidBy === me;
   const s = summarize(list, me);
@@ -672,7 +802,7 @@ export default function ListPage() {
 
   return (
     <div className="db">
-      <Sidebar me={me} people={people} />
+      <Sidebar me={me} people={people} onAdd={addPerson} />
 
       <main className="main">
         <div className="wrap">
@@ -755,20 +885,69 @@ export default function ListPage() {
                   <span>{money(s.owedCents)}</span>
                 </div>
                 <ul className="plist">
-                  {s.owedToYou.map((o) => (
-                    <li key={o.name} className="pr">
-                      <Avatar name={o.name} me={me} large />
-                      <div>
-                        <b>{o.name}</b>
-                        <small>{o.what}</small>
-                      </div>
-                      <span className="pa">{money(o.cents)}</span>
-                      {/* TODO: reminders (Photon + Grok copy) are not wired to this page yet. */}
-                      <button className="btn line" type="button">
-                        Remind
-                      </button>
-                    </li>
-                  ))}
+                  {s.owedToYou.map((o) => {
+                    const pay = payStatus(o.name, o.cents);
+                    const link = pay.open;
+                    const settled = pay.due <= 0 && pay.paid > 0;
+                    const open = requestFor === o.name;
+                    return (
+                      <li key={o.name} className="pr">
+                        <Avatar name={o.name} me={me} large />
+                        <div>
+                          <b>{o.name}</b>
+                          <small>{o.what}</small>
+                          {settled ? (
+                            <span className="pill pg">Paid</span>
+                          ) : link ? (
+                            <span className={`pill ${link.status === "sent" ? "pv" : "pn"}`}>{link.status === "sent" ? "Link sent" : "Link ready"}</span>
+                          ) : null}
+                          {pay.paid > 0 && !settled ? <span className="pill pg">Paid {money(pay.paid)} so far</span> : null}
+                        </div>
+                        <span className="pa">{money(o.cents)}</span>
+                        {settled ? (
+                          <span />
+                        ) : (
+                          <button className="btn line" type="button" aria-expanded={open} onClick={() => openRequest(o.name)}>
+                            {link?.status === "sent" ? "Send again" : "Request"}
+                          </button>
+                        )}
+                        {open ? (
+                          <form
+                            className="req"
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              void requestPay(o.name, true);
+                            }}
+                          >
+                            <label className="lbl" htmlFor={`req-${o.name}`}>
+                              Text or email {o.name} a link to pay {money(pay.due)}
+                            </label>
+                            <div className="inrow">
+                              <input
+                                id={`req-${o.name}`}
+                                className="field"
+                                value={requestHandle}
+                                onChange={(event) => setRequestHandle(event.target.value)}
+                                placeholder="(555) 123-4567 or name@email.com"
+                                autoComplete="off"
+                              />
+                              <button className="btn" type="submit" disabled={requestBusy || !requestHandle.trim()}>
+                                {requestBusy ? "Sending…" : "Send pay link"}
+                              </button>
+                            </div>
+                            <button className="btn txt" type="button" disabled={requestBusy} onClick={() => void requestPay(o.name, false)}>
+                              Copy link instead
+                            </button>
+                            {requestMsg ? (
+                              <p className="msg" role="status">
+                                {requestMsg}
+                              </p>
+                            ) : null}
+                          </form>
+                        ) : null}
+                      </li>
+                    );
+                  })}
                 </ul>
                 {s.owedToYou.length === 0 && (
                   <p className="sub note">
@@ -881,7 +1060,7 @@ export default function ListPage() {
                       <div className="menu" role="menu" aria-label={`Assign ${item.name}`}>
                         {roster.length > 0 ? <p className="menu-h">Friends and contacts</p> : null}
                         {roster.map((person) => (
-                          <button key={person.id} className="opt" type="button" role="menuitem" onClick={() => assignPerson(item, person.name)}>
+                          <button key={person.id} className="opt" type="button" role="menuitem" onClick={() => assignPerson(item, person)}>
                             <Avatar name={person.name} me={me} />
                             <span className="on">
                               {person.name}

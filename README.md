@@ -48,16 +48,11 @@ AI parsing requires a Gemini API key and may incur API charges depending on
 your account and usage. OCR extraction and raw text remain available without
 an API key.
 
-After AI parsing, open **Assign items manually** to add users and select them
-on each receipt item, or open **Split items with chat** to assign items with
-natural-language instructions. Both controls stay in sync, and each person's
-item shares, tax, tip, and total update in the receipt review.
+After AI parsing, open **Assign items yourself** to add people and select them
+on each receipt item. Each person's item shares, tax, tip, and total update in
+the receipt review.
 Shared items are split equally; parsed tax is allocated proportionally to each
 person's share of the item amounts.
-While typing split instructions, item-name suggestions are based on the
-AI-parsed receipt items and can be toggled on or off. Matching names appear as
-inline completions; press **Tab** to replace the current word with the
-suggested receipt item.
 Open **Tip options** to split the receipt tip proportionally, set a custom tip
 amount for each person, or leave the tip out of split totals. Any unassigned
 items keep their associated tax and tip under **Unassigned** until they are
@@ -84,7 +79,11 @@ available to group owners.
 | Route | What it is |
 | --- | --- |
 | `/` | Marketing site home (`app/(site)/page.tsx`) |
-| `/payment-complete` | Shown after a friend pays. Fill it with `?friend=Maya&event=Dinner&amount=24.50&method=Apple%20Pay` |
+| `/pay/sh_…` | A friend's pay link. Opens Stripe Checkout |
+| `/payment-complete` | Shown after a friend pays (`?share=sh_…`). The older `?friend=Maya&event=Dinner&amount=24.50&method=Apple%20Pay` form still works |
+| `/api/stripe/webhook` | Stripe webhook. Marks shares paid |
+| `/dashboard/item-by-item` | Receipt scanner, opened from "Split this charge" |
+| `/account` | Account, payouts (Stripe Connect) and bank (Plaid) |
 | `/scan` | Receipt scanner (moved from `/`) |
 | `/dashboard/item-by-item` | Dedicated receipt camera and upload screen (requires sign-in) |
 | `/detect` | Receipt review, manual assignment, and split chat |

@@ -21,7 +21,7 @@ const items = [
   },
   {
     q: "Where do card details go?",
-    a: "Checkout is hosted by the payment provider, so card details do not pass through Splits. In this demo, payments are simulated.",
+    a: "Checkout is hosted by the payment provider, so card details do not pass through Splits. This demo takes real payments of a few dollars and refunds them.",
   },
 ];
 
