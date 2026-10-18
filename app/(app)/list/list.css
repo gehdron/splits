@@ -137,6 +137,8 @@
 .db .addrow .field{min-height:48px;border-radius:12px}
 .db .addrow .btn{min-height:48px;border-radius:12px}
 .db .msg{margin:14px 0 0;padding:10px 14px;border-radius:12px;background:#E8E3FF;color:#2F2380;font-size:14px;font-weight:600}
+.db .list-chat-toggle{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:20px;padding-top:18px;border-top:1px solid var(--line)}
+.db .list-chat-toggle .sub{margin:0;font-size:14px}
 .db .scan{display:grid;gap:8px;margin-bottom:22px;padding-bottom:22px;border-bottom:1px solid var(--line)}
 .db .scan .lbl,.db .scan .sub{margin:0}
 .db .scan .field{padding:10px 12px}

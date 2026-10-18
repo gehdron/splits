@@ -348,8 +348,11 @@ export function ReceiptScanner({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const receiptFileInputRef = useRef<HTMLInputElement>(null);
+  const receiptViewportRef = useRef<HTMLDivElement>(null);
   const autoCameraStarted = useRef(false);
   const [enlargedImageOpen, setEnlargedImageOpen] = useState(false);
+  const [receiptZoom, setReceiptZoom] = useState(1);
+  const [receiptViewportSize, setReceiptViewportSize] = useState({ width: 0, height: 0 });
 
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraFacingMode, setCameraFacingMode] =
@@ -1352,7 +1355,10 @@ export function ReceiptScanner({
             <button
               className="receipt-image-button"
               type="button"
-              onClick={() => setEnlargedImageOpen(true)}
+              onClick={() => {
+                setReceiptZoom(1);
+                setEnlargedImageOpen(true);
+              }}
               aria-label="Enlarge receipt image"
             >
               <ReceiptImage
@@ -1395,6 +1401,32 @@ export function ReceiptScanner({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [enlargedImageOpen]);
 
+  useEffect(() => {
+    if (!enlargedImageOpen) return;
+    const viewport = receiptViewportRef.current;
+    if (!viewport) return;
+
+    const resizeObserver = new ResizeObserver(([entry]) => {
+      setReceiptViewportSize({
+        width: entry.contentRect.width,
+        height: entry.contentRect.height,
+      });
+    });
+    resizeObserver.observe(viewport);
+    return () => resizeObserver.disconnect();
+  }, [enlargedImageOpen]);
+
+  const receiptFitScale =
+    frameSize.width > 0 &&
+    frameSize.height > 0 &&
+    receiptViewportSize.width > 0 &&
+    receiptViewportSize.height > 0
+      ? Math.min(
+          receiptViewportSize.width / frameSize.width,
+          receiptViewportSize.height / frameSize.height,
+        )
+      : 0;
+
   return (
     <div className="db">
       <Sidebar me={me} groups={groups} group={group} people={people} loadError={loadError} />
@@ -1420,17 +1452,63 @@ export function ReceiptScanner({
               <CloseIcon />
             </button>
             <div className="receipt-lightbox-content">
-              <ReceiptImage
-                src={frozenImage}
-                width={frameSize.width}
-                height={frameSize.height}
-                words={detectedWords}
-                alt="Enlarged receipt with detected text"
-              />
+              <div className="receipt-zoom-controls" role="group" aria-label="Receipt zoom controls">
+                <button
+                  className="receipt-zoom-button"
+                  type="button"
+                  aria-label="Zoom out"
+                  onClick={() => setReceiptZoom((zoom) => Math.max(1, zoom - 0.5))}
+                  disabled={receiptZoom <= 1}
+                >
+                  −
+                </button>
+                <button
+                  className="receipt-zoom-level"
+                  type="button"
+                  onClick={() => setReceiptZoom(1)}
+                  aria-label="Reset receipt zoom"
+                >
+                  {Math.round(receiptZoom * 100)}%
+                </button>
+                <button
+                  className="receipt-zoom-button"
+                  type="button"
+                  aria-label="Zoom in"
+                  onClick={() => setReceiptZoom((zoom) => Math.min(4, zoom + 0.5))}
+                  disabled={receiptZoom >= 4}
+                >
+                  +
+                </button>
+              </div>
+              <div
+                className="receipt-lightbox-viewport"
+                ref={receiptViewportRef}
+                role="region"
+                aria-label="Scrollable zoomed receipt image"
+                tabIndex={0}
+              >
+                {receiptFitScale > 0 ? (
+                  <div
+                    className="receipt-lightbox-image"
+                    style={{
+                      width: frameSize.width * receiptFitScale * receiptZoom,
+                      height: frameSize.height * receiptFitScale * receiptZoom,
+                    }}
+                  >
+                    <ReceiptImage
+                      src={frozenImage}
+                      width={frameSize.width}
+                      height={frameSize.height}
+                      words={detectedWords}
+                      alt="Enlarged receipt with detected text"
+                    />
+                  </div>
+                ) : null}
+              </div>
               <p>
                 {detectedWords.length > 0
-                  ? "Green outlines show text detected on the receipt."
-                  : "Text outlines appear after you extract text."}
+                  ? "Green outlines show detected text. Zoom in to inspect details, then scroll the image."
+                  : "Text outlines appear after you extract text. Zoom in to inspect the receipt."}
               </p>
             </div>
           </div>

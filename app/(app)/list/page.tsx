@@ -607,6 +607,15 @@ export default function ListPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mode: "list",
+          currentUser: me,
+          participants: [
+            ...new Set([
+              me,
+              ...friends.map((friend) => friend.name),
+              ...added.map((person) => person.name),
+              ...list.items.flatMap((item) => (item.who ? [item.who] : [])),
+            ]),
+          ],
           items,
           totals: {
             subtotal: (s.subtotal / 100).toFixed(2),
@@ -915,58 +924,7 @@ export default function ListPage() {
                   Assign each item to a friend, or to a phone number or email. {mine ? "They owe you for their items." : `You owe ${list.paidBy} for yours.`}
                 </p>
               </div>
-              <button
-                className="btn line"
-                type="button"
-                aria-expanded={splitChatOpen}
-                aria-controls="list-split-chat"
-                disabled={!data || list.items.length === 0}
-                onClick={() => setSplitChatOpen((open) => !open)}
-              >
-                {splitChatOpen ? "Close chat" : "Split with chat"}
-              </button>
             </div>
-
-            <section
-              className="list-chat"
-              id="list-split-chat"
-              aria-label="Split items with chat"
-              hidden={!splitChatOpen}
-            >
-              <div className="list-chat-messages" aria-live="polite" aria-relevant="additions text">
-                {splitMessages.length === 0 ? (
-                  <p className="list-chat-welcome">
-                    Tell me who should get each item, for example, “Alex is bringing the plates and I’ll take the drinks.”
-                  </p>
-                ) : (
-                  splitMessages.map((message, index) => (
-                    <p
-                      className={`list-chat-message ${message.role}`}
-                      key={`${index}-${message.role}`}
-                    >
-                      {message.content}
-                    </p>
-                  ))
-                )}
-                {splitParsing ? <p className="list-chat-pending">Working on the assignments…</p> : null}
-              </div>
-              {splitError ? <p className="list-chat-error" role="alert">{splitError}</p> : null}
-              <form className="list-chat-form" onSubmit={sendSplitMessage}>
-                <label className="sr" htmlFor="list-split-message">Tell the assistant how to assign items</label>
-                <textarea
-                  id="list-split-message"
-                  value={splitMessage}
-                  maxLength={1000}
-                  rows={2}
-                  placeholder="Who should get each item?"
-                  disabled={splitParsing}
-                  onChange={(event) => setSplitMessage(event.target.value)}
-                />
-                <button className="btn" type="submit" disabled={splitParsing || !splitMessage.trim()}>
-                  {splitParsing ? "Assigning…" : "Send"}
-                </button>
-              </form>
-            </section>
 
             {scan ? (
               <form className="scan">
@@ -1123,6 +1081,60 @@ export default function ListPage() {
                 {msg}
               </p>
             )}
+
+            <div className="list-chat-toggle">
+              <button
+                className="btn line"
+                type="button"
+                aria-expanded={splitChatOpen}
+                aria-controls="list-split-chat"
+                disabled={!data || list.items.length === 0}
+                onClick={() => setSplitChatOpen((open) => !open)}
+              >
+                {splitChatOpen ? "Close AI bot" : "AI bot"}
+              </button>
+              <span className="sub">Ask the AI bot to assign items by chat.</span>
+            </div>
+            <section
+              className="list-chat"
+              id="list-split-chat"
+              aria-label="Split items with chat"
+              hidden={!splitChatOpen}
+            >
+              <div className="list-chat-messages" aria-live="polite" aria-relevant="additions text">
+                {splitMessages.length === 0 ? (
+                  <p className="list-chat-welcome">
+                    Tell me who should get each item, for example, “Alex is bringing the plates and I’ll take the drinks.”
+                  </p>
+                ) : (
+                  splitMessages.map((message, index) => (
+                    <p
+                      className={`list-chat-message ${message.role}`}
+                      key={`${index}-${message.role}`}
+                    >
+                      {message.content}
+                    </p>
+                  ))
+                )}
+                {splitParsing ? <p className="list-chat-pending">Working on the assignments…</p> : null}
+              </div>
+              {splitError ? <p className="list-chat-error" role="alert">{splitError}</p> : null}
+              <form className="list-chat-form" onSubmit={sendSplitMessage}>
+                <label className="sr" htmlFor="list-split-message">Tell the assistant how to assign items</label>
+                <textarea
+                  id="list-split-message"
+                  value={splitMessage}
+                  maxLength={1000}
+                  rows={2}
+                  placeholder="Who should get each item?"
+                  disabled={splitParsing}
+                  onChange={(event) => setSplitMessage(event.target.value)}
+                />
+                <button className="btn" type="submit" disabled={splitParsing || !splitMessage.trim()}>
+                  {splitParsing ? "Assigning…" : "Send"}
+                </button>
+              </form>
+            </section>
           </section>
         </div>
       </main>

@@ -70,44 +70,9 @@ natural-language instructions, or keep using the per-item controls. Each list
 item has one assignee; chat assignments are saved through the same controls
 and update the list totals.
 
-## Pay links (live Stripe)
-
-Friends pay their share at `https://splits.select/pay/sh_…`, which opens Stripe
-Checkout (card everywhere, Apple Pay on supported devices). Payments are live,
-so keep demo amounts at $1 to $5 and refund them afterwards. Links are capped at
-`SPLITS_MAX_SHARE_CENTS` (default 500, so $5) and Stripe's $0.50 minimum.
-
-1. Run `supabase/payments.sql` once in the Supabase SQL editor (after `schema.sql`).
-2. Set these in `.env.local` and in Vercel. Only `NEXT_PUBLIC_*` values reach the browser.
-
-```env
-NEXT_PUBLIC_APP_URL=https://splits.select
-NEXT_PUBLIC_SUPABASE_URL=...
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
-SUPABASE_SERVICE_ROLE_KEY=...          # server only: the webhook and /pay have no signed-in user
-STRIPE_SECRET_KEY=sk_live_...
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_...
-STRIPE_WEBHOOK_SECRET=whsec_...        # endpoint https://splits.select/api/stripe/webhook, event checkout.session.completed
-PHOTON_API_KEY=...                     # same values photon/agent.ts uses
-PHOTON_PROJECT_ID=pho_prj_...
-PHOTON_PLATFORM=imessage               # or email
-PHOTON_AGENT_HANDLE=...
-PLAID_CLIENT_ID=...                    # optional: organizer bank linking
-PLAID_SECRET=...
-PLAID_ENV=sandbox
-SPLITS_MAX_SHARE_CENTS=500             # optional
-```
-
-How it works: on a list, **Request** next to someone who owes you creates their
-link (the amount is worked out on the server from the list) and texts it with
-Photon, or copies it. Stripe's webhook marks the share paid, and the list shows
-it. Organizers set up payouts on `/account`: Stripe Connect Express onboarding,
-then optionally a bank through Plaid. With a payout account, each payment is a
-destination charge that goes to the organizer. Plaid's sandbox only works with
-Stripe's test mode, so attaching a bank to a live account needs `PLAID_ENV=production`.
-
-Without Supabase on your machine, shares are kept in `data/store.json` so you can
-try the flow locally. That fallback never runs on Vercel.
+Dashboard shared lists also have an **AI bot** panel for chat-based item
+assignments. It uses the group members as the available assignees and is
+available to group owners.
 
 ## Routes
 
