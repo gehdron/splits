@@ -140,11 +140,22 @@
 .db .opt2 .d,.db .opt2 small{display:block;color:var(--mut);font-size:13px}
 .db .opt2>span:nth-child(2){flex:1}
 .db .opt2:hover{border-color:var(--vio)}
+.db .receipt-split-assistant{display:grid;gap:14px;margin-top:18px;padding:16px;border:1px solid var(--line);border-radius:16px;background:#F9FAFD}
+.db .receipt-split-assistant h3{margin:0;font-family:var(--hd);font-size:20px;font-weight:600}
+.db .receipt-chat-messages{display:grid;gap:8px;max-height:280px;overflow:auto}
+.db .receipt-chat-message,.db .receipt-chat-welcome,.db .receipt-chat-pending{display:grid;gap:4px;width:fit-content;max-width:min(90%,680px);margin:0;padding:10px 13px;border-radius:14px;background:#E9EDF6;color:var(--ink2);overflow-wrap:anywhere}
+.db .receipt-chat-message.user{justify-self:end;background:#E8E3FF;color:#2F2380}
+.db .receipt-chat-message strong{font-size:12px}
+.db .receipt-chat-pending{font-size:13px;color:var(--mut)}
+.db .receipt-chat-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}
+.db .receipt-chat-form .lbl{grid-column:1/-1;margin:0}
+.db .receipt-chat-form textarea{grid-column:1/-1;min-height:84px;padding:12px;resize:vertical}
+.db .receipt-chat-form .btn{grid-column:2}
 .db .raw{margin-top:16px}
 .db .raw summary{cursor:pointer;font-weight:700}
 .db .raw pre{max-height:240px;overflow:auto;white-space:pre-wrap}
 @media(max-width:900px){.db .grid2{grid-template-columns:1fr}.db .grid2>.col{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:640px){.db .grid2>.col{grid-template-columns:1fr}.db .proc li{grid-template-columns:28px minmax(0,1fr)}.db .proc li>.ptag{grid-column:2}.db .ir{grid-template-columns:54px minmax(0,1fr) 84px 36px;gap:5px}}
+@media(max-width:640px){.db .grid2>.col{grid-template-columns:1fr}.db .proc li{grid-template-columns:28px minmax(0,1fr)}.db .proc li>.ptag{grid-column:2}.db .ir{grid-template-columns:54px minmax(0,1fr) 84px 36px;gap:5px}.db .receipt-chat-form{grid-template-columns:1fr}.db .receipt-chat-form .btn{grid-column:1;width:100%}}
 .db .p0{background:#0B1020;color:#fff}.db .p1{background:#DCD3FF;color:#2F2380}.db .p2{background:#C9F0DD;color:#0A5A3F}.db .p3{background:#DDE3F5;color:#0B1020}
 .db .main{min-width:0;padding:40px 48px 72px;background-image:repeating-linear-gradient(135deg,transparent 0 38px,rgba(11,16,32,.045) 38px 39px)}
 .db .wrap{max-width:1100px}
