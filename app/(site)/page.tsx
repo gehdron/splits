@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Hero } from "./_components/hero";
 import { LogoMark } from "./_components/logo";
+import { supabaseConfigured } from "@/lib/supabase/env";
+import { createClient } from "@/lib/supabase/server";
 import "./_styles/home.css";
 
 const title = "Splits: split bills without the stress";
@@ -14,15 +16,22 @@ export const metadata: Metadata = {
   openGraph: { type: "website", title, description },
 };
 
-const APP_URL = "/signup";
-
 const steps = [
   { title: "Snap the receipt", body: "Splits reads every item and price for you.", image: "/assets/screens/step-scan.png", alt: "A receipt inside the camera frame while Splits reads it" },
   { title: "Pick who had what", body: "Assign each item to someone in your group.", image: "/assets/screens/step-assign.png", alt: "Receipt items with a name button for each person, and each person's total" },
   { title: "Send the links", body: "Everyone pays their own share. No app needed.", image: "/assets/screens/step-pay.png", alt: "A text message with a payment link and a checkout page with Apple Pay" },
 ];
 
-export default function Home() {
+export default async function Home() {
+  let signedIn = false;
+  if (supabaseConfigured()) {
+    const supabase = await createClient();
+    const { data, error } = await supabase.auth.getUser();
+    if (error) throw new Error(`Could not check the current session: ${error.message}`);
+    signedIn = Boolean(data.user);
+  }
+  const appUrl = signedIn ? "/dashboard" : "/signup";
+
   return (
     <div className="p2">
       <div className="navbar">
@@ -34,8 +43,17 @@ export default function Home() {
             </a>
             <nav className="links" aria-label="Main">
               <a href="#how">How it works</a>
-              <a className="signin" href="/login">Sign in</a>
-              <a className="btn btn-a" href={APP_URL}>Create account</a>
+              {signedIn ? (
+                <>
+                  <a className="signin" href="/account">Account</a>
+                  <a className="btn btn-a" href="/dashboard">Dashboard</a>
+                </>
+              ) : (
+                <>
+                  <a className="signin" href="/login">Sign in</a>
+                  <a className="btn btn-a" href="/signup">Create account</a>
+                </>
+              )}
             </nav>
           </header>
         </div>
@@ -58,7 +76,9 @@ export default function Home() {
                 className="cta fade"
                 style={{ animationDelay: "520ms", flexDirection: "column", alignItems: "flex-start", gap: 18 }}
               >
-                <a className="btn btn-a" href={APP_URL}>Start splitting</a>
+                <a className="btn btn-a" href={appUrl}>
+                  {signedIn ? "Go to dashboard" : "Start splitting"}
+                </a>
               </div>
             </div>
           </div>
@@ -112,7 +132,9 @@ export default function Home() {
                 <div className="bub mo">Done.</div>
               </div>
               <div className="tform">
-                <a className="btn btn-a" href={APP_URL}>Start splitting</a>
+                <a className="btn btn-a" href={appUrl}>
+                  {signedIn ? "Go to dashboard" : "Start splitting"}
+                </a>
               </div>
             </div>
           </div>
@@ -127,7 +149,11 @@ export default function Home() {
             <nav className="fcol" aria-label="Product">
               <b>Product</b>
               <Link href="/#how">How it works</Link>
-              <Link href="/signup">Create account</Link>
+              {signedIn ? (
+                <Link href="/dashboard">Dashboard</Link>
+              ) : (
+                <Link href="/signup">Create account</Link>
+              )}
             </nav>
             <nav className="fcol" aria-label="Company">
               <b>Company</b>

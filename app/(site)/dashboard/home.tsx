@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { signOut } from "../auth/actions";
+import { ContactPickerButton } from "./contact-picker-button";
 import { addGroupMember, addSavedFriend, changeItem, createGroup, exitGroup, removeFriend, saveFriend } from "./actions";
 import type { DashboardData } from "./types";
 
@@ -19,6 +20,7 @@ export function DashboardHome({ data }: { data: DashboardData }) {
   const [savedState, savedAction, savedPending] = useActionState(addSavedFriend, undefined);
   const [addBy, setAddBy] = useState<"phone" | "email">("phone");
   const [friendBy, setFriendBy] = useState<"phone" | "email">("phone");
+  const [friendContact, setFriendContact] = useState("");
   const [armedGroup, setArmedGroup] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const selected = searchParams.get("group");
@@ -98,9 +100,18 @@ export function DashboardHome({ data }: { data: DashboardData }) {
               name="contact"
               type={friendBy === "phone" ? "tel" : "email"}
               autoComplete={friendBy === "phone" ? "tel" : "email"}
+              value={friendContact}
+              onChange={(event) => setFriendContact(event.currentTarget.value)}
               required
             />
           </label>
+          <ContactPickerButton
+            onSelect={(contact) => {
+              const byPhone = Boolean(contact.phone);
+              setFriendBy(byPhone ? "phone" : "email");
+              setFriendContact(byPhone ? contact.phone : contact.email);
+            }}
+          />
           {friendState?.error ? <p className="err">{friendState.error}</p> : null}
           <button type="submit" disabled={friendPending}>
             {friendPending ? "Saving…" : "Save friend"}

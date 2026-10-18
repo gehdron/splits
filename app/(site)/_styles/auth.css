@@ -95,6 +95,70 @@
   display: grid;
   gap: 10px;
 }
+.p2 .auth .profile-form {
+  gap: 18px;
+  margin-top: 28px;
+}
+.p2 .auth .profile-form input:not([type="file"]),
+.p2 .auth .profile-form textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  color: var(--ink);
+  font: inherit;
+  background: #fff;
+}
+.p2 .auth .profile-form textarea {
+  resize: vertical;
+}
+.p2 .auth .profile-form input:focus-visible,
+.p2 .auth .profile-form textarea:focus-visible,
+.p2 .auth .profile-form button:focus-visible {
+  outline: 3px solid var(--vio);
+  outline-offset: 3px;
+}
+.p2 .auth .profile-form small {
+  color: var(--mut);
+  font-size: 13px;
+  font-weight: 400;
+}
+.p2 .auth .profile-photo {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  align-items: center;
+  gap: 16px;
+}
+.p2 .auth .profile-photo > img,
+.p2 .auth .profile-photo > span {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+}
+.p2 .auth .profile-photo > img {
+  object-fit: cover;
+}
+.p2 .auth .profile-photo > span {
+  display: grid;
+  place-items: center;
+  background: #e7e2ff;
+  color: var(--ink);
+  font-family: var(--font-outfit), sans-serif;
+  font-size: 36px;
+}
+.p2 .auth .profile-photo label {
+  min-width: 0;
+}
+.p2 .auth .profile-photo input[type="file"] {
+  min-height: 44px;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+}
+.p2 .auth .profile-form button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
 
 @media (max-width: 600px) {
   .p2 .auth {

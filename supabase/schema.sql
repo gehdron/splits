@@ -15,7 +15,10 @@ create table public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   display_name text not null,
   phone text not null unique check (phone ~ '^\+[1-9][0-9]{9,14}$'),
-  created_at timestamptz not null default now()
+  bio text not null default '',
+  avatar_url text,
+  created_at timestamptz not null default now(),
+  constraint profiles_bio_length check (char_length(bio) <= 280)
 );
 
 create function public.handle_new_user()

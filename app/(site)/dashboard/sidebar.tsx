@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { signOut } from "../auth/actions";
+import { ContactPickerButton } from "./contact-picker-button";
 import { addGroupMember, addSavedFriend, createGroup, removeFriend } from "./actions";
 import type { DashboardData } from "./types";
 
@@ -52,6 +53,7 @@ export function DashSidebar({ data }: { data: DashboardData }) {
   const members = data.members.filter((member) => member.groupId === group?.id);
   const returnTo = `${pathname}${search.toString() ? `?${search.toString()}` : ""}`;
   const [friendBy, setFriendBy] = useState<"phone" | "email">("phone");
+  const [friendContact, setFriendContact] = useState("");
   const [createState, createAction, createPending] = useActionState(createGroup, undefined);
   const [friendState, friendAction, friendPending] = useActionState(addGroupMember, undefined);
   const [removeState, removeAction, removePending] = useActionState(removeFriend, undefined);
@@ -170,7 +172,17 @@ export function DashSidebar({ data }: { data: DashboardData }) {
             type={friendBy === "phone" ? "tel" : "email"}
             autoComplete={friendBy === "phone" ? "tel" : "email"}
             placeholder={friendBy === "phone" ? "(555) 123-4567" : "name@example.com"}
+            value={friendContact}
+            onChange={(event) => setFriendContact(event.currentTarget.value)}
             required
+          />
+          <ContactPickerButton
+            className="btn full"
+            onSelect={(contact) => {
+              const byPhone = Boolean(contact.phone);
+              setFriendBy(byPhone ? "phone" : "email");
+              setFriendContact(byPhone ? contact.phone : contact.email);
+            }}
           />
           {friendState?.error ? <p className="err">{friendState.error}</p> : null}
           <button className="btn full" type="submit" disabled={friendPending || !group}>

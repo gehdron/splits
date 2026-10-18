@@ -5,6 +5,7 @@ import { supabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
 import { payoutStatus } from "@/app/(site)/stripe/payout-status";
 import { AuthShell } from "../_components/auth-shell";
+import { ProfileForm } from "./profile-form";
 import { signOut } from "../auth/actions";
 import { PayoutsPanel } from "@/app/(site)/stripe/payouts-panel";
 
@@ -49,10 +50,19 @@ async function AccountPanel({ searchParams }: { searchParams: SearchParams }) {
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user) redirect("/login");
 
+  const profileResult = await supabase
+    .from("profiles")
+    .select("display_name, phone, bio, avatar_url")
+    .eq("id", data.user.id)
+    .maybeSingle();
   const metadataName = data.user.user_metadata?.name;
   const metadataPhone = data.user.user_metadata?.phone;
-  const name = typeof metadataName === "string" && metadataName.trim() ? metadataName : "Splits member";
-  const phone = typeof metadataPhone === "string" ? metadataPhone : "";
+  const profile = profileResult.data ?? {
+    display_name: typeof metadataName === "string" && metadataName.trim() ? metadataName : "Splits member",
+    phone: typeof metadataPhone === "string" ? metadataPhone : "",
+    bio: "",
+    avatar_url: null,
+  };
   const query = await searchParams;
   const noticeKey = ["payouts", "bank"].map((key) => (typeof query[key] === "string" ? `${key}:${query[key]}` : "")).find((key) => key in NOTICES);
   const payouts = await payoutStatus(data.user.id);
@@ -60,10 +70,15 @@ async function AccountPanel({ searchParams }: { searchParams: SearchParams }) {
   return (
     <>
       <div className="who">
-        <strong>{name}</strong>
+        <strong>{profile.display_name}</strong>
         <span>{data.user.email}</span>
-        {phone ? <span>{phone}</span> : null}
       </div>
+      {profileResult.error ? (
+        <p className="note" role="status">
+          Profile fields could not be loaded. Apply <code>supabase/profile-fields.sql</code> in Supabase before saving profile changes.
+        </p>
+      ) : null}
+      <ProfileForm initialProfile={profile} />
       <PayoutsPanel status={payouts} notice={noticeKey ? NOTICES[noticeKey] : null} />
       <form action={signOut}>
         <button className="btn btn-b" type="submit">

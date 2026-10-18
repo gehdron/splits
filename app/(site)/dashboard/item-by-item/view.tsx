@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
+import { ContactPickerButton } from "../contact-picker-button";
 import { DashSidebar } from "../sidebar";
 import type { DashboardData } from "../types";
 import "./item-by-item.css";
@@ -383,6 +384,16 @@ export function ItemByItemView({ data }: { data: DashboardData }) {
               }}
             >
               <label className="lbl" htmlFor="cs">Add people</label>
+              <ContactPickerButton
+                className="btn line"
+                onSelect={(contact) => {
+                  const detail = contact.phone || contact.email;
+                  addPerson({
+                    name: contact.name || detail,
+                    sub: detail,
+                  });
+                }}
+              />
               <div className="inrow">
                 <input id="cs" className="field" type="text" placeholder="Search your contacts, or type a phone number or email" value={query} onChange={(event) => setQuery(event.target.value)} />
                 <button className="btn" type="submit" disabled={!query.trim()}>Add</button>
