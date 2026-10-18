@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, isSummaryRequest, parseCommitments, renderSummary } from "./commitments.ts";
+import { chooseList, describe, isSummaryRequest, parseCommitments, renderSummary, textWithoutList } from "./commitments.ts";
 
 const sender = "+12065550100";
 
@@ -23,6 +23,15 @@ assert.deepEqual(both, [
   { who: "Maya", action: "buy", item: "cake" },
 ]);
 
+const casual = parseCommitments("oh this guy is buying this thing", sender);
+assert.deepEqual(casual, [{ who: "this guy", action: "buy", item: "this thing" }]);
+
+const maya = parseCommitments("oh Maya is buying the chips for $4.50", sender);
+assert.deepEqual(maya, [{ who: "Maya", action: "buy", item: "chips", amount: "$4.50" }]);
+
+const brayden = parseCommitments("Brayden is getting dish soap", sender);
+assert.deepEqual(brayden, [{ who: "Brayden", action: "get", item: "dish soap" }]);
+
 const uber = parseCommitments("I'm going to cover the Uber $23", sender);
 assert.deepEqual(uber, [{ who: sender, action: "cover", item: "Uber", amount: "$23" }]);
 
@@ -35,5 +44,21 @@ const summary = renderSummary(
 );
 assert.equal(summary, "So far:\n- You will buy pizza ($18).");
 assert.match(describe({ who: "Maya", action: "buy", item: "cake" }, sender), /^Maya will buy cake/);
+
+const lists = [
+  { id: "house", name: "House supplies" },
+  { id: "shared", name: "Shared list" },
+];
+const house = chooseList("on House supplies, Maya is buying the chips", lists);
+assert.equal(house.ok && house.list.id, "house");
+assert.equal(textWithoutList("on House supplies, Maya is buying the chips", "House supplies"), "Maya is buying the chips");
+assert.deepEqual(parseCommitments("Maya is buying the chips", sender), [{ who: "Maya", action: "buy", item: "chips" }]);
+
+const unclear = chooseList("Maya is buying the chips", lists);
+assert.equal(unclear.ok, false);
+if (!unclear.ok) assert.match(unclear.reply, /House supplies/);
+
+const only = chooseList("Maya is buying the chips", [lists[0]]);
+assert.equal(only.ok && only.list.id, "house");
 
 console.log("commitment parser ok");

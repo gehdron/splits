@@ -13,8 +13,10 @@
 .db .brand{display:flex;align-items:center;gap:10px;font-family:var(--font-outfit),"Outfit",system-ui,sans-serif;font-weight:600;font-size:26px;letter-spacing:-0.02em}
 .db .sh{margin:0 0 8px;font-family:var(--font-manrope),"Manrope",system-ui,sans-serif;font-size:13px;font-weight:700;color:var(--mut)}
 .db .groups,.db .friends{margin:0;padding:0;list-style:none}
-.db .gbtn{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:44px;padding:0 12px;border:0;border-radius:10px;background:none;font-weight:600;font-size:15px;text-align:left;cursor:pointer;transition:background-color .2s ease}
-.db .gbtn:hover{background:var(--soft)}
+.db .gbtn{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:44px;padding:0 12px;border:0;border-radius:10px;background:none;color:inherit;font-weight:600;font-size:15px;text-align:left;text-decoration:none;cursor:pointer;transition:background-color .2s ease}
+.db .gbtn:hover,.db .gbtn.on{background:var(--soft)}
+.db .gbtn.on span:first-child{color:var(--vtx)}
+.db .err{margin:8px 0 0;color:#9b1c1c;font-weight:700;font-size:14px}
 .db .cnt{min-width:24px;padding:1px 8px;border-radius:999px;background:#fff;box-shadow:inset 0 0 0 1px var(--line);font-size:12px;font-weight:700;color:var(--mut);text-align:center}
 .db .cnt:empty{display:none}
 .db .lbl{display:block;margin:14px 0 6px;font-size:13px;font-weight:700;color:var(--ink2)}

@@ -1,3 +1,5 @@
+import { cacheLife, cacheTag } from "next/cache";
+import { supabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
 import type { DashboardData, DashFriend, DashGroup, DashItem, DashList, DashMember, DashTotal } from "./types";
 
@@ -156,4 +158,18 @@ export async function loadDashboard(userId: string, email: string): Promise<Dash
   });
 
   return { ...empty, groups, members, items, lists: dashLists, totals, selectedGroupId: groups[0]?.id ?? null, loadError: null };
+}
+
+export async function loadPrivateDashboard() {
+  "use cache: private";
+  cacheLife("seconds");
+
+  if (!supabaseConfigured()) return null;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data.user) return null;
+
+  cacheTag(`dashboard-${data.user.id}`);
+  return loadDashboard(data.user.id, data.user.email ?? "");
 }

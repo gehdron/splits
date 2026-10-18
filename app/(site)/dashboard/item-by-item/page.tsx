@@ -1,4 +1,8 @@
-"use client";
+import type { Metadata } from "next";
+import { Suspense } from "react";
+import { redirect } from "next/navigation";
+import { loadPrivateDashboard } from "../load";
+import { ItemByItemView } from "./view";
 
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -563,4 +567,10 @@ export default function ItemByItemPage() {
       </main>
     </div>
   );
+}
+
+async function ItemGate() {
+  const data = await loadPrivateDashboard();
+  if (!data) redirect("/login");
+  return <ItemByItemView data={data} />;
 }
