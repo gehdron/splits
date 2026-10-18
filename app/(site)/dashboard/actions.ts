@@ -14,6 +14,14 @@ async function requireUser() {
   return { supabase, user: data.user };
 }
 
+function backTo(formData: FormData, fallback: string, groupId = "") {
+  const raw = String(formData.get("returnTo") ?? "");
+  const path = raw.startsWith("/") && !raw.startsWith("//") && !raw.includes("\\") ? raw : fallback;
+  const url = new URL(path, "http://local");
+  if (groupId) url.searchParams.set("group", groupId);
+  return `${url.pathname}${url.search}`;
+}
+
 export async function createGroup(_state: DashState, formData: FormData): Promise<DashState> {
   const name = String(formData.get("name") ?? "").trim();
   if (name.length < 2) return { error: "Name the group." };
@@ -26,7 +34,7 @@ export async function createGroup(_state: DashState, formData: FormData): Promis
   const { error } = await supabase.from("groups").insert({ id, name, created_by: user.id });
   if (error) return { error: error.message };
   updateTag(`dashboard-${user.id}`);
-  redirect(`/dashboard?group=${id}`);
+  redirect(backTo(formData, "/dashboard", id));
 }
 
 export async function addGroupMember(_state: DashState, formData: FormData): Promise<DashState> {
@@ -56,7 +64,7 @@ export async function addGroupMember(_state: DashState, formData: FormData): Pro
     by === "email" ? { member_email: email } : { member_phone: phone },
   );
   updateTag(`dashboard-${user.id}`);
-  redirect(`/dashboard?group=${groupId}`);
+  redirect(backTo(formData, "/dashboard", groupId));
 }
 
 function friendsSetupMessage(message: string) {
@@ -83,7 +91,7 @@ export async function saveFriend(_state: DashState, formData: FormData): Promise
   );
   if (error) return { error: friendsSetupMessage(error.message) ?? error.message };
   updateTag(`dashboard-${user.id}`);
-  redirect(groupId ? `/dashboard?group=${groupId}` : "/dashboard");
+  redirect(backTo(formData, groupId ? `/dashboard?group=${groupId}` : "/dashboard", groupId));
 }
 
 export async function removeFriend(_state: DashState, formData: FormData): Promise<DashState> {
@@ -96,7 +104,7 @@ export async function removeFriend(_state: DashState, formData: FormData): Promi
   if (error) return { error: friendsSetupMessage(error.message) ?? error.message };
   if (!count) return { error: "That person is not in your contacts." };
   updateTag(`dashboard-${user.id}`);
-  redirect(groupId ? `/dashboard?group=${groupId}` : "/dashboard");
+  redirect(backTo(formData, groupId ? `/dashboard?group=${groupId}` : "/dashboard", groupId));
 }
 
 export async function addSavedFriend(_state: DashState, formData: FormData): Promise<DashState> {
@@ -109,7 +117,7 @@ export async function addSavedFriend(_state: DashState, formData: FormData): Pro
   const { error } = await supabase.rpc("add_friend_to_group", { target_group: groupId, friend_user: friendId });
   if (error) return { error: friendsSetupMessage(error.message) ?? error.message };
   updateTag(`dashboard-${user.id}`);
-  redirect(`/dashboard?group=${groupId}`);
+  redirect(backTo(formData, "/dashboard", groupId));
 }
 
 export async function exitGroup(_state: DashState, formData: FormData): Promise<DashState> {

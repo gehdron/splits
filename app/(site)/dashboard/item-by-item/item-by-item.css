@@ -13,9 +13,11 @@
 .db .side{display:flex;flex-direction:column;gap:30px;padding:24px 20px;background:#fff;border-right:1px solid var(--line)}
 .db .brand{display:flex;align-items:center;gap:10px;font-family:var(--hd);font-weight:600;font-size:26px;letter-spacing:-.02em}
 .db .sh{margin:0 0 8px;font-family:inherit;font-size:13px;font-weight:700;color:var(--mut);letter-spacing:0}
-.db .gbtn{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:44px;padding:0 12px;border:0;border-radius:10px;background:none;font-weight:600;font-size:15px;cursor:pointer}
-.db .gbtn:hover{background:var(--soft)}
-.db .cnt{min-width:24px;height:20px;border-radius:999px;background:#fff;box-shadow:inset 0 0 0 1px var(--line)}
+.db .gbtn{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:44px;padding:0 12px;border:0;border-radius:10px;background:none;color:inherit;font-weight:600;font-size:15px;text-align:left;text-decoration:none;cursor:pointer}
+.db .gbtn:hover,.db .gbtn.on{background:var(--soft)}
+.db .gbtn.on span:first-child{color:var(--vtx)}
+.db .cnt{min-width:24px;padding:1px 8px;border-radius:999px;background:#fff;box-shadow:inset 0 0 0 1px var(--line);font-size:12px;font-weight:700;color:var(--mut);text-align:center}
+.db .err{margin:8px 0 0;color:#9b1c1c;font-weight:700;font-size:14px}
 .db .lbl{display:block;margin:14px 0 6px;font-size:13px;font-weight:700;color:var(--ink2)}
 .db .inrow{display:flex;gap:8px;align-items:center}
 .db .inrow .field{flex:1}
