@@ -72,6 +72,17 @@ export default function PrivacyPage() {
           </section>
 
           <section>
+            <h2>Payment and bank information</h2>
+            <p>
+              Splits uses Stripe to securely process payments and manage organizer payout accounts. We use
+              Plaid to securely connect and verify bank accounts when you choose to link one. Stripe and Plaid
+              receive and protect financial information through their own systems, and their handling of that
+              information is governed by their respective privacy policies. Splits does not receive or store
+              your raw bank login credentials or raw card numbers.
+            </p>
+          </section>
+
+          <section>
             <h2>Analytics, sharing, and retention</h2>
             <p>
               Data may be used for analytical purposes and may be sold or shared with analytics, advertising,
