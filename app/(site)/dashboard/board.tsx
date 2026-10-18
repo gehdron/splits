@@ -51,7 +51,6 @@ export function Board({ data }: { data: DashboardData }) {
   const search = useSearchParams();
   const newListDialog = useRef<HTMLDialogElement>(null);
   const splitDialog = useRef<HTMLDialogElement>(null);
-  const newListReceiptInput = useRef<HTMLInputElement>(null);
   const [splitTarget, setSplitTarget] = useState<Charge | null>(null);
   const [splitGroupId, setSplitGroupId] = useState<string | null>(null);
   const selected = search.get("group");
@@ -73,12 +72,8 @@ export function Board({ data }: { data: DashboardData }) {
     setCreatingList(false);
   }
 
-  function startNewListReceiptScan() {
-    setListError("");
-    newListReceiptInput.current?.click();
-  }
-
   async function scanReceiptToNewList(file: File) {
+    setListError("");
     const isPdf = file.type === "application/pdf";
     const isImage = ["image/jpeg", "image/png", "image/webp"].includes(file.type);
     if (!isPdf && !isImage) {
@@ -455,15 +450,6 @@ export function Board({ data }: { data: DashboardData }) {
                 </form>
               </dialog>
               <dialog ref={newListDialog} className="pop" onClose={resetNewList}>
-                <input
-                  ref={newListReceiptInput}
-                  className="sr"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,application/pdf"
-                  aria-label="Choose a receipt image or PDF"
-                  disabled={creatingList}
-                  onChange={handleNewListReceipt}
-                />
                 {namingList ? (
                   <form onSubmit={createBlankList}>
                     <h2>Name this list</h2>
@@ -499,14 +485,21 @@ export function Board({ data }: { data: DashboardData }) {
                       <button className="btn" type="button" onClick={() => setNamingList(true)}>
                         Blank list
                       </button>
-                      <button
-                        className="btn line"
-                        type="button"
-                        onClick={startNewListReceiptScan}
-                        disabled={creatingList}
-                      >
-                        Scan a receipt
-                      </button>
+                      {creatingList ? (
+                        <span className="btn line" aria-disabled="true">
+                          Reading receipt…
+                        </span>
+                      ) : (
+                        <label className="btn line receipt-picker">
+                          <span>Scan a receipt</span>
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp,application/pdf"
+                            aria-label="Choose a receipt image or PDF"
+                            onChange={handleNewListReceipt}
+                          />
+                        </label>
+                      )}
                     </div>
                     {creatingList ? (
                       <p className="sub" role="status">Reading receipt and creating list…</p>

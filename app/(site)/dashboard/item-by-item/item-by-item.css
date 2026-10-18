@@ -36,6 +36,10 @@
 .db .btn.txt:hover{color:var(--ink)}
 .db .btn.line::before,.db .btn.txt::before,.db .btn[disabled]::before{display:none}
 .db .btn[disabled]{background:#E4F8EF;color:var(--gtx);box-shadow:none;cursor:default;transform:none}
+.db .receipt-picker{position:relative;overflow:hidden;isolation:isolate}
+.db .receipt-picker input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.db .receipt-picker.is-loading{opacity:.65;cursor:wait}
+.db .receipt-picker input:disabled{cursor:wait}
 .db .seg{display:flex;gap:4px;padding:4px;border-radius:12px;background:#E7E2FF}
 .db .sg{flex:1;min-height:44px;padding:0 14px;border:0;border-radius:9px;background:none;color:var(--ink2);font-weight:700;font-size:14px;cursor:pointer}
 .db .sg.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(11,16,32,.12)}
