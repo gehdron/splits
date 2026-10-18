@@ -3,7 +3,7 @@
 
 import { Suspense, useActionState, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { importReceipt } from "../Dashboard/actions";
+import { importReceipt } from "../dashboard/actions";
 import Tesseract from "tesseract.js";
 import type {
   AiParsedReceipt,
