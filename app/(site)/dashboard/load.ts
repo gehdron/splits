@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import type { DashboardData, DashGroup, DashItem, DashMember, DashTotal } from "./types";
+import type { DashboardData, DashFriend, DashGroup, DashItem, DashMember, DashTotal } from "./types";
 
 type ProfileEmbed = { display_name: string; phone: string } | { display_name: string; phone: string }[] | null;
 
@@ -24,9 +24,25 @@ export async function loadDashboard(userId: string, email: string): Promise<Dash
     members: [],
     items: [],
     totals: [],
+    friends: [],
+    friendsReady: true,
     selectedGroupId: null,
     loadError: null,
   };
+
+  const friendResult = await supabase.rpc("list_friends");
+  const friendMessage = friendResult.error?.message ?? "";
+  const friendsReady = !friendMessage.includes("Could not find the function");
+  if (friendResult.error && friendsReady) return { ...empty, loadError: friendResult.error.message };
+  const friends: DashFriend[] = ((friendResult.data ?? []) as { friend_id: string; display_name: string; phone: string }[]).map(
+    (friend) => ({
+      id: friend.friend_id,
+      name: friend.display_name,
+      phone: friend.phone,
+    }),
+  );
+  empty.friends = friends;
+  empty.friendsReady = friendsReady;
 
   const profileResult = await supabase.from("profiles").select("display_name, phone").eq("id", userId).maybeSingle();
   if (profileResult.error) return { ...empty, loadError: profileResult.error.message };
@@ -44,7 +60,7 @@ export async function loadDashboard(userId: string, email: string): Promise<Dash
   const memberRows = (memberResult.data ?? []) as MemberRow[];
   const mine = memberRows.filter((row) => row.user_id === userId);
   const groupIds = mine.map((row) => row.group_id);
-  if (groupIds.length === 0) return empty;
+  if (groupIds.length === 0) return { ...empty, friends, friendsReady };
 
   const groupResult = await supabase.from("groups").select("id, name").in("id", groupIds);
   if (groupResult.error) return { ...empty, loadError: groupResult.error.message };
@@ -86,12 +102,13 @@ export async function loadDashboard(userId: string, email: string): Promise<Dash
       : { data: [], error: null };
     if (claimResult.error) return { ...empty, groups, members, loadError: claimResult.error.message };
 
-    const memberName = new Map(members.map((member) => [member.id, member.name]));
-    const claimsByItem = new Map<string, string[]>();
+    const memberById = new Map(members.map((member) => [member.id, member]));
+    const claimsByItem = new Map<string, { userId: string; name: string }[]>();
     for (const claim of claimResult.data ?? []) {
-      const names = claimsByItem.get(claim.item_id) ?? [];
-      names.push(memberName.get(claim.member_id) ?? "Someone");
-      claimsByItem.set(claim.item_id, names);
+      const people = claimsByItem.get(claim.item_id) ?? [];
+      const member = memberById.get(claim.member_id);
+      people.push({ userId: member?.userId ?? "", name: member?.name ?? "Someone" });
+      claimsByItem.set(claim.item_id, people);
     }
 
     items = itemRows.map((item) => {

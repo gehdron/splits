@@ -59,6 +59,26 @@
 .dash .groups a[aria-current="page"] {
   color: var(--vio);
 }
+.dash .contacts {
+  list-style: none;
+  margin: 8px 0 16px;
+  padding: 0;
+}
+.dash .contacts li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+}
+.dash .contacts form {
+  display: inline;
+  margin: 0;
+}
+.dash .contacts .quiet {
+  display: block;
+  font-weight: 500;
+}
 .dash form {
   display: grid;
   gap: 10px;
@@ -73,12 +93,42 @@
   grid-column: 1 / -1;
   margin: 0;
 }
-.dash button.quiet {
+.dash button.quiet,
+.dash button.tiny {
   width: fit-content;
   padding: 0 16px;
   background: transparent;
   color: var(--ink);
   border: 1.5px solid var(--line);
+}
+.dash button.tiny {
+  min-height: 44px;
+}
+.dash form.split {
+  grid-template-columns: minmax(0, 1fr) 120px;
+}
+.dash form.split button {
+  grid-column: 1 / -1;
+}
+.dash td form {
+  display: inline;
+  margin: 0;
+}
+.dash .acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dash .sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 .dash label {
   display: grid;

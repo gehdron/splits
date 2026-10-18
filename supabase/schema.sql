@@ -6,6 +6,7 @@
 --
 -- A signed-in user sees items only after they are a member of that item's group.
 -- Creating a group adds the creator. Everyone else is added by the group owner, by phone or email.
+-- Friends are your saved contacts. Adding someone to a group also saves them as a friend.
 
 create extension if not exists pgcrypto;
 
@@ -63,6 +64,15 @@ create table public.group_members (
 
 create unique index group_members_one_owner on public.group_members (group_id) where role = 'owner';
 create index group_members_user_id on public.group_members (user_id);
+
+-- A personal contact list. Friendship is one way: saving someone does not save you on their list.
+create table public.friends (
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  friend_id uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_id, friend_id),
+  check (user_id <> friend_id)
+);
 
 -- One list is one bill inside a group.
 create table public.lists (
@@ -279,7 +289,90 @@ begin
 end;
 $$;
 
+create function public.save_friend(member_phone text default null, member_email text default null)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  found_user uuid;
+  clean_email text := nullif(lower(trim(member_email)), '');
+begin
+  if auth.uid() is null then
+    raise exception 'Sign in to save a friend';
+  end if;
+
+  if member_phone is not null and btrim(member_phone) <> '' and member_phone ~ '^\+[1-9][0-9]{9,14}$' then
+    select id into found_user from public.profiles where phone = member_phone;
+    if found_user is null then
+      raise exception 'No account uses that phone number';
+    end if;
+  elsif clean_email is not null and clean_email ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then
+    select id into found_user from auth.users where lower(email) = clean_email;
+    if found_user is null then
+      raise exception 'No account uses that email';
+    end if;
+  else
+    raise exception 'Enter the phone number or email they used to sign up';
+  end if;
+
+  if found_user = auth.uid() then
+    raise exception 'You are already on your own account';
+  end if;
+
+  insert into public.friends (user_id, friend_id)
+  values (auth.uid(), found_user)
+  on conflict (user_id, friend_id) do nothing;
+
+  return found_user;
+end;
+$$;
+
+create function public.list_friends()
+returns table (friend_id uuid, display_name text, phone text)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select f.friend_id, p.display_name, p.phone
+  from public.friends f
+  join public.profiles p on p.id = f.friend_id
+  where f.user_id = auth.uid()
+  order by p.display_name;
+$$;
+
+create function public.add_friend_to_group(target_group uuid, friend_user uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  new_member uuid;
+begin
+  if not public.is_group_owner(target_group) then
+    raise exception 'Only a group owner can add members';
+  end if;
+
+  if not exists (
+    select 1 from public.friends where user_id = auth.uid() and friend_id = friend_user
+  ) then
+    raise exception 'That person is not in your contacts';
+  end if;
+
+  insert into public.group_members (group_id, user_id, role)
+  values (target_group, friend_user, 'member')
+  on conflict (group_id, user_id) do nothing
+  returning id into new_member;
+
+  return new_member;
+end;
+$$;
+
 alter table public.profiles enable row level security;
+alter table public.friends enable row level security;
 alter table public.groups enable row level security;
 alter table public.group_members enable row level security;
 alter table public.lists enable row level security;
@@ -304,6 +397,14 @@ create policy "update your profile"
   on public.profiles for update to authenticated
   using (id = auth.uid())
   with check (id = auth.uid() and phone ~ '^\+[1-9][0-9]{9,14}$');
+
+create policy "read your friends"
+  on public.friends for select to authenticated
+  using (user_id = auth.uid());
+
+create policy "remove a friend"
+  on public.friends for delete to authenticated
+  using (user_id = auth.uid());
 
 create policy "read groups you belong to"
   on public.groups for select to authenticated
@@ -481,12 +582,19 @@ revoke all on function public.claim_matches_group() from public, anon, authentic
 revoke all on function public.is_group_member(uuid) from public, anon;
 revoke all on function public.is_group_owner(uuid) from public, anon;
 revoke all on function public.add_group_member(uuid, text, text) from public, anon;
+revoke all on function public.save_friend(text, text) from public, anon;
+revoke all on function public.list_friends() from public, anon;
+revoke all on function public.add_friend_to_group(uuid, uuid) from public, anon;
 
 grant execute on function public.is_group_member(uuid) to authenticated;
 grant execute on function public.is_group_owner(uuid) to authenticated;
 grant execute on function public.add_group_member(uuid, text, text) to authenticated;
+grant execute on function public.save_friend(text, text) to authenticated;
+grant execute on function public.list_friends() to authenticated;
+grant execute on function public.add_friend_to_group(uuid, uuid) to authenticated;
 
 grant select, update on public.profiles to authenticated;
+grant select, delete on public.friends to authenticated;
 grant select, insert, update, delete on public.groups to authenticated;
 grant select, delete on public.group_members to authenticated;
 grant select, insert, update, delete on public.lists to authenticated;

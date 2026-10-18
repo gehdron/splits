@@ -20,7 +20,13 @@ export type DashItem = {
   name: string;
   quantity: number;
   priceCents: number;
-  claimedBy: string[];
+  claimedBy: { userId: string; name: string }[];
+};
+
+export type DashFriend = {
+  id: string;
+  name: string;
+  phone: string;
 };
 
 export type DashTotal = {
@@ -36,6 +42,8 @@ export type DashboardData = {
   members: DashMember[];
   items: DashItem[];
   totals: DashTotal[];
+  friends: DashFriend[];
+  friendsReady: boolean;
   selectedGroupId: string | null;
   loadError: string | null;
 };
