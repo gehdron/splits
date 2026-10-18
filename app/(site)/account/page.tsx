@@ -98,7 +98,7 @@ async function AccountPanel({ searchParams }: { searchParams: SearchParams }) {
       </div>
       {detailsNeedMigration ? (
         <p className="note" role="status">
-          Your name and phone can still be edited. To enable the description and profile photo, apply <code>supabase/profile-fields.sql</code> in the Supabase SQL Editor.
+          Name and phone are read-only. To enable editing your description and profile photo, apply <code>supabase/profile-fields.sql</code> in the Supabase SQL Editor.
         </p>
       ) : null}
       {profileLoadError ? (

@@ -130,11 +130,7 @@ export function ProfileForm({ initialProfile }: { initialProfile: Profile }) {
         Name
         <input
           autoComplete="name"
-          maxLength={80}
-          minLength={2}
-          name="display_name"
-          required
-          onChange={(event) => setProfile((current) => ({ ...current, display_name: event.currentTarget.value }))}
+          disabled
           value={profile.display_name}
         />
       </label>
@@ -142,13 +138,12 @@ export function ProfileForm({ initialProfile }: { initialProfile: Profile }) {
         Phone
         <input
           autoComplete="tel"
-          name="phone"
-          required
-          onChange={(event) => setProfile((current) => ({ ...current, phone: event.currentTarget.value }))}
+          disabled
           value={profile.phone}
           type="tel"
         />
       </label>
+      <p className="note">Name and phone number changes are currently unavailable.</p>
       <label>
         Description
         <textarea
