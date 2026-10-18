@@ -75,7 +75,7 @@ export function Board({ data }: { data: DashboardData }) {
   const [sharedLists, setSharedLists] = useState<{ id: string; name: string; itemCount: number }[] | null>(null);
   const [charges, setCharges] = useState<Charge[] | null>(null);
   const [chargesNote, setChargesNote] = useState("");
-  const [bankLinked, setBankLinked] = useState(true);
+  const [bankLinked, setBankLinked] = useState<boolean | null>(null);
   const listNameInput = useRef<HTMLInputElement>(null);
   const creatingRef = useRef(false);
   const [exitState, exitAction, exitPending] = useActionState(exitGroup, undefined);
@@ -303,7 +303,15 @@ export function Board({ data }: { data: DashboardData }) {
                 <div className="shead">
                   <div>
                     <h2 id="rc-h">Recent charges</h2>
-                    <p className="sub">From your linked bank. Choose item by item or an even split.</p>
+                    <p className="sub">
+                      {bankLinked === false ? (
+                        <>
+                          Link your bank to see recent charges. <Link href="/account">Go to account</Link>
+                        </>
+                      ) : (
+                        "From your linked bank. Choose item by item or an even split."
+                      )}
+                    </p>
                   </div>
                   <div className="seg inline" role="group" aria-label="Filter charges">
                     {(
@@ -323,14 +331,13 @@ export function Board({ data }: { data: DashboardData }) {
                   <p className="empty">Loading charges…</p>
                 ) : visibleCharges.length === 0 ? (
                   <p className="empty">
-                    {chargesNote
-                      ? chargesNote
-                      : bankLinked
-                        ? chargeFilter === "all"
+                    {bankLinked === false
+                      ? "Recent charges show up here after your bank is linked."
+                      : chargesNote
+                        ? chargesNote
+                        : chargeFilter === "all"
                           ? "No recent charges on that bank."
-                          : "No charges in this filter."
-                        : "Link your bank to see recent charges."}{" "}
-                    {!bankLinked && !chargesNote ? <Link href="/account">Link your bank</Link> : null}
+                          : "No charges in this filter."}
                   </p>
                 ) : (
                 <ul className="rows">

@@ -1,5 +1,5 @@
-// File-backed list shared by the Next.js app and the iMessage agent.
-// Swap this file for a real database later; the API routes only use these functions.
+// File-backed lists for a local Next.js run. The iMessage agent writes to Supabase instead.
+// On Vercel, lib/live-lists.ts uses the same bill_lists tables.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -181,9 +181,7 @@ export function listSummariesFor(viewer: ListViewer): { id: string; name: string
     .map((list) => ({ id: list.id, name: list.name, createdAt: list.createdAt, itemCount: list.itemCount }));
 }
 
-// The iMessage agent's list. It never returns an organizer's own list, so texts from unrelated
-// chats can't land on (and be billed from) someone's private list.
-// The agent and /list share this list so a text shows up without a new id.
+// A local list with no organizer. The Photon agent does not use this; it writes to Supabase.
 export function defaultList(): List {
   return listAll().find((list) => !list.ownerId) ?? createList("Shared list");
 }

@@ -5,7 +5,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { ApiError, Photon } from "@photon-ai/api";
 import { chooseList, isSummaryRequest, parseCommitments, renderConfirmation, renderSummary, textWithoutList, type Commitment, type ParsedCommitment } from "./commitments.ts";
 import { loadLedger, saveLedger } from "./ledger.ts";
-import { defaultList, listAll, recordPurchase } from "../lib/store.ts";
+import { assertLiveLists, listsForSender, recordPurchase } from "./lists.ts";
+import { naturalReply } from "./voice.ts";
 
 function loadEnvFile(path: string): void {
   let text: string;
@@ -94,29 +95,36 @@ function priceCents(amount?: string): number {
   return Number.isFinite(dollars) ? Math.round(dollars * 100) : 0;
 }
 
-function savePurchases(listId: string, parsed: ParsedCommitment[]): void {
+async function savePurchases(listId: string, parsed: ParsedCommitment[]): Promise<void> {
   for (const item of parsed) {
-    recordPurchase(listId, { name: item.item, priceCents: priceCents(item.amount), person: item.who });
+    await recordPurchase(listId, { name: item.item, priceCents: priceCents(item.amount), person: item.who });
   }
 }
 
-function replyFor(message: Inbound, commitments: Commitment[]): string | undefined {
+function facts(parsed: ParsedCommitment[], senderHandle: string, listName?: string): string[] {
+  const tokens = parsed.flatMap((item) => [item.item, item.amount ?? "", item.who === senderHandle ? "you" : item.who]);
+  if (listName) tokens.push(listName);
+  return tokens;
+}
+
+async function replyFor(message: Inbound, commitments: Commitment[], sender: string): Promise<string | undefined> {
   if (isSummaryRequest(message.text)) {
-    return renderSummary(commitments.filter((item) => item.spaceId === message.spaceId), message.senderHandle);
+    const mine = commitments.filter((item) => item.spaceId === message.spaceId);
+    const summary = renderSummary(mine, message.senderHandle);
+    return naturalReply(summary, facts(mine.slice(-12), message.senderHandle));
   }
-  const lists = listAll();
-  const known = lists.length > 0 ? lists : [defaultList()];
-  const choice = chooseList(message.text, known);
+  const lists = await listsForSender(sender);
+  const choice = chooseList(message.text, lists);
   const body = choice.ok ? textWithoutList(message.text, choice.list.name) : message.text;
   const parsed = parseCommitments(body, message.senderHandle);
-  if (!choice.ok) return parsed.length === 0 ? undefined : choice.reply;
+  if (!choice.ok) return parsed.length === 0 ? undefined : naturalReply(choice.reply, lists.map((list) => list.name));
   if (parsed.length === 0) return undefined;
+  await savePurchases(choice.list.id, parsed);
   const at = new Date().toISOString();
   for (const item of parsed) {
     commitments.push({ ...item, messageId: message.id, spaceId: message.spaceId, at });
   }
-  savePurchases(choice.list.id, parsed);
-  return renderConfirmation(parsed, message.senderHandle, choice.list.name);
+  return naturalReply(renderConfirmation(parsed, message.senderHandle, choice.list.name), facts(parsed, message.senderHandle, choice.list.name));
 }
 
 export async function run(c: Config, pollMs = 2_000) {
@@ -125,7 +133,11 @@ export async function run(c: Config, pollMs = 2_000) {
   const startedAt = Date.now();
   const createdSince = new Date(startedAt - 5_000).toISOString();
   const seen = new Set(ledger.commitments.map((item) => item.messageId));
-  console.log("Ready. Text what someone will buy, or text summary. Direct chat only.");
+  await assertLiveLists(c.sender);
+  const sample = "Noted. Maya will buy chips ($4.50). On Dinner check.";
+  const voiced = await naturalReply(sample, ["Maya", "chips", "$4.50", "Dinner check"]);
+  console.log(voiced === sample ? "Replies stay in the plain wording." : "Gemini replies are on.");
+  console.log("Ready. Purchases are saved on the live site. Text what someone will buy, or text summary. Direct chat only.");
   while (true) {
     let pageToken: string | undefined;
     do {
@@ -136,8 +148,14 @@ export async function run(c: Config, pollMs = 2_000) {
       for (const m of page.items) {
         const message = inbound(m, c, startedAt);
         if (!message || seen.has(message.id)) continue;
+        let reply: string | undefined;
+        try {
+          reply = await replyFor(message, ledger.commitments, c.sender);
+        } catch (error) {
+          console.error(error instanceof Error ? error.message : "That purchase could not be saved.");
+          continue;
+        }
         seen.add(message.id);
-        const reply = replyFor(message, ledger.commitments);
         if (!reply) continue;
         saveLedger(ledgerPath, ledger);
         await photon.projects.sendMessage({

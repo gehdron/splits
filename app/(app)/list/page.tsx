@@ -344,7 +344,9 @@ function Sidebar({
       </section>
 
       <div className="me">
-        <span className="av lgav p0">{initials(me)}</span>
+        <Link className="meav" href="/account" aria-label="Account">
+          <span className="av lgav p0">{initials(me)}</span>
+        </Link>
         <div>
           <b>{me}</b>
         </div>

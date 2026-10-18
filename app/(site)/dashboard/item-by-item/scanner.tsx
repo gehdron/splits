@@ -344,7 +344,9 @@ function Sidebar({ me, groups, group, people, loadError }: Omit<ScannerProps, "c
       <div className="me">
         {me ? (
           <>
-            <span className="av lgav p0" aria-hidden="true">{initials(me.name)}</span>
+            <Link className="meav" href="/account" aria-label="Account">
+              <span className="av lgav p0" aria-hidden="true">{initials(me.name)}</span>
+            </Link>
             <div><b>{me.name}</b><small>{me.email}</small></div>
             <form action={signOut}><button className="btn txt" type="submit">Sign out</button></form>
           </>

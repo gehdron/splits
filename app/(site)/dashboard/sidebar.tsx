@@ -181,7 +181,9 @@ export function DashSidebar({ data }: { data: DashboardData }) {
       </section>
 
       <div className="me">
-        <span className="av lgav p0">{initials(data.me.name)}</span>
+        <Link className="meav" href="/account" aria-label="Account">
+          <span className="av lgav p0">{initials(data.me.name)}</span>
+        </Link>
         <div>
           <b>{data.me.name}</b>
           <small>{data.me.email}</small>
