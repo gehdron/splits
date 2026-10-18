@@ -3,10 +3,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { ApiError, Photon } from "@photon-ai/api";
-import { chooseList, isSummaryRequest, parseCommitments, renderConfirmation, renderSummary, textWithoutList, type Commitment, type ParsedCommitment } from "./commitments.ts";
+import { chooseList, isSummaryRequest, parseCommitments, renderConfirmation, renderSummary, textWithoutCheck, textWithoutList, type Commitment, type ParsedCommitment } from "./commitments.ts";
 import { loadLedger, saveLedger } from "./ledger.ts";
 import { assertLiveLists, listsForSender, recordPurchase } from "./lists.ts";
-import { naturalReply } from "./voice.ts";
 
 function loadEnvFile(path: string): void {
   let text: string;
@@ -101,30 +100,24 @@ async function savePurchases(listId: string, parsed: ParsedCommitment[]): Promis
   }
 }
 
-function facts(parsed: ParsedCommitment[], senderHandle: string, listName?: string): string[] {
-  const tokens = parsed.flatMap((item) => [item.item, item.amount ?? "", item.who === senderHandle ? "you" : item.who]);
-  if (listName) tokens.push(listName);
-  return tokens;
-}
-
 async function replyFor(message: Inbound, commitments: Commitment[], sender: string): Promise<string | undefined> {
   if (isSummaryRequest(message.text)) {
     const mine = commitments.filter((item) => item.spaceId === message.spaceId);
-    const summary = renderSummary(mine, message.senderHandle);
-    return naturalReply(summary, facts(mine.slice(-12), message.senderHandle));
+    return renderSummary(mine, message.senderHandle);
   }
   const lists = await listsForSender(sender);
   const choice = chooseList(message.text, lists);
-  const body = choice.ok ? textWithoutList(message.text, choice.list.name) : message.text;
+  const stripped = textWithoutCheck(message.text);
+  const body = choice.ok ? textWithoutList(stripped, choice.list.name) : stripped;
   const parsed = parseCommitments(body, message.senderHandle);
-  if (!choice.ok) return parsed.length === 0 ? undefined : naturalReply(choice.reply, lists.map((list) => list.name));
+  if (!choice.ok) return parsed.length === 0 ? undefined : choice.reply;
   if (parsed.length === 0) return undefined;
   await savePurchases(choice.list.id, parsed);
   const at = new Date().toISOString();
   for (const item of parsed) {
     commitments.push({ ...item, messageId: message.id, spaceId: message.spaceId, at });
   }
-  return naturalReply(renderConfirmation(parsed, message.senderHandle, choice.list.name), facts(parsed, message.senderHandle, choice.list.name));
+  return renderConfirmation(parsed, message.senderHandle, choice.list.name);
 }
 
 export async function run(c: Config, pollMs = 2_000) {
@@ -134,9 +127,6 @@ export async function run(c: Config, pollMs = 2_000) {
   const createdSince = new Date(startedAt - 5_000).toISOString();
   const seen = new Set(ledger.commitments.map((item) => item.messageId));
   await assertLiveLists(c.sender);
-  const sample = "Noted. Maya will buy chips ($4.50). On Dinner check.";
-  const voiced = await naturalReply(sample, ["Maya", "chips", "$4.50", "Dinner check"]);
-  console.log(voiced === sample ? "Replies stay in the plain wording." : "Gemini replies are on.");
   console.log("Ready. Purchases are saved on the live site. Text what someone will buy, or text summary. Direct chat only.");
   while (true) {
     let pageToken: string | undefined;
