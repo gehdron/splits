@@ -1,7 +1,9 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useActionState, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { importReceipt } from "../dashboard/actions";
 import Tesseract from "tesseract.js";
 import type {
   AiParsedReceipt,
@@ -140,6 +142,30 @@ function getEditDistance(left: string, right: string) {
   }
 
   return previous[right.length];
+}
+
+function SaveReceiptButton({ rows }: { rows: AiReceiptItem[] }) {
+  const params = useSearchParams();
+  const listId = params.get("list");
+  const groupId = params.get("group");
+  const [state, action, pending] = useActionState(importReceipt, undefined);
+  if (!listId || !groupId || rows.length === 0) return null;
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-3">
+      <input type="hidden" name="listId" value={listId} />
+      <input type="hidden" name="groupId" value={groupId} />
+      <input type="hidden" name="items" value={JSON.stringify(rows)} />
+      <button
+        type="submit"
+        disabled={pending}
+        className="rounded-lg bg-[#0B1020] px-4 py-2 font-semibold text-white disabled:cursor-wait disabled:opacity-60"
+      >
+        {pending ? "Adding to the list…" : "Add these items to the list"}
+      </button>
+      {state?.error ? <p className="text-sm text-red-700">{state.error}</p> : null}
+    </form>
+  );
 }
 
 export default function ReceiptScanner() {
@@ -1510,6 +1536,9 @@ export default function ReceiptScanner() {
                   Total updates from subtotal, tax, and tip when you edit them.
                 </p>
               </div>
+              <Suspense fallback={null}>
+                <SaveReceiptButton rows={receiptRows} />
+              </Suspense>
             </>
           )}
           {aiParsed && receiptRows.length > 0 && (

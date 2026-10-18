@@ -168,19 +168,14 @@ export async function changeItem(_state: DashState, formData: FormData): Promise
     if (!Number.isInteger(priceCents) || priceCents < 0) return { error: "Enter a price like 12.50." };
     if (membership.role !== "owner") return { error: "Only the owner can add items." };
 
-    const { data: lists, error: listError } = await supabase.from("lists").select("id").eq("group_id", groupId).limit(1);
-    if (listError) return { error: listError.message };
-    let listId = lists?.[0]?.id;
+    const requested = String(formData.get("listId") ?? "");
+    let listId = requested;
     if (!listId) {
-      listId = crypto.randomUUID();
-      const { error } = await supabase.from("lists").insert({
-        id: listId,
-        group_id: groupId,
-        created_by: user.id,
-        name: "Shared list",
-      });
-      if (error) return { error: error.message };
+      const { data: lists, error: listError } = await supabase.from("lists").select("id").eq("group_id", groupId).limit(1);
+      if (listError) return { error: listError.message };
+      listId = lists?.[0]?.id ?? "";
     }
+    if (!listId) return { error: "Create a list first." };
 
     const { data: existing, error: existingError } = await supabase.from("items").select("name").eq("list_id", listId);
     if (existingError) return { error: existingError.message };
@@ -195,7 +190,7 @@ export async function changeItem(_state: DashState, formData: FormData): Promise
     });
     if (error) return { error: error.message };
     updateTag(`dashboard-${user.id}`);
-    redirect(`/dashboard?group=${groupId}${duplicate ? "&note=already" : ""}`);
+    redirect(listHref(groupId, listId, formData.get("setup") === "1", duplicate));
   }
 
   if (!itemId) return { error: "Choose an item first." };
@@ -219,6 +214,69 @@ export async function changeItem(_state: DashState, formData: FormData): Promise
     return { error: "Choose an item action." };
   }
 
+  const listId = String(formData.get("listId") ?? "");
   updateTag(`dashboard-${user.id}`);
-  redirect(`/dashboard?group=${groupId}`);
+  redirect(listHref(groupId, listId, formData.get("setup") === "1", false));
+}
+
+function listHref(groupId: string, listId: string, setup: boolean, duplicate: boolean) {
+  const query = new URLSearchParams({ group: groupId });
+  if (listId) query.set("list", listId);
+  if (setup) query.set("setup", "1");
+  if (duplicate) query.set("note", "already");
+  return `/dashboard?${query}`;
+}
+
+export async function createList(_state: DashState, formData: FormData): Promise<DashState> {
+  const groupId = String(formData.get("groupId") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  if (!groupId) return { error: "Choose a group first." };
+  if (name.length < 2) return { error: "Name the list." };
+
+  const { supabase, user } = await requireUser();
+  const id = crypto.randomUUID();
+  const { error } = await supabase.from("lists").insert({ id, group_id: groupId, created_by: user.id, name });
+  if (error) return { error: error.message };
+  updateTag(`dashboard-${user.id}`);
+  redirect(listHref(groupId, id, true, false));
+}
+
+export async function importReceipt(_state: DashState, formData: FormData): Promise<DashState> {
+  const groupId = String(formData.get("groupId") ?? "");
+  const listId = String(formData.get("listId") ?? "");
+  if (!groupId || !listId) return { error: "Choose a list first." };
+
+  let rows: { description?: string; quantity?: string; amount?: string }[] = [];
+  try {
+    const parsed = JSON.parse(String(formData.get("items") ?? "[]"));
+    if (!Array.isArray(parsed)) throw new Error("bad");
+    rows = parsed;
+  } catch {
+    return { error: "The receipt items could not be read." };
+  }
+
+  const { supabase, user } = await requireUser();
+  const inserts = rows
+    .map((row) => {
+      const name = String(row.description ?? "").trim();
+      const line = Math.round(Number(String(row.amount ?? "").replace(/[^0-9.]/g, "")) * 100);
+      const quantity = Math.round(Number(row.quantity));
+      const qty = Number.isInteger(quantity) && quantity >= 1 ? quantity : 1;
+      if (!name || !Number.isInteger(line) || line < 0) return null;
+      const exact = line % qty === 0;
+      return {
+        id: crypto.randomUUID(),
+        list_id: listId,
+        name: exact || qty === 1 ? name : `${name} x${qty}`,
+        quantity: exact ? qty : 1,
+        price_cents: exact ? line / qty : line,
+      };
+    })
+    .filter((row) => row !== null);
+  if (inserts.length === 0) return { error: "The receipt has no items to add." };
+
+  const { error } = await supabase.from("items").insert(inserts);
+  if (error) return { error: error.message };
+  updateTag(`dashboard-${user.id}`);
+  redirect(listHref(groupId, listId, false, false));
 }
