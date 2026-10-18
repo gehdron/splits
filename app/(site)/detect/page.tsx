@@ -3,7 +3,7 @@
 
 import { Suspense, useActionState, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { importReceipt } from "../Dashboard/actions";
+import { importReceipt } from "../dashboard/actions";
 import Tesseract from "tesseract.js";
 import type {
   AiParsedReceipt,
@@ -1564,22 +1564,38 @@ export default function ReceiptScanner() {
                   </tbody>
                 </table>
               </div>
-              <div className="space-y-3">
-                <button
-                  type="button"
-                  aria-expanded={itemAssignmentsOpen}
-                  aria-controls="interactive-item-assignments"
-                  onClick={() => setItemAssignmentsOpen((open) => !open)}
-                  className="min-h-12 w-full rounded-lg border px-4 py-3 text-left font-semibold sm:w-auto"
-                >
-                  {itemAssignmentsOpen
-                    ? "Hide item assignments"
-                    : `Assign items manually · ${
-                        splitAssignments.filter(
-                          (assignment) => assignment.people.length > 0
-                        ).length
-                      }/${receiptRows.length} assigned`}
-                </button>
+              <div className="flex flex-col gap-3">
+                <div className="order-2">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    aria-expanded={itemAssignmentsOpen}
+                    aria-controls="interactive-item-assignments"
+                    onClick={() => setItemAssignmentsOpen((open) => !open)}
+                    className="min-h-12 min-w-0 flex-1 rounded-lg border px-4 py-3 text-left font-semibold"
+                  >
+                    {itemAssignmentsOpen
+                      ? "Hide item assignments"
+                      : `Assign items manually · ${
+                          splitAssignments.filter(
+                            (assignment) => assignment.people.length > 0
+                          ).length
+                        }/${receiptRows.length} assigned`}
+                  </button>
+                  <button
+                    type="button"
+                    aria-expanded={splitAssistantOpen}
+                    aria-controls="split-assistant-panel"
+                    onClick={() => setSplitAssistantOpen((open) => !open)}
+                    className="min-h-12 min-w-0 flex-1 rounded-lg border px-4 py-3 text-left font-semibold"
+                  >
+                    {splitAssistantOpen
+                      ? "Hide split chat"
+                      : "Split items with chat"}
+                  </button>
+                </div>
+                </div>
+                <div className="order-3">
                 {itemAssignmentsOpen && (
               <section
                 id="interactive-item-assignments"
@@ -1773,7 +1789,7 @@ export default function ReceiptScanner() {
               </section>
                 )}
               </div>
-              <div className="space-y-2">
+              <div className="order-1 space-y-2">
                 <h3 className="font-semibold">Receipt totals</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {(
@@ -1816,23 +1832,17 @@ export default function ReceiptScanner() {
                   Total updates from subtotal, tax, and tip when you edit them.
                 </p>
               </div>
+              </div>
               <Suspense fallback={null}>
                 <SaveReceiptButton rows={receiptRows} />
               </Suspense>
             </>
           )}
-          {aiParsed && receiptRows.length > 0 && (
-            <div className="space-y-3 border-t pt-3">
-              <button
-                type="button"
-                aria-expanded={splitAssistantOpen}
-                onClick={() => setSplitAssistantOpen((open) => !open)}
-                className="min-h-12 w-full rounded-lg border px-4 py-3 text-left font-semibold sm:w-auto"
-              >
-                {splitAssistantOpen ? "Hide split chat" : "Split items with chat"}
-              </button>
-              {splitAssistantOpen && (
-                <div className="space-y-4 rounded-lg bg-gray-50 p-3 sm:p-4">
+          {aiParsed && receiptRows.length > 0 && splitAssistantOpen && (
+            <div
+              id="split-assistant-panel"
+              className="space-y-4 rounded-lg bg-gray-50 p-3 sm:p-4"
+            >
                   <div>
                     <h3 className="font-semibold">Split items with chat</h3>
                     <p className="mt-1 text-sm text-gray-600">
@@ -2212,8 +2222,6 @@ export default function ReceiptScanner() {
                         </p>
                       )}
                     </div>
-                  )}
-                </div>
               )}
             </div>
           )}
