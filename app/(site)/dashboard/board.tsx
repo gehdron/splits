@@ -51,6 +51,7 @@ export function Board({ data }: { data: DashboardData }) {
   const search = useSearchParams();
   const newListDialog = useRef<HTMLDialogElement>(null);
   const splitDialog = useRef<HTMLDialogElement>(null);
+  const newListReceiptInput = useRef<HTMLInputElement>(null);
   const [splitTarget, setSplitTarget] = useState<Charge | null>(null);
   const [splitGroupId, setSplitGroupId] = useState<string | null>(null);
   const selected = search.get("group");
@@ -65,16 +66,175 @@ export function Board({ data }: { data: DashboardData }) {
   const listNameInput = useRef<HTMLInputElement>(null);
   const [exitState, exitAction, exitPending] = useActionState(exitGroup, undefined);
 
-  function openList(scan: boolean) {
-    newListDialog.current?.close();
-    router.push(scan ? "/list?scan=1" : "/list");
-  }
-
   function resetNewList() {
     setNamingList(false);
     setListName("");
     setListError("");
     setCreatingList(false);
+  }
+
+  function startNewListReceiptScan() {
+    setListError("");
+    newListReceiptInput.current?.click();
+  }
+
+  async function scanReceiptToNewList(file: File) {
+    const isPdf = file.type === "application/pdf";
+    const isImage = ["image/jpeg", "image/png", "image/webp"].includes(file.type);
+    if (!isPdf && !isImage) {
+      setListError("Choose a JPEG, PNG, WebP, or PDF receipt.");
+      return;
+    }
+    if (file.size > (isPdf ? 4 : 8) * 1024 * 1024) {
+      setListError(
+        isPdf
+          ? "PDF receipts must be 4 MB or smaller."
+          : "Image receipts must be 8 MB or smaller."
+      );
+      return;
+    }
+
+    setCreatingList(true);
+    setListError("");
+    try {
+      let parseResponse: Response;
+      if (isPdf) {
+        const formData = new FormData();
+        formData.append("receiptFile", file);
+        parseResponse = await fetch("/api/parse-receipt", {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        const imageDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = () => reject(new Error("That image could not be read."));
+          reader.readAsDataURL(file);
+        });
+        parseResponse = await fetch("/api/parse-receipt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageDataUrl }),
+        });
+      }
+
+      const parsed: unknown = await parseResponse.json();
+      if (!parseResponse.ok) {
+        throw new Error(
+          typeof parsed === "object" &&
+            parsed !== null &&
+            "error" in parsed &&
+            typeof parsed.error === "string"
+            ? parsed.error
+            : "The receipt could not be read."
+        );
+      }
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        !("items" in parsed) ||
+        !Array.isArray(parsed.items)
+      ) {
+        throw new Error("The receipt parser returned an invalid result.");
+      }
+
+      const items = parsed.items.flatMap((item) => {
+        if (
+          typeof item !== "object" ||
+          item === null ||
+          !("description" in item) ||
+          typeof item.description !== "string" ||
+          !("amount" in item) ||
+          typeof item.amount !== "string"
+        ) {
+          return [];
+        }
+        const description = item.description.trim();
+        const lineCents = Math.round(
+          Number(item.amount.replace(/[^0-9.]/g, "")) * 100
+        );
+        if (!description || !Number.isFinite(lineCents) || lineCents < 0) {
+          return [];
+        }
+        const quantityText =
+          "quantity" in item && typeof item.quantity === "string"
+            ? item.quantity
+            : "";
+        const parsedQuantity = Math.round(Number(quantityText));
+        const quantity =
+          Number.isInteger(parsedQuantity) && parsedQuantity >= 1
+            ? parsedQuantity
+            : 1;
+        const exactUnitPrice = lineCents % quantity === 0;
+        return [
+          {
+            name:
+              exactUnitPrice || quantity === 1
+                ? description
+                : `${description} x${quantity}`,
+            quantity: exactUnitPrice ? quantity : 1,
+            priceCents: exactUnitPrice ? lineCents / quantity : lineCents,
+          },
+        ];
+      });
+      if (items.length === 0) {
+        throw new Error("No receipt items were found. Upload a clearer receipt.");
+      }
+
+      const listResponse = await fetch("/api/lists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: listName.trim() || "Shared list" }),
+      });
+      const listResult: unknown = await listResponse.json();
+      if (
+        !listResponse.ok ||
+        typeof listResult !== "object" ||
+        listResult === null ||
+        !("id" in listResult) ||
+        typeof listResult.id !== "string"
+      ) {
+        throw new Error("The new list could not be created.");
+      }
+
+      const saveResponse = await fetch(
+        `/api/lists/${encodeURIComponent(listResult.id)}/items`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(items),
+        }
+      );
+      if (!saveResponse.ok) {
+        const saveResult: unknown = await saveResponse.json();
+        throw new Error(
+          typeof saveResult === "object" &&
+            saveResult !== null &&
+            "error" in saveResult &&
+            typeof saveResult.error === "string"
+            ? saveResult.error
+            : "The receipt items could not be added to the new list."
+        );
+      }
+
+      newListDialog.current?.close();
+      router.push(`/list?id=${encodeURIComponent(listResult.id)}`);
+    } catch (error) {
+      setListError(
+        error instanceof Error
+          ? error.message
+          : "The receipt could not be added. Try again."
+      );
+    } finally {
+      setCreatingList(false);
+    }
+  }
+
+  function handleNewListReceipt(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (file) void scanReceiptToNewList(file);
   }
 
   async function createBlankList(event: React.FormEvent) {
@@ -295,6 +455,15 @@ export function Board({ data }: { data: DashboardData }) {
                 </form>
               </dialog>
               <dialog ref={newListDialog} className="pop" onClose={resetNewList}>
+                <input
+                  ref={newListReceiptInput}
+                  className="sr"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                  aria-label="Choose a receipt image or PDF"
+                  disabled={creatingList}
+                  onChange={handleNewListReceipt}
+                />
                 {namingList ? (
                   <form onSubmit={createBlankList}>
                     <h2>Name this list</h2>
@@ -330,11 +499,20 @@ export function Board({ data }: { data: DashboardData }) {
                       <button className="btn" type="button" onClick={() => setNamingList(true)}>
                         Blank list
                       </button>
-                      <button className="btn line" type="button" onClick={() => openList(true)}>
+                      <button
+                        className="btn line"
+                        type="button"
+                        onClick={startNewListReceiptScan}
+                        disabled={creatingList}
+                      >
                         Scan a receipt
                       </button>
                     </div>
-                    <button className="btn txt" type="submit">
+                    {creatingList ? (
+                      <p className="sub" role="status">Reading receipt and creating list…</p>
+                    ) : null}
+                    {listError ? <p className="err" role="alert">{listError}</p> : null}
+                    <button className="btn txt" type="submit" disabled={creatingList}>
                       Cancel
                     </button>
                   </form>
