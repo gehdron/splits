@@ -3,7 +3,7 @@ import { Hero } from "./_components/hero";
 import { LogoMark } from "./_components/logo";
 import "./_styles/home.css";
 
-const title = "Splits: settle up without the stress";
+const title = "Splits: npm  up without the stress";
 const description =
   "Snap the receipt, pick who had what, and everyone pays their share from a link.";
 
@@ -81,11 +81,11 @@ export default function Home() {
             <div className="panels">
               {steps.map((step) => (
                 <div key={step.title} className="panel">
-                    <img
-                      src={step.image}
-                      alt={step.alt}
-                      style={{ width: "100%", height: "auto", display: "block", borderRadius: 20, border: "1px solid #e3e7f1" }}
-                    />
+                  <img
+                    src={step.image}
+                    alt={step.alt}
+                    style={{ width: "100%", height: "auto", display: "block", borderRadius: 20, border: "1px solid #e3e7f1" }}
+                  />
                   <div><h3>{step.title}</h3><p>{step.body}</p></div>
                 </div>
               ))}
