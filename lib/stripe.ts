@@ -3,11 +3,16 @@ import Stripe from "stripe";
 import { appUrl, getShare, markSharePaid, setShareSession, voidShare, type Share } from "./shares";
 
 let client: Stripe | null = null;
+let clientKey: string | null = null;
 
 export function stripe() {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error("Set STRIPE_SECRET_KEY to take payments.");
-  client ??= new Stripe(key);
+  // Rebuilt when the key changes, so a new key in .env.local works without restarting the server.
+  if (!client || clientKey !== key) {
+    client = new Stripe(key);
+    clientKey = key;
+  }
   return client;
 }
 

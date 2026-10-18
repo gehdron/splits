@@ -11,7 +11,7 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { signOut } from "../../auth/actions";
 import { createListFromReceipt, importReceipt } from "../actions";
 import Tesseract from "tesseract.js";
@@ -27,7 +27,11 @@ import {
   formatCents,
   type TipSplitMode,
 } from "@/app/split-calculations";
-import type { ReceiptAssignment } from "@/app/split-types";
+import type {
+  ReceiptAssignment,
+  SplitAssistantResult,
+  SplitInstructionMessage,
+} from "@/app/split-types";
 
 type DetectedWord = {
   text: string;
@@ -43,7 +47,34 @@ type ReceiptProcessingStage =
   | "error";
 
 const MAX_PDF_BYTES = 4 * 1024 * 1024;
-const RECEIPT_HANDOFF_KEY = "splits:receipt-handoff:v1";
+
+function isSplitAssistantResult(value: unknown): value is SplitAssistantResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "reply" in value &&
+    typeof value.reply === "string" &&
+    "clarification" in value &&
+    typeof value.clarification === "string" &&
+    "assignments" in value &&
+    Array.isArray(value.assignments) &&
+    value.assignments.every(
+      (assignment: unknown) =>
+        typeof assignment === "object" &&
+        assignment !== null &&
+        "itemIndex" in assignment &&
+        typeof assignment.itemIndex === "number" &&
+        Number.isInteger(assignment.itemIndex) &&
+        assignment.itemIndex >= 0 &&
+        "people" in assignment &&
+        Array.isArray(assignment.people) &&
+        assignment.people.length > 0 &&
+        assignment.people.every(
+          (person: unknown) => typeof person === "string" && person.trim().length > 0,
+        ),
+    )
+  );
+}
 
 function isAiParsedReceipt(value: unknown): value is AiParsedReceipt {
   if (
@@ -343,12 +374,12 @@ export function ReceiptScanner({
   loadError,
   startCameraOnLoad = false,
 }: ScannerProps) {
-  const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const receiptFileInputRef = useRef<HTMLInputElement>(null);
   const receiptViewportRef = useRef<HTMLDivElement>(null);
+  const assignmentSectionRef = useRef<HTMLElement>(null);
   const autoCameraStarted = useRef(false);
   const [enlargedImageOpen, setEnlargedImageOpen] = useState(false);
   const [receiptZoom, setReceiptZoom] = useState(1);
@@ -387,6 +418,11 @@ export function ReceiptScanner({
   const [aiParsed, setAiParsed] = useState(false);
   const [aiError, setAiError] = useState("");
   const [itemAssignmentsOpen, setItemAssignmentsOpen] = useState(false);
+  const [splitAssistantOpen, setSplitAssistantOpen] = useState(false);
+  const [splitMessages, setSplitMessages] = useState<SplitInstructionMessage[]>([]);
+  const [splitMessage, setSplitMessage] = useState("");
+  const [splitParsing, setSplitParsing] = useState(false);
+  const [splitError, setSplitError] = useState("");
   const [userNames, setUserNames] = useState<string[]>(people);
   const [userNameInput, setUserNameInput] = useState("");
   const [splitAssignments, setSplitAssignments] = useState<ReceiptAssignment[]>([]);
@@ -518,6 +554,11 @@ export function ReceiptScanner({
       setAiParsed(false);
       setAiError("");
       setSplitAssignments([]);
+      setItemAssignmentsOpen(false);
+      setSplitAssistantOpen(false);
+      setSplitMessages([]);
+      setSplitMessage("");
+      setSplitError("");
       setUserNames(people);
       setUserNameInput("");
       setFrameSize({ width: 0, height: 0 });
@@ -770,6 +811,11 @@ export function ReceiptScanner({
       setReceiptTotalEdited(false);
       setAiParsed(false);
       setSplitAssignments([]);
+      setItemAssignmentsOpen(false);
+      setSplitAssistantOpen(false);
+      setSplitMessages([]);
+      setSplitMessage("");
+      setSplitError("");
       setUserNames(people);
       setUserNameInput("");
 
@@ -1101,6 +1147,10 @@ export function ReceiptScanner({
       setReceiptTotalEdited(false);
       setAiParsed(true);
       setItemAssignmentsOpen(false);
+      setSplitAssistantOpen(false);
+      setSplitMessages([]);
+      setSplitMessage("");
+      setSplitError("");
       setSplitAssignments([]);
       setUserNames(people);
       setUserNameInput("");
@@ -1165,6 +1215,84 @@ export function ReceiptScanner({
     });
   }
 
+  async function sendSplitMessage(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const content = splitMessage.trim();
+    if (!content || splitParsing || !aiParsed) return;
+
+    const messages: SplitInstructionMessage[] = [
+      ...splitMessages.slice(-19),
+      { role: "user", content },
+    ];
+    setSplitParsing(true);
+    setSplitError("");
+
+    try {
+      const response = await fetch("/api/split-receipt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: receiptRows,
+          totals: receiptTotals,
+          assignments: splitAssignments,
+          messages,
+        }),
+      });
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        const error =
+          typeof result === "object" &&
+          result !== null &&
+          "error" in result &&
+          typeof result.error === "string"
+            ? result.error
+            : "The split assistant could not process that message.";
+        throw new Error(error);
+      }
+      if (
+        !isSplitAssistantResult(result) ||
+        result.assignments.some(
+          (assignment) => assignment.itemIndex >= receiptRows.length,
+        )
+      ) {
+        throw new Error("The split assistant returned invalid assignments.");
+      }
+
+      const reply = result.clarification
+        ? `${result.reply} ${result.clarification}`
+        : result.reply;
+      setSplitAssignments(result.assignments);
+      setUserNames((currentNames) => {
+        const nextNames = [...currentNames];
+        for (const person of result.assignments.flatMap(
+          (assignment) => assignment.people,
+        )) {
+          if (
+            !nextNames.some(
+              (name) =>
+                name.toLocaleLowerCase() === person.toLocaleLowerCase(),
+            )
+          ) {
+            nextNames.push(person);
+          }
+        }
+        return nextNames;
+      });
+      setSplitMessages([...messages, { role: "assistant", content: reply }]);
+      setSplitMessage("");
+    } catch (error) {
+      console.error(error);
+      setSplitMessages(messages);
+      setSplitError(
+        error instanceof Error
+          ? error.message
+          : "The split assistant could not process that message.",
+      );
+    } finally {
+      setSplitParsing(false);
+    }
+  }
+
   function retake() {
     readRun.current += 1;
     setAiParsing(false);
@@ -1181,6 +1309,11 @@ export function ReceiptScanner({
     setAiParsed(false);
     setAiError("");
     setSplitAssignments([]);
+    setItemAssignmentsOpen(false);
+    setSplitAssistantOpen(false);
+    setSplitMessages([]);
+    setSplitMessage("");
+    setSplitError("");
     setUserNames(people);
     setUserNameInput("");
     setProgress(0);
@@ -1284,16 +1417,14 @@ export function ReceiptScanner({
   }
 
   function continueToSplitChat() {
-    try {
-      window.sessionStorage.setItem(
-        RECEIPT_HANDOFF_KEY,
-        JSON.stringify({ items: receiptRows, totals: receiptTotals })
-      );
-      router.push("/detect?receiptImported=1");
-    } catch (error) {
-      console.error(error);
-      setAiError("Could not return these items to the split chat. Try again.");
-    }
+    setItemAssignmentsOpen(true);
+    setSplitAssistantOpen(true);
+    requestAnimationFrame(() => {
+      const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth";
+      assignmentSectionRef.current?.scrollIntoView({ behavior, block: "start" });
+    });
   }
 
   // PDFs skip OCR, and a failed AI pass after good OCR only needs the AI step again.
@@ -1844,8 +1975,22 @@ export function ReceiptScanner({
                 </aside>
               </div>
 
-              <section className="sec" aria-labelledby="n-h">
+              <section className="sec" aria-labelledby="n-h" ref={assignmentSectionRef}>
                 <h2 id="n-h">Assign items</h2>
+                <button
+                  className="opt2"
+                  type="button"
+                  aria-expanded={splitAssistantOpen}
+                  aria-controls="receipt-split-assistant"
+                  onClick={() => setSplitAssistantOpen((open) => !open)}
+                >
+                  <span className="oic"><PeopleIcon /></span>
+                  <span>
+                    <b>{splitAssistantOpen ? "Hide AI split chat" : "Use the AI split bot"}</b>
+                    <span className="d">Describe who had each item and the bot will select the assignments.</span>
+                  </span>
+                  <ChevIcon />
+                </button>
                 <button
                   className="opt2"
                   type="button"
@@ -2093,6 +2238,68 @@ export function ReceiptScanner({
                         )}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {splitAssistantOpen && (
+                  <div id="receipt-split-assistant" className="receipt-split-assistant">
+                    <div>
+                      <h3>Assign items with the AI bot</h3>
+                      <p className="sub">
+                        Tell me who had each item. For example: “Sandy gets the burger, John gets the fries, and Bob and Joe split the pizza.”
+                      </p>
+                    </div>
+                    <div
+                      className="receipt-chat-messages"
+                      aria-live="polite"
+                      aria-relevant="additions text"
+                    >
+                      {splitMessages.length === 0 ? (
+                        <p className="receipt-chat-welcome">
+                          I’ll match your instructions to the receipt items. Shared items are split evenly.
+                        </p>
+                      ) : (
+                        splitMessages.map((entry, index) => (
+                          <p
+                            className={`receipt-chat-message ${entry.role}`}
+                            key={`${index}-${entry.role}`}
+                          >
+                            <strong>{entry.role === "user" ? "You" : "AI bot"}</strong>
+                            {entry.content}
+                          </p>
+                        ))
+                      )}
+                      {splitParsing ? (
+                        <p className="receipt-chat-pending" role="status">
+                          Checking the receipt items…
+                        </p>
+                      ) : null}
+                    </div>
+                    {splitError ? (
+                      <p className="msg err" role="alert">{splitError}</p>
+                    ) : null}
+                    <form className="receipt-chat-form" onSubmit={sendSplitMessage}>
+                      <label className="lbl" htmlFor="receipt-split-instruction">
+                        Describe who gets each item
+                      </label>
+                      <textarea
+                        id="receipt-split-instruction"
+                        className="field"
+                        value={splitMessage}
+                        maxLength={1000}
+                        rows={3}
+                        placeholder="Who had each item?"
+                        disabled={splitParsing}
+                        onChange={(event) => setSplitMessage(event.target.value)}
+                      />
+                      <button
+                        className="btn"
+                        type="submit"
+                        disabled={splitParsing || !splitMessage.trim()}
+                      >
+                        {splitParsing ? "Assigning…" : "Send"}
+                      </button>
+                    </form>
                   </div>
                 )}
               </section>
