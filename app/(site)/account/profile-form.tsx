@@ -42,9 +42,13 @@ export function ProfileForm({ initialProfile }: { initialProfile: Profile }) {
         method: "PATCH",
         body: new FormData(event.currentTarget),
       });
-      const result = await response.json() as { error?: string; profile?: Profile };
+      const result = await response.json() as { error?: string; warning?: string; profile?: Profile };
       if (!response.ok || !result.profile) {
         setError(result.error ?? "Profile could not be saved. Try again.");
+        return;
+      }
+      if (result.warning) {
+        setError(result.warning);
         return;
       }
       setProfile(result.profile);

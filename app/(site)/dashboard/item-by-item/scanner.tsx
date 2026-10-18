@@ -308,6 +308,7 @@ function Sidebar({ me, groups, group, people, loadError }: Omit<ScannerProps, "c
 function SaveReceiptButton({
   rows,
   group,
+  groups,
   listName,
   merchant,
   onMerchantChange,
@@ -316,6 +317,7 @@ function SaveReceiptButton({
 }: {
   rows: AiReceiptItem[];
   group: ScannerGroup | null;
+  groups: ScannerGroup[];
   listName: string;
   merchant: string;
   onMerchantChange: (merchant: string) => void;
@@ -330,6 +332,14 @@ function SaveReceiptButton({
   const [nameSuggestion, setNameSuggestion] = useState("");
   const [suggesting, setSuggesting] = useState(false);
   const [suggestionError, setSuggestionError] = useState("");
+  const ownerGroups = groups.filter((entry) => entry.role === "owner");
+  const availableGroups = listId
+    ? group?.role === "owner" ? [group] : []
+    : ownerGroups;
+  const [selectedGroupId, setSelectedGroupId] = useState(
+    group?.role === "owner" ? group.id : availableGroups[0]?.id ?? "",
+  );
+  const selectedGroup = availableGroups.find((entry) => entry.id === selectedGroupId) ?? null;
 
   async function suggestName() {
     setSuggesting(true);
@@ -369,17 +379,35 @@ function SaveReceiptButton({
     }
   }
 
-  if (!group || rows.length === 0) return null;
-  // Only group owners can add lists and items (see supabase/schema.sql), so don't offer a save that can't work.
-  if (group.role !== "owner") {
-    return <p className="sub">Only the owner of {group.name} can save a receipt to the group. You can still assign the items here.</p>;
+  if (rows.length === 0) return null;
+  if (availableGroups.length === 0) {
+    return (
+      <p className="sub">
+        {listId
+          ? "Only the owner of this list’s group can add receipt items."
+          : "Create a group you own to make these receipt items into a list."}
+      </p>
+    );
   }
 
   const pending = listId ? importPending : createPending;
   const state = listId ? importState : createState;
   return (
     <form action={listId ? importAction : createAction} className="acts2">
-      <input type="hidden" name="groupId" value={group.id} />
+      <input type="hidden" name="groupId" value={selectedGroupId} />
+      {availableGroups.length > 1 ? (
+        <label className="lbl" htmlFor="receipt-list-group">
+          Save in
+          <select
+            id="receipt-list-group"
+            className="field"
+            value={selectedGroupId}
+            onChange={(event) => setSelectedGroupId(event.target.value)}
+          >
+            {availableGroups.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
+          </select>
+        </label>
+      ) : null}
       <div style={{ width: "100%", margin: "10px 0" }}>
         <label className="lbl" htmlFor="receipt-place">Place (optional)</label>
         <input
@@ -444,10 +472,10 @@ function SaveReceiptButton({
       <input type="hidden" name="items" value={JSON.stringify(rows)} />
       <button
         type="submit"
-        disabled={pending || (!listId && !customName.trim())}
+        disabled={pending || !selectedGroup || (!listId && !customName.trim())}
         className="btn lg"
       >
-        {pending ? "Saving…" : listId ? "Add these items to the list" : `Save as a list in ${group.name}`}
+        {pending ? "Saving…" : listId ? "Add these items to the list" : "Make into a list"}
       </button>
       {suggestionError ? <p className="msg err" role="alert">{suggestionError}</p> : null}
       {state?.error ? <p className="msg err" role="alert">{state.error}</p> : null}
@@ -1849,6 +1877,7 @@ export function ReceiptScanner({
                     <SaveReceiptButton
                       rows={receiptRows}
                       group={group}
+                      groups={groups}
                       listName={charge?.merchant ?? "Receipt"}
                       merchant={receiptMerchant}
                       onMerchantChange={setReceiptMerchant}

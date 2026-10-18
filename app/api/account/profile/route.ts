@@ -48,6 +48,7 @@ export async function PATCH(request: Request) {
     phone,
     bio,
   };
+  let uploadedPath: string | null = null;
 
   if (photo instanceof File && photo.size > 0) {
     const extension = PHOTO_TYPES[photo.type];
@@ -70,6 +71,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: `Photo upload failed: ${uploadError.message}` }, { status: 500 });
     }
 
+    uploadedPath = path;
     const { data: publicUrl } = supabase.storage.from("profile-photos").getPublicUrl(path);
     updates.avatar_url = `${publicUrl.publicUrl}?v=${Date.now()}`;
   }
@@ -84,6 +86,37 @@ export async function PATCH(request: Request) {
   if (updateError) {
     if (updateError.code === "23505") {
       return NextResponse.json({ error: "That phone number is already connected to another account." }, { status: 409 });
+    }
+    const missingProfileFields =
+      updateError.code === "PGRST204" ||
+      updateError.code === "42703" ||
+      /column .*?(bio|avatar_url).*?(does not exist|schema cache)/i.test(updateError.message);
+    if (missingProfileFields) {
+      let cleanupWarning = "";
+      if (uploadedPath) {
+        const { error: cleanupError } = await supabase.storage.from("profile-photos").remove([uploadedPath]);
+        if (cleanupError) cleanupWarning = ` The uploaded photo could not be cleaned up: ${cleanupError.message}`;
+      }
+      const { data: basicProfile, error: basicUpdateError } = await supabase
+        .from("profiles")
+        .update({ display_name: displayName, phone })
+        .eq("id", auth.user.id)
+        .select("display_name, phone")
+        .single();
+      if (basicUpdateError) {
+        return NextResponse.json(
+          { error: `Profile could not be saved: ${basicUpdateError.message}. Apply supabase/profile-fields.sql in Supabase and try again.` },
+          { status: 500 },
+        );
+      }
+      return NextResponse.json({
+        profile: {
+          ...basicProfile,
+          bio: "",
+          avatar_url: null,
+        },
+        warning: `Name and phone were saved. To save the description and profile photo, apply supabase/profile-fields.sql in the Supabase SQL editor.${cleanupWarning}`,
+      });
     }
     return NextResponse.json(
       { error: `Profile could not be saved: ${updateError.message}. Apply supabase/profile-fields.sql if the profile fields are missing.` },
