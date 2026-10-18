@@ -42,7 +42,6 @@ export default function PaymentComplete({ searchParams }: { searchParams: Search
         </Suspense>
         <p className="own">Splitting a bill of your own? <Link href="/">Try Splits</Link></p>
       </main>
-      <div className="fine">Live demo: payments are real, kept to a few dollars, and refunded. Apple Pay is a trademark of Apple Inc.</div>
     </div>
   );
 }

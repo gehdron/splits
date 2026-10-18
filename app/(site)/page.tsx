@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Hero } from "./_components/hero";
 import { LogoMark } from "./_components/logo";
 import "./_styles/home.css";
@@ -115,7 +116,25 @@ export default function Home() {
               </div>
             </div>
           </div>
-          <div className="fine">Live demo: payments are real, kept to a few dollars, and refunded.</div>
+          <footer className="foot">
+            <div className="fcol">
+              <div className="brand">
+                <LogoMark size={30} />
+                <span>Splits</span>
+              </div>
+              <p>Split the check by what everyone actually ordered.</p>
+            </div>
+            <nav className="fcol" aria-label="Product">
+              <b>Product</b>
+              <Link href="/#how">How it works</Link>
+              <Link href="/signup">Create account</Link>
+            </nav>
+            <nav className="fcol" aria-label="Company">
+              <b>Company</b>
+              <Link href="/privacy">Privacy</Link>
+              <a href="mailto:help@splitsselect.com">Contact</a>
+            </nav>
+          </footer>
         </div>
         <div className="sign" aria-hidden="true"><span className="sa">Spl</span><span className="sb">its</span></div>
       </section>
