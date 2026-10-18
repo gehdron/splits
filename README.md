@@ -49,8 +49,11 @@ your account and usage. OCR extraction and raw text remain available without
 an API key.
 
 After AI parsing, select **Split items with chat** to assign receipt items
-using natural-language instructions. Shared items are split equally; parsed
-tax is allocated proportionally to each person's share of the item amounts.
+directly by adding diners and selecting them on each item, or use the split chat
+to assign items with natural-language instructions. Both controls stay in sync,
+and each person's item shares, tax, tip, and total update in the receipt review.
+Shared items are split equally; parsed tax is allocated proportionally to each
+person's share of the item amounts.
 While typing split instructions, item-name suggestions are based on the
 AI-parsed receipt items and can be toggled on or off. Matching names appear as
 inline completions; press **Tab** to replace the current word with the
