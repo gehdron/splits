@@ -88,6 +88,61 @@ const LogoMark = () => (
   </svg>
 );
 
+const EvenIcon = () => <Icon d="M5 9h14M5 15h14" />;
+
+/* --------------------------------------------------------- split chooser */
+
+/* Native popover: opens from the "Split this charge" button, closes on Esc or a click outside. No client JS.
+   TODO: pass the charge to both pages once they load real data. */
+function SplitChooser({ id, charge }: { id: string; charge: Charge }) {
+  return (
+    <div className="sdlg" id={id} popover="auto" role="dialog" aria-labelledby={`${id}-h`}>
+      <div className="sd-top">
+        <span className="mic" aria-hidden="true">
+          {charge.merchant.charAt(0)}
+        </span>
+        <div>
+          <b>{charge.merchant}</b>
+          <small>
+            {charge.amount}, {charge.date}
+          </small>
+        </div>
+        <button className="xb" type="button" popoverTarget={id} popoverTargetAction="hide" aria-label="Close">
+          <CloseIcon />
+        </button>
+      </div>
+      <h2 id={`${id}-h`}>How do you want to split it?</h2>
+      <p className="sub">You can add people and check the amounts on the next screen.</p>
+      <ul className="sd-opts">
+        <li>
+          <Link className="sd-opt" href="/dashboard/item-by-item">
+            <span className="sd-ic">
+              <ListIcon />
+            </span>
+            <span>
+              <b>Item by item</b>
+              <small>Scan the receipt and give each item to whoever had it.</small>
+            </span>
+            <ChevronIcon />
+          </Link>
+        </li>
+        <li>
+          <Link className="sd-opt" href="/dashboard/even">
+            <span className="sd-ic">
+              <EvenIcon />
+            </span>
+            <span>
+              <b>Split evenly</b>
+              <small>Everyone pays the same share of {charge.amount}.</small>
+            </span>
+            <ChevronIcon />
+          </Link>
+        </li>
+      </ul>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------- page */
 
 export default function DashboardPage() {
@@ -224,7 +279,7 @@ export default function DashboardPage() {
               </div>
             </div>
             <ul className="rows">
-              {charges.map((c) => (
+              {charges.map((c, i) => (
                 <li key={c.merchant} className="ch">
                   <span className="mic" aria-hidden="true">
                     {c.merchant.charAt(0)}
@@ -236,9 +291,12 @@ export default function DashboardPage() {
                   <span className="amt">{c.amount}</span>
                   <div className="stc">
                     {c.status === "none" ? (
-                      <button className="btn" type="button">
-                        Split this charge
-                      </button>
+                      <>
+                        <button className="btn" type="button" popoverTarget={`split-${i}`}>
+                          Split this charge
+                        </button>
+                        <SplitChooser id={`split-${i}`} charge={c} />
+                      </>
                     ) : (
                       <span className={`pill ${c.status === "settled" ? "pn" : "pg"}`}>{c.label}</span>
                     )}
