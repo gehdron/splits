@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cache, Suspense } from "react";
 import { Hero } from "./_components/hero";
 import { LogoMark } from "./_components/logo";
 import { supabaseConfigured } from "@/lib/supabase/env";
@@ -22,16 +23,58 @@ const steps = [
   { title: "Send the links", body: "Everyone pays their own share. No app needed.", image: "/assets/screens/step-pay.png", alt: "A text message with a payment link and a checkout page with Apple Pay" },
 ];
 
-export default async function Home() {
-  let signedIn = false;
-  if (supabaseConfigured()) {
-    const supabase = await createClient();
-    const { data, error } = await supabase.auth.getUser();
-    if (error) throw new Error(`Could not check the current session: ${error.message}`);
-    signedIn = Boolean(data.user);
-  }
-  const appUrl = signedIn ? "/dashboard" : "/signup";
+// The session cookie is request data. With Cache Components it has to render
+// behind Suspense, or prerendering the home page fails the production build.
+const viewerIsSignedIn = cache(async () => {
+  if (!supabaseConfigured()) return false;
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.getUser();
+  if (error) return false;
+  return Boolean(data.user);
+});
 
+function GuestAccountLinks() {
+  return (
+    <>
+      <a className="signin" href="/login">Sign in</a>
+      <a className="btn btn-a" href="/signup">Create account</a>
+    </>
+  );
+}
+
+async function AccountLinks() {
+  if (!(await viewerIsSignedIn())) return <GuestAccountLinks />;
+  return (
+    <>
+      <a className="signin" href="/account">Account</a>
+      <a className="btn btn-a" href="/dashboard">Dashboard</a>
+    </>
+  );
+}
+
+function StartSplitting() {
+  return (
+    <a className="btn btn-a" href="/signup">Start splitting</a>
+  );
+}
+
+async function StartLink() {
+  if (await viewerIsSignedIn()) {
+    return <a className="btn btn-a" href="/dashboard">Go to dashboard</a>;
+  }
+  return <StartSplitting />;
+}
+
+function GuestFooterLink() {
+  return <Link href="/signup">Create account</Link>;
+}
+
+async function FooterProductLink() {
+  if (await viewerIsSignedIn()) return <Link href="/dashboard">Dashboard</Link>;
+  return <GuestFooterLink />;
+}
+
+export default function Home() {
   return (
     <div className="p2">
       <div className="navbar">
@@ -43,17 +86,9 @@ export default async function Home() {
             </a>
             <nav className="links" aria-label="Main">
               <a href="#how">How it works</a>
-              {signedIn ? (
-                <>
-                  <a className="signin" href="/account">Account</a>
-                  <a className="btn btn-a" href="/dashboard">Dashboard</a>
-                </>
-              ) : (
-                <>
-                  <a className="signin" href="/login">Sign in</a>
-                  <a className="btn btn-a" href="/signup">Create account</a>
-                </>
-              )}
+              <Suspense fallback={<GuestAccountLinks />}>
+                <AccountLinks />
+              </Suspense>
             </nav>
           </header>
         </div>
@@ -76,9 +111,9 @@ export default async function Home() {
                 className="cta fade"
                 style={{ animationDelay: "520ms", flexDirection: "column", alignItems: "flex-start", gap: 18 }}
               >
-                <a className="btn btn-a" href={appUrl}>
-                  {signedIn ? "Go to dashboard" : "Start splitting"}
-                </a>
+                <Suspense fallback={<StartSplitting />}>
+                  <StartLink />
+                </Suspense>
               </div>
             </div>
           </div>
@@ -132,9 +167,9 @@ export default async function Home() {
                 <div className="bub mo">Done.</div>
               </div>
               <div className="tform">
-                <a className="btn btn-a" href={appUrl}>
-                  {signedIn ? "Go to dashboard" : "Start splitting"}
-                </a>
+                <Suspense fallback={<StartSplitting />}>
+                  <StartLink />
+                </Suspense>
               </div>
             </div>
           </div>
@@ -149,11 +184,9 @@ export default async function Home() {
             <nav className="fcol" aria-label="Product">
               <b>Product</b>
               <Link href="/#how">How it works</Link>
-              {signedIn ? (
-                <Link href="/dashboard">Dashboard</Link>
-              ) : (
-                <Link href="/signup">Create account</Link>
-              )}
+              <Suspense fallback={<GuestFooterLink />}>
+                <FooterProductLink />
+              </Suspense>
             </nav>
             <nav className="fcol" aria-label="Company">
               <b>Company</b>

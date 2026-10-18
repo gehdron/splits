@@ -111,14 +111,46 @@ async function membersFor(listIds: string[]): Promise<MemberRow[]> {
   return (data ?? []) as MemberRow[];
 }
 
+const LIST_COLUMNS =
+  "id, name, owner_id, created_at, merchant, receipt_subtotal_cents, tax_cents, tip_cents, receipt_total_cents";
+const LIST_COLUMNS_BASE = "id, name, owner_id, created_at";
+
+// Older databases have bill_lists without the receipt columns. Asking for them
+// makes every list request fail, including group lists that live in another table.
+let receiptColumnsAvailable: boolean | null = null;
+
+function missingReceiptColumn(error: DbError): boolean {
+  return Boolean(
+    error &&
+      /column .* does not exist/i.test(error.message) &&
+      /merchant|receipt_subtotal_cents|tax_cents|tip_cents|receipt_total_cents/i.test(error.message),
+  );
+}
+
+async function selectBillLists<T>(
+  run: (columns: string) => PromiseLike<{ data: T | null; error: DbError }>,
+): Promise<T | null> {
+  const columns = receiptColumnsAvailable === false ? LIST_COLUMNS_BASE : LIST_COLUMNS;
+  const first = await run(columns);
+  if (!first.error) {
+    if (columns === LIST_COLUMNS) receiptColumnsAvailable = true;
+    return first.data;
+  }
+  if (columns === LIST_COLUMNS && missingReceiptColumn(first.error)) {
+    receiptColumnsAvailable = false;
+    const second = await run(LIST_COLUMNS_BASE);
+    raise(second.error);
+    return second.data;
+  }
+  raise(first.error);
+  return null;
+}
+
 async function listRow(id: string): Promise<ListRow | null> {
-  const { data, error } = await db()
-    .from("bill_lists")
-    .select("id, name, owner_id, created_at, merchant, receipt_subtotal_cents, tax_cents, tip_cents, receipt_total_cents")
-    .eq("id", id)
-    .maybeSingle();
-  raise(error);
-  return (data as ListRow | null) ?? null;
+  const data = await selectBillLists((columns) =>
+    db().from("bill_lists").select(columns).eq("id", id).maybeSingle(),
+  );
+  return (data as unknown as ListRow | null) ?? null;
 }
 
 export async function createList(name: string, ownerId: string | null = null, member?: ListMember): Promise<List> {
@@ -185,11 +217,8 @@ export async function deleteList(
 
 export async function listSummaries(): Promise<(List & { itemCount: number })[]> {
   if (!isRemoteEnabled()) return fileListSummaries();
-  const { data: lists, error } = await db()
-    .from("bill_lists")
-    .select("id, name, owner_id, created_at, merchant, receipt_subtotal_cents, tax_cents, tip_cents, receipt_total_cents");
-  raise(error);
-  const rows = (lists ?? []) as ListRow[];
+  const lists = await selectBillLists((columns) => db().from("bill_lists").select(columns));
+  const rows = (lists ?? []) as unknown as ListRow[];
   const ids = rows.map((list) => list.id);
   const [members, items] = await Promise.all([membersFor(ids), itemCounts(ids)]);
   return rows

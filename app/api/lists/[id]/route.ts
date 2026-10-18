@@ -8,7 +8,14 @@ import { retireShare } from "@/app/(site)/stripe/checkout";
 export async function GET(_req: Request, ctx: RouteContext<"/api/lists/[id]">) {
   await connection(); // always run at request time, never prerendered
   const { id } = await ctx.params;
-  const data = await getList(id);
+  let data: Awaited<ReturnType<typeof getList>>;
+  try {
+    data = await getList(id);
+  } catch (error) {
+    console.error(`Could not load list ${id}.`, error);
+    const message = error instanceof Error ? error.message : "This list could not be loaded.";
+    return Response.json({ error: message }, { status: 500 });
+  }
   if (!data) return Response.json({ error: "List not found" }, { status: 404 });
   // The organizer's user id, and members' phone numbers and emails, aren't anyone else's business.
   const list = { ...data.list };
