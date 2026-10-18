@@ -117,10 +117,33 @@ export function renderSummary(commitments: Commitment[], senderHandle: string): 
   return [heading, ...lines].join("\n");
 }
 
+function say(commitment: Pick<Commitment, "who" | "action" | "item" | "amount">, senderHandle: string): string {
+  const who = commitment.who === senderHandle ? "You'll" : `${commitment.who} will`;
+  const amount = commitment.amount ? ` for ${commitment.amount}` : "";
+  return `${who} ${commitment.action} ${commitment.item}${amount}`;
+}
+
 export function renderConfirmation(parsed: ParsedCommitment[], senderHandle: string, listName?: string): string {
-  const lines = parsed.map((commitment) => describe(commitment, senderHandle));
-  const where = listName ? ` On ${listName}.` : "";
-  return lines.length === 1 ? `Noted. ${lines[0]}${where}` : `Noted on ${listName ?? "the list"}.\n${lines.map((line) => `- ${line}`).join("\n")}`;
+  if (parsed.length === 1 && parsed[0]) {
+    const where = listName ? ` I'll put that on ${listName}.` : "";
+    return `Got it. ${say(parsed[0], senderHandle)}.${where}`;
+  }
+  const where = listName ? ` on ${listName}` : "";
+  return `Got it${where}.\n${parsed.map((commitment) => `- ${say(commitment, senderHandle)}.`).join("\n")}`;
+}
+
+// "on the dinner check" names a list. It is not part of the item.
+export function explicitCheck(text: string): string | undefined {
+  const match = normalize(text).match(/\b(?:on|for)\s+(?:the\s+)?([a-z][a-z0-9' -]{0,40}?)\s+check\b/i);
+  if (!match?.[1]) return undefined;
+  return `${match[1]} check`.replace(/\s+/g, " ").trim();
+}
+
+export function textWithoutCheck(text: string): string {
+  return normalize(text)
+    .replace(/\b(?:on|for)\s+(?:the\s+)?[a-z][a-z0-9' -]{0,40}?\s+check\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export type ListTarget = { id: string; name: string };
@@ -151,6 +174,17 @@ export function textWithoutList(text: string, listName: string): string {
 }
 
 export function chooseList(text: string, lists: ListTarget[]): { ok: true; list: ListTarget } | { ok: false; reply: string } {
+  const hinted = explicitCheck(text);
+  if (hinted) {
+    const matched = lists.filter((list) => listKey(list.name) === listKey(hinted) || mentionsList(hinted, list.name));
+    if (matched.length === 1 && matched[0]) return { ok: true, list: matched[0] };
+    const names = lists.map((list) => list.name);
+    const owned = names.length === 0 ? "" : names.length === 1 ? ` You've got ${names[0]}.` : ` You've got ${names.join(", ")}.`;
+    return {
+      ok: false,
+      reply: `I don't have a list called ${hinted}.${owned} Name the list in the same text if you mean one of those.`,
+    };
+  }
   const named = lists.filter((list) => mentionsList(text, list.name));
   const longest =
     named.length === 0
@@ -161,9 +195,9 @@ export function chooseList(text: string, lists: ListTarget[]): { ok: true; list:
   if (lists.length === 1 && lists[0]) return { ok: true, list: lists[0] };
   const names = (winners.length > 1 ? winners : lists).map((list) => list.name);
   const sample = names[0] ?? "House supplies";
-  const lead = winners.length > 1 ? "That name matches more than one list." : "Which list should this go on?";
+  const lead = winners.length > 1 ? "That name fits more than one list." : "Which list should this go on?";
   return {
     ok: false,
-    reply: `${lead} Name it in the same text, like: on ${sample}, Maya is buying chips. Lists: ${names.join(", ")}.`,
+    reply: `${lead} Add it to the same text, like "on ${sample}, Maya is buying chips." You've got ${names.join(", ")}.`,
   };
 }

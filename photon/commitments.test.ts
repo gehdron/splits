@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chooseList, describe, isSummaryRequest, parseCommitments, renderSummary, textWithoutList } from "./commitments.ts";
+import { chooseList, describe, explicitCheck, isSummaryRequest, parseCommitments, renderConfirmation, renderSummary, textWithoutCheck, textWithoutList } from "./commitments.ts";
 
 const sender = "+12065550100";
 
@@ -60,5 +60,23 @@ if (!unclear.ok) assert.match(unclear.reply, /House supplies/);
 
 const only = chooseList("Maya is buying the chips", [lists[0]]);
 assert.equal(only.ok && only.list.id, "house");
+
+const checks = [
+  { id: "test", name: "test" },
+  { id: "dinner", name: "Dinner check" },
+];
+const dinner = chooseList("I'll get chips for $4.50 on the dinner check", checks);
+assert.equal(dinner.ok && dinner.list.id, "dinner");
+const notTest = chooseList("I'll get chips for $4.50 on the dinner check", [checks[0]]);
+assert.equal(notTest.ok, false);
+if (!notTest.ok) assert.match(notTest.reply, /dinner check/);
+assert.equal(explicitCheck("I'll get chips for $4.50 on the dinner check"), "dinner check");
+assert.deepEqual(parseCommitments(textWithoutCheck("I'll get chips for $4.50 on the dinner check"), sender), [
+  { who: sender, action: "get", item: "chips", amount: "$4.50" },
+]);
+assert.equal(
+  renderConfirmation([{ who: sender, action: "get", item: "chips", amount: "$4.50" }], sender, "Dinner check"),
+  "Got it. You'll get chips for $4.50. I'll put that on Dinner check.",
+);
 
 console.log("commitment parser ok");
