@@ -1040,25 +1040,6 @@ export default function ReceiptScanner() {
         {status}
       </p>
 
-      {frozenImage && (
-        <button
-          type="button"
-          onClick={extractText}
-          disabled={
-            processingStage === "extracting" || processingStage === "parsing"
-          }
-          className="min-h-12 w-full rounded-lg bg-green-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-wait disabled:opacity-60 sm:w-auto sm:text-base"
-        >
-          {processingStage === "extracting"
-            ? "Extracting text..."
-            : processingStage === "parsing"
-              ? "Organizing receipt..."
-              : extractedText
-                ? "Extract text again"
-                : "Extract text"}
-        </button>
-      )}
-
       <input
         ref={receiptFileInputRef}
         type="file"
@@ -1071,7 +1052,13 @@ export default function ReceiptScanner() {
         }}
       />
 
-      <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
+      <div
+        className={
+          frozenImage
+            ? "grid w-full grid-cols-3 gap-2"
+            : "grid grid-cols-2 gap-3 sm:flex sm:flex-wrap"
+        }
+      >
         {!cameraOn && !frozenImage && (
           <button
             onClick={() => void startCamera()}
@@ -1111,8 +1098,25 @@ export default function ReceiptScanner() {
         {frozenImage && (
           <>
             <button
+              type="button"
+              onClick={extractText}
+              disabled={
+                processingStage === "extracting" ||
+                processingStage === "parsing"
+              }
+              className="min-h-12 min-w-0 rounded-lg bg-green-600 px-2 py-3 text-xs font-semibold text-white disabled:cursor-wait disabled:opacity-60 sm:px-4 sm:text-base"
+            >
+              {processingStage === "extracting"
+                ? "Extracting..."
+                : processingStage === "parsing"
+                  ? "Organizing..."
+                  : extractedText
+                    ? "Extract again"
+                    : "Extract text"}
+            </button>
+            <button
               onClick={retake}
-              className="min-h-12 min-w-0 rounded-lg border px-4 py-3 text-sm sm:text-base"
+              className="min-h-12 min-w-0 rounded-lg border px-2 py-3 text-xs sm:px-4 sm:text-base"
             >
               Retake
             </button>
@@ -1122,9 +1126,12 @@ export default function ReceiptScanner() {
         <button
           type="button"
           onClick={() => receiptFileInputRef.current?.click()}
-          className="col-span-2 min-h-12 min-w-0 rounded-lg border bg-white px-4 py-3 text-sm font-semibold sm:col-span-1 sm:text-base"
+          aria-label="Upload receipt image or PDF"
+          className={`min-h-12 min-w-0 rounded-lg border bg-white px-2 py-3 text-xs font-semibold sm:px-4 sm:text-base ${
+            frozenImage ? "" : "col-span-2 sm:col-span-1"
+          }`}
         >
-          Upload receipt image or PDF
+          {frozenImage ? "Upload" : "Upload receipt image or PDF"}
         </button>
       </div>
       {!receiptDocumentDataUrl && aiError && (
