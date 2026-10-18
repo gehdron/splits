@@ -65,9 +65,12 @@ export function Board({ data }: { data: DashboardData }) {
   const listNameInput = useRef<HTMLInputElement>(null);
   const [exitState, exitAction, exitPending] = useActionState(exitGroup, undefined);
 
-  function openList(scan: boolean) {
+  function openNewListScanner() {
     newListDialog.current?.close();
-    router.push(scan ? "/list?scan=1" : "/list");
+    const query = group
+      ? `?newList=1&group=${encodeURIComponent(group.id)}`
+      : "?newList=1";
+    router.push(`/dashboard/item-by-item${query}`);
   }
 
   function resetNewList() {
@@ -338,7 +341,11 @@ export function Board({ data }: { data: DashboardData }) {
                       <button className="btn" type="button" onClick={chooseBlankList}>
                         Blank list
                       </button>
-                      <button className="btn line" type="button" onClick={() => openList(true)}>
+                      <button
+                        className="btn line"
+                        type="button"
+                        onClick={openNewListScanner}
+                      >
                         Scan a receipt
                       </button>
                     </div>

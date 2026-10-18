@@ -56,6 +56,9 @@ const starterItems: ReceiptItem[] = [
   { id: "batteries", name: "AA batteries", cents: 799, who: null },
 ];
 
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_PDF_BYTES = 4 * 1024 * 1024;
+
 function money(cents: number): string {
   const abs = Math.abs(cents);
   return `${cents < 0 ? "-" : ""}$${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
@@ -96,6 +99,132 @@ export function ItemByItemView({ data }: { data: DashboardData }) {
   const [itemName, setItemName] = useState("");
   const [itemPrice, setItemPrice] = useState("");
   const [sent, setSent] = useState(false);
+  const [receiptFileName, setReceiptFileName] = useState("");
+  const [receiptError, setReceiptError] = useState("");
+  const [scanning, setScanning] = useState(false);
+
+  async function scanReceipt(file: File) {
+    const isPdf = file.type === "application/pdf";
+    const isImage = ["image/jpeg", "image/png", "image/webp"].includes(file.type);
+    if (!isPdf && !isImage) {
+      setReceiptError("Choose a JPEG, PNG, WebP, or PDF receipt.");
+      return;
+    }
+    if (file.size > (isPdf ? MAX_PDF_BYTES : MAX_IMAGE_BYTES)) {
+      setReceiptError(
+        isPdf
+          ? "PDF receipts must be 4 MB or smaller."
+          : "Image receipts must be 8 MB or smaller."
+      );
+      return;
+    }
+
+    setScanning(true);
+    setReceiptError("");
+    try {
+      let response: Response;
+      if (isPdf) {
+        const formData = new FormData();
+        formData.append("receiptFile", file);
+        response = await fetch("/api/parse-receipt", {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        const imageDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = () => reject(new Error("That image could not be read."));
+          reader.readAsDataURL(file);
+        });
+        response = await fetch("/api/parse-receipt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageDataUrl }),
+        });
+      }
+
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        throw new Error(
+          typeof result === "object" &&
+            result !== null &&
+            "error" in result &&
+            typeof result.error === "string"
+            ? result.error
+            : "The receipt could not be read."
+        );
+      }
+      if (
+        typeof result !== "object" ||
+        result === null ||
+        !("items" in result) ||
+        !Array.isArray(result.items)
+      ) {
+        throw new Error("The receipt parser returned an invalid result.");
+      }
+
+      const parsedItems = result.items.flatMap((item, index): ReceiptItem[] => {
+        if (
+          typeof item !== "object" ||
+          item === null ||
+          !("description" in item) ||
+          typeof item.description !== "string" ||
+          !("amount" in item) ||
+          typeof item.amount !== "string"
+        ) {
+          return [];
+        }
+        const description = item.description.trim();
+        const lineCents = Math.round(
+          Number(item.amount.replace(/[^0-9.]/g, "")) * 100
+        );
+        if (!description || !Number.isFinite(lineCents) || lineCents < 0) {
+          return [];
+        }
+        const quantityText =
+          "quantity" in item && typeof item.quantity === "string"
+            ? item.quantity
+            : "";
+        const parsedQuantity = Math.round(Number(quantityText));
+        const quantity =
+          Number.isInteger(parsedQuantity) && parsedQuantity >= 1
+            ? parsedQuantity
+            : 1;
+        const exactUnitPrice = lineCents % quantity === 0;
+        return [{
+          id: `receipt-${Date.now()}-${index}`,
+          name:
+            exactUnitPrice || quantity === 1
+              ? description
+              : `${description} x${quantity}`,
+          cents: exactUnitPrice ? lineCents / quantity : lineCents,
+          who: null,
+        }];
+      });
+
+      if (parsedItems.length === 0) {
+        throw new Error("No receipt items were found. Upload a clearer receipt.");
+      }
+      setItems(parsedItems);
+      setReceiptFileName(file.name);
+      setSent(false);
+    } catch (error) {
+      setReceiptError(
+        error instanceof Error
+          ? error.message
+          : "The receipt could not be read. Try again."
+      );
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  function handleReceiptSelection(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (file) void scanReceipt(file);
+  }
 
   useEffect(() => {
     if (!openId) return;
@@ -165,16 +294,55 @@ export function ItemByItemView({ data }: { data: DashboardData }) {
 
           <section className="sec rcpt" aria-labelledby="scan-h">
             <div className="rc-ph" role="img" aria-label="Receipt photo placeholder">
-              <ReceiptIcon /><b>Receipt photo</b><small>[Placeholder for the scanned receipt]</small>
+              <ReceiptIcon />
+              <b>{receiptFileName || "Receipt photo"}</b>
+              <small>
+                {receiptFileName
+                  ? "Receipt uploaded"
+                  : "[Placeholder for the scanned receipt]"}
+              </small>
             </div>
             <div>
               <h2 id="scan-h">Scan the receipt</h2>
               <p className="sub">Take a photo of the receipt and Splits lists every item and price for you. Check them below and fix anything that’s off.</p>
               <div className="acts2">
-                <button className="btn" type="button"><CameraIcon />Scan receipt</button>
-                <button className="btn line" type="button">Upload a photo</button>
+                <label
+                  className={`btn receipt-picker${scanning ? " is-loading" : ""}`}
+                  aria-disabled={scanning}
+                >
+                  <CameraIcon />
+                  <span>{scanning ? "Reading receipt…" : "Scan receipt"}</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    capture="environment"
+                    aria-label="Take a photo of a receipt"
+                    disabled={scanning}
+                    onChange={handleReceiptSelection}
+                  />
+                </label>
+                <label
+                  className={`btn line receipt-picker${scanning ? " is-loading" : ""}`}
+                  aria-disabled={scanning}
+                >
+                  <span>Upload a photo</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,application/pdf"
+                    aria-label="Upload a receipt photo or PDF"
+                    disabled={scanning}
+                    onChange={handleReceiptSelection}
+                  />
+                </label>
               </div>
-              <p className="scanned"><span className="pill">Scanned</span>Found {items.length} {items.length === 1 ? "item" : "items"}, plus tax and shipping.</p>
+              {receiptError ? (
+                <p className="scanned" role="alert">{receiptError}</p>
+              ) : receiptFileName ? (
+                <p className="scanned" role="status">
+                  <span className="pill">Scanned</span>Found {items.length}{" "}
+                  {items.length === 1 ? "item" : "items"}.
+                </p>
+              ) : null}
             </div>
           </section>
 

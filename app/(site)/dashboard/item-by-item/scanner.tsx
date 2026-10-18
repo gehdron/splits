@@ -2,9 +2,16 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useActionState, useEffect, useRef, useState } from "react";
+import {
+  Suspense,
+  useActionState,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { ReactNode } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signOut } from "../../auth/actions";
 import { createListFromReceipt, importReceipt } from "../actions";
 import Tesseract from "tesseract.js";
@@ -36,6 +43,7 @@ type ReceiptProcessingStage =
   | "error";
 
 const MAX_PDF_BYTES = 4 * 1024 * 1024;
+const RECEIPT_HANDOFF_KEY = "splits:receipt-handoff:v1";
 
 function isAiParsedReceipt(value: unknown): value is AiParsedReceipt {
   if (
@@ -164,6 +172,7 @@ type ScannerProps = {
   people: string[];
   charge: ScannerCharge | null;
   loadError: string | null;
+  startCameraOnLoad?: boolean;
 };
 
 // The AI returns amounts as text ("36.97" or "$36.97"); show them with one leading "$". Display only.
@@ -268,11 +277,21 @@ function SaveReceiptButton({ rows, group, listName }: { rows: AiReceiptItem[]; g
   );
 }
 
-export function ReceiptScanner({ me, groups, group, people, charge, loadError }: ScannerProps) {
+export function ReceiptScanner({
+  me,
+  groups,
+  group,
+  people,
+  charge,
+  loadError,
+  startCameraOnLoad = false,
+}: ScannerProps) {
+  const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const receiptFileInputRef = useRef<HTMLInputElement>(null);
+  const autoCameraStarted = useRef(false);
 
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraFacingMode, setCameraFacingMode] =
@@ -381,10 +400,10 @@ export function ReceiptScanner({ me, groups, group, people, charge, loadError }:
     setTipSplitMode(mode);
   }
 
-  async function startCamera(
+  const startCamera = useCallback(async (
     facingMode: CameraFacingMode = cameraFacingMode,
     deviceId?: string
-  ) {
+  ) => {
     let stream: MediaStream | null = null;
     readRun.current += 1;
 
@@ -468,7 +487,7 @@ export function ReceiptScanner({ me, groups, group, people, charge, loadError }:
       setStatus(message);
       setCameraError(message);
     }
-  }
+  }, [cameraFacingMode, people]);
 
   function stopCamera() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -1111,6 +1130,15 @@ export function ReceiptScanner({ me, groups, group, people, charge, loadError }:
     };
   }, []);
 
+  useEffect(() => {
+    if (!startCameraOnLoad || autoCameraStarted.current) return;
+    const timeoutId = window.setTimeout(() => {
+      autoCameraStarted.current = true;
+      void startCamera();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [startCamera, startCameraOnLoad]);
+
   const step: 1 | 2 | 3 =
     aiParsed && receiptRows.length > 0 ? 3 : receiptDocumentDataUrl ? 2 : 1;
   const isProcessing =
@@ -1191,6 +1219,19 @@ export function ReceiptScanner({ me, groups, group, people, charge, loadError }:
 
   function openUpload() {
     receiptFileInputRef.current?.click();
+  }
+
+  function continueToSplitChat() {
+    try {
+      window.sessionStorage.setItem(
+        RECEIPT_HANDOFF_KEY,
+        JSON.stringify({ items: receiptRows, totals: receiptTotals })
+      );
+      router.push("/detect?receiptImported=1");
+    } catch (error) {
+      console.error(error);
+      setAiError("Could not return these items to the split chat. Try again.");
+    }
   }
 
   // PDFs skip OCR, and a failed AI pass after good OCR only needs the AI step again.
@@ -1578,6 +1619,13 @@ export function ReceiptScanner({ me, groups, group, people, charge, loadError }:
                   <Suspense fallback={null}>
                     <SaveReceiptButton rows={receiptRows} group={group} listName={charge?.merchant ?? "Receipt"} />
                   </Suspense>
+                  <button
+                    className="btn lg"
+                    type="button"
+                    onClick={continueToSplitChat}
+                  >
+                    Continue to split chat
+                  </button>
                 </section>
                 <aside className="col" aria-label="Your receipt">
                   {photoCard}
