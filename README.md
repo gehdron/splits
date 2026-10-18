@@ -70,6 +70,11 @@ camera and upload screen. After reviewing the parsed items, choose **Continue
 to split chat** to return the receipt items and totals to `/detect`, where the
 chat and manual assignment controls are available.
 
+On `/list`, choose **Split with chat** to assign general list items with
+natural-language instructions, or keep using the per-item controls. Each list
+item has one assignee; chat assignments are saved through the same controls
+and update the list totals.
+
 ## Routes
 
 | Route | What it is |
@@ -79,7 +84,7 @@ chat and manual assignment controls are available.
 | `/scan` | Receipt scanner (moved from `/`) |
 | `/dashboard/item-by-item` | Dedicated receipt camera and upload screen (requires sign-in) |
 | `/detect` | Receipt review, manual assignment, and split chat |
-| `/list` | Shared list |
+| `/list` | Shared list with manual and chat-based item assignment |
 | any other URL | 404 page (`app/global-not-found.tsx`) |
 
 The marketing pages live in `app/(site)` with their own layout and CSS, separate from the scanner's Tailwind layout in `app/(app)`.

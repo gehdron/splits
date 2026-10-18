@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { normalizePhone } from "@/lib/phone";
 import { createClient } from "@/lib/supabase/client";
+import type {
+  SplitAssistantResult,
+  SplitInstructionMessage,
+} from "@/app/split-types";
 import "./list.css";
 
 // TODO: lists have no group yet. This mirrors the dashboard's sample group until groups come from Supabase.
@@ -26,6 +30,33 @@ type ListData = { list: { id: string; name: string }; items: ApiItem[]; totals: 
 
 type Item = { id: string; name: string; quantity: number; cents: number; who: string | null };
 type SharedList = { name: string; paidBy: string; items: Item[] };
+
+function isSplitAssistantResult(value: unknown): value is SplitAssistantResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "reply" in value &&
+    typeof value.reply === "string" &&
+    "clarification" in value &&
+    typeof value.clarification === "string" &&
+    "assignments" in value &&
+    Array.isArray(value.assignments) &&
+    value.assignments.every((assignment: unknown) =>
+        typeof assignment === "object" &&
+        assignment !== null &&
+        "itemIndex" in assignment &&
+        typeof assignment.itemIndex === "number" &&
+        Number.isInteger(assignment.itemIndex) &&
+        assignment.itemIndex >= 0 &&
+        "people" in assignment &&
+        Array.isArray(assignment.people) &&
+        assignment.people.length === 1 &&
+        assignment.people.every(
+          (person: unknown) => typeof person === "string" && person.trim().length > 0
+        )
+    )
+  );
+}
 
 /* ---------------------------------------------------------------- helpers */
 
@@ -245,6 +276,11 @@ export default function ListPage() {
   const [msg, setMsg] = useState("");
   const [scan, setScan] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [splitChatOpen, setSplitChatOpen] = useState(false);
+  const [splitMessages, setSplitMessages] = useState<SplitInstructionMessage[]>([]);
+  const [splitMessage, setSplitMessage] = useState("");
+  const [splitParsing, setSplitParsing] = useState(false);
+  const [splitError, setSplitError] = useState("");
 
   // On load: use ?id= from the URL, or create a new list and put its id in the URL
   useEffect(() => {
@@ -430,10 +466,23 @@ export default function ListPage() {
     void assignPerson(item, person.name);
   }
 
-  async function act(id: string, action: "claim" | "unclaim", user: string) {
+  async function act(
+    id: string,
+    action: "claim" | "unclaim",
+    user: string
+  ): Promise<{ success: boolean; error?: string }> {
     const res = await fetch(`/api/items/${id}`, { method: "PATCH", body: JSON.stringify({ action, user }) });
-    setMsg(res.ok ? "" : (await res.json()).error);
+    const payload: unknown = await res.json();
+    const error =
+      typeof payload === "object" &&
+      payload !== null &&
+      "error" in payload &&
+      typeof payload.error === "string"
+        ? payload.error
+        : "That item could not be updated.";
+    setMsg(res.ok ? "" : error);
     refresh();
+    return res.ok ? { success: true } : { success: false, error };
   }
 
   async function remove(id: string) {
@@ -441,17 +490,29 @@ export default function ListPage() {
     refresh();
   }
 
-  async function assignPerson(item: Item, user: string) {
+  async function assignPerson(
+    item: Item,
+    user: string
+  ): Promise<{ success: boolean; error?: string }> {
     setOpenItem(null);
-    if (item.who === user) return;
+    if (item.who === user) return { success: true };
     if (item.who) {
       const cleared = await fetch(`/api/items/${item.id}`, {
         method: "PATCH",
         body: JSON.stringify({ action: "unclaim", user: item.who }),
       });
       if (!cleared.ok) {
-        setMsg((await cleared.json()).error ?? "That item could not be reassigned.");
-        return;
+        const payload: unknown = await cleared.json();
+        const error =
+          typeof payload === "object" &&
+          payload !== null &&
+          "error" in payload &&
+          typeof payload.error === "string"
+            ? payload.error
+            : "That item could not be reassigned.";
+        setMsg(error);
+        refresh();
+        return { success: false, error };
       }
     }
     return act(item.id, "claim", user);
@@ -461,6 +522,118 @@ export default function ListPage() {
     if (!item.who) return;
     setOpenItem(null);
     return act(item.id, "unclaim", item.who);
+  }
+
+  async function sendSplitMessage(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const content = splitMessage.trim();
+    if (!content || splitParsing || !data || !listId) return;
+
+    const messages: SplitInstructionMessage[] = [
+      ...splitMessages.slice(-19),
+      { role: "user", content },
+    ];
+    setSplitParsing(true);
+    setSplitError("");
+
+    try {
+      const items = list.items.map((item) => ({
+        description: item.name,
+        quantity: String(item.quantity),
+        amount: (item.cents / 100).toFixed(2),
+      }));
+      const response = await fetch("/api/split-receipt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "list",
+          items,
+          totals: {
+            subtotal: (s.subtotal / 100).toFixed(2),
+            tax: "0",
+            tip: "0",
+            total: (s.subtotal / 100).toFixed(2),
+          },
+          assignments: list.items.flatMap((item, itemIndex) =>
+            item.who ? [{ itemIndex, people: [item.who] }] : []
+          ),
+          messages,
+        }),
+      });
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        const message =
+          typeof result === "object" &&
+          result !== null &&
+          "error" in result &&
+          typeof result.error === "string"
+            ? result.error
+            : "The list assistant could not process that message.";
+        throw new Error(message);
+      }
+      if (
+        !isSplitAssistantResult(result) ||
+        result.assignments.some(
+          (assignment) => assignment.itemIndex >= list.items.length
+        )
+      ) {
+        throw new Error("The list assistant returned invalid assignments.");
+      }
+
+      let changedCount = 0;
+      for (const assignment of result.assignments) {
+        const item = list.items[assignment.itemIndex];
+        const assignee = assignment.people[0];
+        if (!item || item.who === assignee) continue;
+        const assignmentResult = await assignPerson(item, assignee);
+        if (!assignmentResult.success) {
+          throw new Error(
+            `The assistant planned ${result.assignments.length} assignment(s), but only ${changedCount} were saved. ${assignmentResult.error ?? "Refresh the list and try again."}`
+          );
+        }
+        changedCount += 1;
+      }
+
+      const reply =
+        result.clarification ||
+        (changedCount > 0
+          ? `${result.reply} ✓ ${changedCount} ${changedCount === 1 ? "item is" : "items are"} assigned.`
+          : result.reply);
+      setSplitMessages([...messages, { role: "assistant", content: reply }]);
+      setSplitMessage("");
+      setAdded((current) => {
+        const next = [...current];
+        for (const assignment of result.assignments) {
+          const assignedName = assignment.people[0];
+          if (
+            !friends.some(
+              (friend) => friend.name.toLocaleLowerCase() === assignedName.toLocaleLowerCase()
+            ) &&
+            !next.some(
+              (person) => person.name.toLocaleLowerCase() === assignedName.toLocaleLowerCase()
+            )
+          ) {
+            next.push({
+              id: `assistant:${assignedName.toLocaleLowerCase()}`,
+              name: assignedName,
+              detail: "Assigned by list chat",
+            });
+          }
+        }
+        return next;
+      });
+      await refresh();
+    } catch (error) {
+      console.error(error);
+      setSplitMessages(messages);
+      setSplitError(
+        error instanceof Error
+          ? error.message
+          : "The list assistant could not process that message."
+      );
+    } finally {
+      setSplitParsing(false);
+    }
   }
 
   const list: SharedList = {
@@ -633,7 +806,58 @@ export default function ListPage() {
                   Assign each item to a friend, or to a phone number or email. {mine ? "They owe you for their items." : `You owe ${list.paidBy} for yours.`}
                 </p>
               </div>
+              <button
+                className="btn line"
+                type="button"
+                aria-expanded={splitChatOpen}
+                aria-controls="list-split-chat"
+                disabled={!data || list.items.length === 0}
+                onClick={() => setSplitChatOpen((open) => !open)}
+              >
+                {splitChatOpen ? "Close chat" : "Split with chat"}
+              </button>
             </div>
+
+            <section
+              className="list-chat"
+              id="list-split-chat"
+              aria-label="Split items with chat"
+              hidden={!splitChatOpen}
+            >
+              <div className="list-chat-messages" aria-live="polite" aria-relevant="additions text">
+                {splitMessages.length === 0 ? (
+                  <p className="list-chat-welcome">
+                    Tell me who should get each item, for example, “Alex is bringing the plates and I’ll take the drinks.”
+                  </p>
+                ) : (
+                  splitMessages.map((message, index) => (
+                    <p
+                      className={`list-chat-message ${message.role}`}
+                      key={`${index}-${message.role}`}
+                    >
+                      {message.content}
+                    </p>
+                  ))
+                )}
+                {splitParsing ? <p className="list-chat-pending">Working on the assignments…</p> : null}
+              </div>
+              {splitError ? <p className="list-chat-error" role="alert">{splitError}</p> : null}
+              <form className="list-chat-form" onSubmit={sendSplitMessage}>
+                <label className="sr" htmlFor="list-split-message">Tell the assistant how to assign items</label>
+                <textarea
+                  id="list-split-message"
+                  value={splitMessage}
+                  maxLength={1000}
+                  rows={2}
+                  placeholder="Who should get each item?"
+                  disabled={splitParsing}
+                  onChange={(event) => setSplitMessage(event.target.value)}
+                />
+                <button className="btn" type="submit" disabled={splitParsing || !splitMessage.trim()}>
+                  {splitParsing ? "Assigning…" : "Send"}
+                </button>
+              </form>
+            </section>
 
             {scan ? (
               <form className="scan">

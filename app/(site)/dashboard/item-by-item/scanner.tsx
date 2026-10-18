@@ -188,6 +188,63 @@ function initials(name: string): string {
   return (first + last).toUpperCase();
 }
 
+function ReceiptImage({
+  src,
+  width,
+  height,
+  words,
+  alt,
+}: {
+  src: string;
+  width: number;
+  height: number;
+  words: DetectedWord[];
+  alt: string;
+}) {
+  return (
+    <div
+      className="receipt-image"
+      style={width > 0 && height > 0 ? { aspectRatio: `${width} / ${height}` } : undefined}
+    >
+      <img src={src} alt={alt} draggable={false} />
+      {width > 0 && height > 0 && words.length > 0 && (
+        <svg
+          aria-hidden="true"
+          className="receipt-image-words"
+          viewBox={`0 0 ${width} ${height}`}
+          preserveAspectRatio="xMidYMid meet"
+        >
+          {words.map(({ text, bbox }, index) => (
+            <g key={`${bbox.x0}-${bbox.y0}-${index}`}>
+              <rect
+                x={bbox.x0}
+                y={bbox.y0}
+                width={bbox.x1 - bbox.x0}
+                height={bbox.y1 - bbox.y0}
+                fill="rgba(46, 242, 166, 0.12)"
+                stroke="#2EF2A6"
+                strokeWidth={Math.max(2, width / 500)}
+              />
+              <text
+                x={bbox.x0 + 2}
+                y={Math.max(bbox.y0 - 4, 12)}
+                fill="#86efac"
+                fontSize={Math.max(8, Math.min(24, (bbox.y1 - bbox.y0) * 0.55))}
+                fontWeight="600"
+                paintOrder="stroke"
+                stroke="#14532d"
+                strokeWidth={1.5}
+              >
+                {text}
+              </text>
+            </g>
+          ))}
+        </svg>
+      )}
+    </div>
+  );
+}
+
 function colorClass(name: string): string {
   let h = 0;
   for (const ch of name.toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
@@ -292,6 +349,7 @@ export function ReceiptScanner({
   const streamRef = useRef<MediaStream | null>(null);
   const receiptFileInputRef = useRef<HTMLInputElement>(null);
   const autoCameraStarted = useRef(false);
+  const [enlargedImageOpen, setEnlargedImageOpen] = useState(false);
 
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraFacingMode, setCameraFacingMode] =
@@ -715,6 +773,7 @@ export function ReceiptScanner({
       const image = new Image();
       image.src = imageUrl;
       await image.decode();
+      setFrameSize({ width: image.naturalWidth, height: image.naturalHeight });
 
       let progressStage: "locating" | "reading" = "locating";
       worker = await Tesseract.createWorker("eng", undefined, {
@@ -1289,7 +1348,23 @@ export function ReceiptScanner({
             <small>{receiptDocumentName}</small>
           </div>
         ) : (
-          frozenImage && <img src={frozenImage} alt="Your receipt" />
+          frozenImage && (
+            <button
+              className="receipt-image-button"
+              type="button"
+              onClick={() => setEnlargedImageOpen(true)}
+              aria-label="Enlarge receipt image"
+            >
+              <ReceiptImage
+                src={frozenImage}
+                width={frameSize.width}
+                height={frameSize.height}
+                words={detectedWords}
+                alt="Your receipt"
+              />
+              <span>Enlarge image</span>
+            </button>
+          )
         )}
       </div>
       <div className="acts2">
@@ -1311,10 +1386,55 @@ export function ReceiptScanner({
     </section>
   );
 
+  useEffect(() => {
+    if (!enlargedImageOpen) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setEnlargedImageOpen(false);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [enlargedImageOpen]);
+
   return (
     <div className="db">
       <Sidebar me={me} groups={groups} group={group} people={people} loadError={loadError} />
       <main className="main">
+        {enlargedImageOpen && frozenImage && (
+          <div
+            className="receipt-lightbox"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Enlarged receipt image"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) {
+                setEnlargedImageOpen(false);
+              }
+            }}
+          >
+            <button
+              className="receipt-lightbox-close"
+              type="button"
+              onClick={() => setEnlargedImageOpen(false)}
+              aria-label="Close enlarged receipt image"
+            >
+              <CloseIcon />
+            </button>
+            <div className="receipt-lightbox-content">
+              <ReceiptImage
+                src={frozenImage}
+                width={frameSize.width}
+                height={frameSize.height}
+                words={detectedWords}
+                alt="Enlarged receipt with detected text"
+              />
+              <p>
+                {detectedWords.length > 0
+                  ? "Green outlines show text detected on the receipt."
+                  : "Text outlines appear after you extract text."}
+              </p>
+            </div>
+          </div>
+        )}
         <div className="wrap">
           <Link className="back" href={group ? `/dashboard?group=${encodeURIComponent(group.id)}` : "/dashboard"}>
             <BackIcon />
