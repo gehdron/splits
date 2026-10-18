@@ -59,7 +59,11 @@ export async function PATCH(req: Request, ctx: RouteContext<"/api/lists/[id]">) 
     if (typeof bodyRecord.merchant !== "string") {
       return Response.json({ error: "Merchant must be text." }, { status: 400 });
     }
-    patch.merchant = bodyRecord.merchant.trim();
+    const merchant = bodyRecord.merchant.trim();
+    if (merchant.length > 120) {
+      return Response.json({ error: "Place names must be 120 characters or fewer." }, { status: 400 });
+    }
+    patch.merchant = merchant;
   }
   for (const key of ["receiptSubtotalCents", "taxCents", "tipCents", "receiptTotalCents"] as const) {
     if (!(key in bodyRecord)) continue;

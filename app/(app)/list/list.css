@@ -130,6 +130,10 @@
 .db .list-start-form .lbl{margin:0}
 .db .list-start-form>.btn{justify-self:start;margin-top:12px}
 .db .receipt-name-suggestion{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:12px 0;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:#fff}
+.db .list-place{max-width:560px;margin-top:18px}
+.db .list-place .lbl{margin:0 0 6px}
+.db .list-place .sub{margin:6px 0 0;font-size:13px}
+.db .list-place .field{flex:1}
 .db .money-input-wrap{display:flex;align-items:center;gap:4px;width:120px}
 .db .money-input-wrap .field{min-height:36px;padding:0 8px;font-size:14px;text-align:right}
 .db .money-input-wrap span{color:var(--mut);font-weight:600}

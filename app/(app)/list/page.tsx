@@ -428,6 +428,10 @@ function ListPageContent() {
   const [taxInput, setTaxInput] = useState("");
   const [tipInput, setTipInput] = useState("");
   const [savingTotals, setSavingTotals] = useState(false);
+  const [merchantInput, setMerchantInput] = useState("");
+  const [savingMerchant, setSavingMerchant] = useState(false);
+  const [merchantMessage, setMerchantMessage] = useState("");
+  const merchantDirty = useRef(false);
   const [receiptNameSuggestion, setReceiptNameSuggestion] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deletingList, setDeletingList] = useState(false);
@@ -442,6 +446,7 @@ function ListPageContent() {
   // Invalidate an in-flight request when Next.js navigates between list query strings.
   useEffect(() => {
     listLoadRun.current += 1;
+    merchantDirty.current = false;
   }, [requestedListId]);
 
   useEffect(() => {
@@ -504,6 +509,9 @@ function ListPageContent() {
       const json = result as ListData;
       setData(json);
       setListLoadFailure(null);
+      if (!merchantDirty.current) {
+        setMerchantInput(json.list.merchant ?? "");
+      }
       if (json.list.name === "Shared list") {
         setTitle((current) => current || json.list.name);
         setEditingTitle(true);
@@ -657,6 +665,10 @@ function ListPageContent() {
           return;
         }
       }
+      if (merchant) {
+        setMerchantInput(merchant);
+        merchantDirty.current = false;
+      }
 
       setScan(false);
       window.history.replaceState(null, "", `/list?id=${listId}`);
@@ -680,6 +692,7 @@ function ListPageContent() {
       setMsg("Enter tax and tip as non-negative amounts with up to two decimal places.");
       return;
     }
+
     setSavingTotals(true);
     try {
       const response = await fetch(`/api/lists/${listId}`, {
@@ -701,6 +714,37 @@ function ListPageContent() {
       setMsg(error instanceof Error ? error.message : "Receipt totals could not be saved.");
     } finally {
       setSavingTotals(false);
+    }
+  }
+
+  async function saveMerchant() {
+    if (!listId || !data || savingMerchant) return;
+    setSavingMerchant(true);
+    setMerchantMessage("");
+    try {
+      const response = await fetch(`/api/lists/${listId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ merchant: merchantInput }),
+      });
+      const result: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        const error =
+          typeof result === "object" &&
+          result !== null &&
+          "error" in result &&
+          typeof result.error === "string"
+            ? result.error
+            : "The place could not be saved.";
+        throw new Error(error);
+      }
+      merchantDirty.current = false;
+      setMerchantMessage(merchantInput.trim() ? "Place saved." : "Place removed.");
+      await refresh();
+    } catch (error) {
+      setMerchantMessage(error instanceof Error ? error.message : "The place could not be saved.");
+    } finally {
+      setSavingMerchant(false);
     }
   }
 
@@ -1432,6 +1476,36 @@ function ListPageContent() {
                   {mine ? "You paid." : `${list.paidBy} paid.`} {plural(list.items.length, "item")}.
                 </span>
               </div>
+              {data ? (
+                <form
+                  className="list-place"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void saveMerchant();
+                  }}
+                >
+                  <label className="lbl" htmlFor="list-place">Place (optional)</label>
+                  <div className="inrow">
+                    <input
+                      id="list-place"
+                      className="field"
+                      maxLength={120}
+                      placeholder="Store or restaurant"
+                      value={merchantInput}
+                      onChange={(event) => {
+                        merchantDirty.current = true;
+                        setMerchantMessage("");
+                        setMerchantInput(event.target.value);
+                      }}
+                    />
+                    <button className="btn line" type="submit" disabled={savingMerchant}>
+                      {savingMerchant ? "Saving…" : "Save place"}
+                    </button>
+                  </div>
+                  <p className="sub">Optional. We’ll read it from a receipt when available, or you can enter it.</p>
+                  {merchantMessage ? <p className="msg" role="status">{merchantMessage}</p> : null}
+                </form>
+              ) : null}
             </div>
             <div className="acts">
               <button className="btn txt" type="button" onClick={startRename} disabled={!data || editingTitle}>

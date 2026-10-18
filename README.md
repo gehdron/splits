@@ -103,6 +103,10 @@ share. Receipt totals are compared with the item amounts. The list owner can
 delete a list; unpaid payment links are retired first, and completed payments
 remain recorded.
 
+Receipt scanning also tries to read the store or restaurant name. The optional
+place field can be reviewed or filled in manually on the receipt save form or
+the list page. Splits does not request device location.
+
 ## Storage and database setup
 
 For production, group lists use the schema in `supabase/schema.sql`. Configure

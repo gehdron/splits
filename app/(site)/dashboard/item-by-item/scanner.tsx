@@ -56,6 +56,7 @@ function isAiParsedReceipt(value: unknown): value is AiParsedReceipt {
 
   const totals = value.totals;
   return (
+    (!("merchant" in value) || typeof value.merchant === "string") &&
     value.items.every(
       (item) =>
         typeof item === "object" &&
@@ -309,6 +310,7 @@ function SaveReceiptButton({
   group,
   listName,
   merchant,
+  onMerchantChange,
   receiptTotals,
   displayedReceiptTotal,
 }: {
@@ -316,6 +318,7 @@ function SaveReceiptButton({
   group: ScannerGroup | null;
   listName: string;
   merchant: string;
+  onMerchantChange: (merchant: string) => void;
   receiptTotals: AiReceiptTotals;
   displayedReceiptTotal: string;
 }) {
@@ -377,7 +380,19 @@ function SaveReceiptButton({
   return (
     <form action={listId ? importAction : createAction} className="acts2">
       <input type="hidden" name="groupId" value={group.id} />
-      <input type="hidden" name="merchant" value={merchant} />
+      <div style={{ width: "100%", margin: "10px 0" }}>
+        <label className="lbl" htmlFor="receipt-place">Place (optional)</label>
+        <input
+          id="receipt-place"
+          className="field"
+          name="merchant"
+          value={merchant}
+          maxLength={120}
+          placeholder="Enter the store or restaurant"
+          onChange={(event) => onMerchantChange(event.target.value)}
+        />
+        <p className="sub">We’ll try to read the place from your receipt. You can edit it here.</p>
+      </div>
       <input type="hidden" name="receiptTotals" value={JSON.stringify({
         ...receiptTotals,
         total: displayedReceiptTotal,
@@ -480,6 +495,7 @@ export function ReceiptScanner({
   const [ocrCompleted, setOcrCompleted] = useState(false);
   const [detectedWords, setDetectedWords] = useState<DetectedWord[]>([]);
   const [receiptRows, setReceiptRows] = useState<AiReceiptItem[]>([]);
+  const [receiptMerchant, setReceiptMerchant] = useState(charge?.merchant ?? "");
   const [receiptTotals, setReceiptTotals] = useState<AiReceiptTotals>({
     subtotal: "",
     tax: "",
@@ -1173,6 +1189,7 @@ export function ReceiptScanner({
       }
 
       setReceiptRows(result.items);
+      setReceiptMerchant(result.merchant?.trim() || charge?.merchant || "");
       setReceiptTotals(result.totals);
       setReceiptTotalEdited(false);
       setAiParsed(true);
@@ -1833,7 +1850,8 @@ export function ReceiptScanner({
                       rows={receiptRows}
                       group={group}
                       listName={charge?.merchant ?? "Receipt"}
-                      merchant={charge?.merchant ?? ""}
+                      merchant={receiptMerchant}
+                      onMerchantChange={setReceiptMerchant}
                       receiptTotals={receiptTotals}
                       displayedReceiptTotal={displayedReceiptTotal}
                     />

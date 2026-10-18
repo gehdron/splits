@@ -280,6 +280,9 @@ type ReceiptMetadata = {
 
 function readReceiptMetadata(formData: FormData): { metadata: ReceiptMetadata; error?: string } {
   const merchant = String(formData.get("merchant") ?? "").trim();
+  if (merchant.length > 120) {
+    return { metadata: {}, error: "Place names must be 120 characters or fewer." };
+  }
   const rawTotals = String(formData.get("receiptTotals") ?? "");
   if (!rawTotals) return { metadata: merchant ? { merchant } : {} };
 
