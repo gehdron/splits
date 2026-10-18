@@ -324,6 +324,7 @@ function SaveReceiptButton({
   const [importState, importAction, importPending] = useActionState(importReceipt, undefined);
   const [createState, createAction, createPending] = useActionState(createListFromReceipt, undefined);
   const [customName, setCustomName] = useState(listName && listName !== "Receipt" ? listName : "");
+  const [nameSuggestion, setNameSuggestion] = useState("");
   const [suggesting, setSuggesting] = useState(false);
   const [suggestionError, setSuggestionError] = useState("");
 
@@ -354,7 +355,7 @@ function SaveReceiptButton({
         typeof data.name === "string" &&
         data.name.trim()
       ) {
-        setCustomName(data.name.trim());
+        setNameSuggestion(data.name.trim());
       } else {
         throw new Error("Gemini returned an invalid list name.");
       }
@@ -405,9 +406,24 @@ function SaveReceiptButton({
               disabled={suggesting}
               onClick={suggestName}
             >
-              {suggesting ? "Suggesting…" : "✨ AI suggest"}
+              {suggesting ? "Suggesting…" : "Suggest a name"}
             </button>
           </div>
+          {nameSuggestion ? (
+            <div className="acts2" role="status">
+              <span>Suggestion: <strong>{nameSuggestion}</strong></span>
+              <button
+                type="button"
+                className="btn line"
+                onClick={() => {
+                  setCustomName(nameSuggestion);
+                  setNameSuggestion("");
+                }}
+              >
+                Use suggestion
+              </button>
+            </div>
+          ) : null}
         </div>
       )}
       <input type="hidden" name="items" value={JSON.stringify(rows)} />
