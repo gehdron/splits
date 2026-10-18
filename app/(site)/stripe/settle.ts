@@ -1,5 +1,6 @@
 import "server-only";
 import { getList } from "@/lib/live-lists";
+import { calculateListAmounts } from "@/lib/list-totals";
 import { listShares, maxShareCents, MIN_SHARE_CENTS, type Share } from "./shares";
 import { retireShare, syncShare } from "./checkout";
 
@@ -62,10 +63,16 @@ export async function reconcileList(listId: string) {
         .filter((share) => share.status === "unpaid" || share.status === "sent")
         .map((share) => share.personName),
     );
+    const amounts = calculateListAmounts(
+      data.items,
+      data.list.taxCents ?? 0,
+      data.list.tipCents ?? 0,
+    );
     for (const person of people) {
-      const owed = data.items
-        .filter((item) => item.claimedBy === person)
-        .reduce((sum, item) => sum + item.priceCents * item.quantity, 0);
+      const owed =
+        amounts.people.find(
+          (entry) => entry.name.toLocaleLowerCase() === person.trim().toLocaleLowerCase(),
+        )?.totalCents ?? 0;
       await settlePerson(listId, person, owed);
     }
   } catch (error) {

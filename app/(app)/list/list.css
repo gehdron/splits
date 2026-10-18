@@ -88,6 +88,48 @@
 .db .list-chat-form textarea{width:100%;min-height:54px;max-height:140px;padding:12px;border:1.5px solid #B9C1DA;border-radius:12px;background:#fff;font:inherit;resize:vertical}
 .db .list-chat-form textarea:focus{outline:none;border-color:var(--vio);box-shadow:0 0 0 3px rgba(108,77,255,.18)}
 .db .list-chat-form .btn{min-height:48px}
+.db .list-chat-form>.btn{justify-self:end}
+
+.db .list-chat-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;grid-column:1/-1}
+.db .list-chat-heading .lbl{margin:0}
+.db .list-suggestion-toggle{min-height:36px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink2);font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.db .list-suggestion-toggle:hover{border-color:var(--vio)}
+.db .list-suggestion-field{position:relative;width:100%;min-width:0;grid-column:1/-1}
+.db .list-suggestion-preview{position:absolute;inset:0;z-index:0;overflow:hidden;border:1.5px solid transparent;border-radius:12px;color:var(--ink);pointer-events:none}
+.db .list-suggestion-preview>div{min-height:54px;padding:12px;overflow-wrap:anywhere;white-space:pre-wrap;font:inherit;font-size:15px;line-height:1.55}
+.db .list-suggestion-completion{color:#74809C}
+.db .list-suggestion-replaced{color:#74809C;text-decoration:line-through}
+.db .list-suggestion-match{color:#4630B8;font-weight:700}
+.db .list-chat-form .list-suggestion-textarea{position:relative;z-index:1;display:block;min-height:54px;padding:12px;resize:vertical;font-size:15px;line-height:1.55}
+.db .list-chat-form .list-suggestion-textarea.has-suggestion{background:transparent;color:transparent;caret-color:var(--ink)}
+.db .list-chat-form .list-suggestion-textarea.has-suggestion::selection{background:rgba(108,77,255,.22);color:transparent}
+.db .list-suggestion-hint,.db .list-item-suggestions{margin:0;width:100%;grid-column:1/-1}
+.db .list-suggestion-hint{color:var(--mut);font-size:12px;margin-top:6px}
+.db .list-suggestion-hint kbd{padding:1px 5px;border:1px solid var(--line);border-radius:4px;background:#fff;color:var(--ink);font:inherit}
+.db .list-suggestion-hint strong{color:var(--ink2)}
+.db .list-item-suggestions{padding:0;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:#fff;list-style:none;margin-top:6px}
+.db .list-item-suggestions button{width:100%;min-height:40px;padding:8px 12px;border:0;background:#fff;color:var(--ink2);text-align:left;font:inherit;font-size:13px;cursor:pointer}
+.db .list-item-suggestions li+li{border-top:1px solid var(--line)}
+.db .list-item-suggestions button:hover,.db .list-item-suggestions button:focus-visible{outline:none;background:#ECE8FF}
+
+.db .opt.selected{background:#F4F6FB}
+.db .opt .chk{margin-left:auto;font-weight:700;color:var(--vtx);font-size:14px}
+
+.db .list-totals-box{display:grid;gap:10px;margin-top:20px;padding:16px 20px;border-radius:16px;background:#F9FAFD;border:1px solid var(--line)}
+.db .list-total-row{display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:15px;color:var(--ink2)}
+.db .list-total-row.grand{padding-top:10px;border-top:1.5px solid var(--line);font-size:19px;font-weight:700;color:var(--ink)}
+.db .list-total-row.grand b{font-size:22px;color:var(--ink)}
+.db .list-total-row.unassigned{font-size:13px;color:var(--mut)}
+.db .list-totals-box>.btn{justify-self:start;margin-top:4px}
+.db .list-receipt-warning{margin:12px 0 0;padding:10px 12px;border-radius:10px;background:#FFF3D6;color:#694800;font-size:13px;font-weight:600}
+.db .list-start{max-width:720px;margin:12vh auto 0}
+.db .list-start h1{font-size:clamp(40px,5.6vw,64px)}
+.db .list-start-form{display:grid;gap:8px;margin-top:24px}
+.db .list-start-form .lbl{margin:0}
+.db .list-start-form>.btn{justify-self:start;margin-top:12px}
+.db .money-input-wrap{display:flex;align-items:center;gap:4px;width:120px}
+.db .money-input-wrap .field{min-height:36px;padding:0 8px;font-size:14px;text-align:right}
+.db .money-input-wrap span{color:var(--mut);font-weight:600}
 
 .db .bal{font-family:var(--font-outfit),"Outfit",system-ui,sans-serif;font-weight:600;font-size:36px;line-height:1.05;letter-spacing:-0.035em}
 .db .bar{display:flex;gap:4px;height:12px;margin-top:16px;border-radius:3px;background:#E3E7F3}

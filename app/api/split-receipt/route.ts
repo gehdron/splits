@@ -37,12 +37,12 @@ Return JSON with exactly this shape:
 {
   "reply": "A concise confirmation or helpful clarification.",
   "clarification": "",
-  "assignments": [{ "itemIndex": 0, "people": ["Sandy"] }]
+  "assignments": [{ "itemIndex": 0, "people": ["Sandy", "Bob"] }]
 }
 
 Rules:
 - Item indexes are zero-based and must refer to the supplied list items.
-- Each list item can have only one assignee. Distribute items to the named people based on who will use, bring, buy, or take each item.
+- List items can be assigned to one or multiple people. Shared items are split evenly between the people assigned to them.
 - Assign only people included in the supplied participants. In first-person instructions, "I", "me", and "my" refer to the supplied current user.
 - Use the full conversation and current assignments. Keep existing assignments unless the user changes them.
 - Match only items clearly identifiable from the user's wording and supplied item names. Ask for clarification when an item or person is ambiguous.

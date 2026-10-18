@@ -10,11 +10,13 @@ const SYSTEM_PROMPT = `Parse the provided receipt document and OCR text into str
 
 Return only a JSON object with this exact shape:
 {
+  "merchant": "",
   "items": [{ "quantity": "", "description": "", "amount": "" }],
   "totals": { "subtotal": "", "tax": "", "tip": "", "total": "" }
 }
 
 Rules:
+- Identify the merchant or store name printed on the receipt and put it in "merchant" (e.g. "Trader Joe's", "Target", "Olive Garden"). If no merchant is visible, leave it as an empty string.
 - Include purchased products or services as items; omit store details, addresses, phone numbers, dates, payment/card details, loyalty messages, and other non-item text.
 - Keep quantity empty unless clearly printed. Do not infer quantities.
 - Preserve the printed description and amount. Do not calculate, invent, or silently correct values.
@@ -49,6 +51,7 @@ function validateParsedReceipt(value: unknown): AiParsedReceipt | null {
   });
 
   return {
+    merchant: stringValue(value.merchant).trim() || undefined,
     items,
     totals: {
       subtotal: stringValue(value.totals.subtotal).trim(),
@@ -199,6 +202,7 @@ export async function POST(request: Request) {
             responseSchema: {
               type: "OBJECT",
               properties: {
+                merchant: { type: "STRING" },
                 items: {
                   type: "ARRAY",
                   items: {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { normalizePhone } from "@/lib/phone";
 import { createClient } from "@/lib/supabase/client";
+import { calculateListAmounts } from "@/lib/list-totals";
 import type {
   SplitAssistantResult,
   SplitInstructionMessage,
@@ -20,6 +21,13 @@ type PayLink = { id: string; personName: string; amountCents: number; status: "u
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+function moneyToCents(value: string): number | undefined {
+  const normalized = value.trim().replace(/[$,\s]/g, "");
+  if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) return undefined;
+  const cents = Math.round(Number(normalized) * 100);
+  return Number.isSafeInteger(cents) ? cents : undefined;
+}
+
 type ApiItem = {
   id: string;
   name: string;
@@ -28,10 +36,53 @@ type ApiItem = {
   claimedBy: string | null;
 };
 type ListMember = { name: string; userId?: string };
-type ListData = { list: { id: string; name: string; groupId?: string; members?: ListMember[] }; items: ApiItem[]; totals: Record<string, number> };
+type ListData = {
+  list: {
+    id: string;
+    name: string;
+    groupId?: string;
+    merchant?: string;
+    receiptSubtotalCents?: number;
+    taxCents?: number;
+    tipCents?: number;
+    receiptTotalCents?: number;
+    members?: ListMember[];
+  };
+  items: ApiItem[];
+  totals: Record<string, number>;
+};
 
 type Item = { id: string; name: string; quantity: number; cents: number; who: string | null };
 type SharedList = { name: string; paidBy: string; items: Item[] };
+
+function getEditDistance(left: string, right: string) {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  const current = new Array<number>(right.length + 1);
+
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    current[0] = leftIndex;
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      current[rightIndex] = Math.min(
+        current[rightIndex - 1] + 1,
+        previous[rightIndex] + 1,
+        previous[rightIndex - 1] +
+          (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1),
+      );
+    }
+    for (let index = 0; index <= right.length; index += 1) {
+      previous[index] = current[index];
+    }
+  }
+  return previous[right.length];
+}
+
+function getAssignees(who: string | null | undefined): string[] {
+  if (!who) return [];
+  return who
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
 
 function isSplitAssistantResult(value: unknown): value is SplitAssistantResult {
   return (
@@ -52,7 +103,7 @@ function isSplitAssistantResult(value: unknown): value is SplitAssistantResult {
         assignment.itemIndex >= 0 &&
         "people" in assignment &&
         Array.isArray(assignment.people) &&
-        assignment.people.length === 1 &&
+        assignment.people.length >= 1 &&
         assignment.people.every(
           (person: unknown) => typeof person === "string" && person.trim().length > 0
         )
@@ -88,27 +139,46 @@ function Avatar({ name, me, large = false }: { name: string; me: string; large?:
   );
 }
 
-/** The payer is owed for every item assigned to someone else. */
-function summarize(list: SharedList, me: string) {
-  const subtotal = list.items.reduce((sum, i) => sum + i.cents, 0);
-  const unassigned = list.items.filter((i) => !i.who).reduce((sum, i) => sum + i.cents, 0);
-  const perPerson = new Map<string, Item[]>();
-  for (const item of list.items) {
-    if (!item.who) continue;
-    perPerson.set(item.who, [...(perPerson.get(item.who) ?? []), item]);
+/** The payer is owed for every item assigned to someone else. Shared items split evenly. */
+function summarize(list: SharedList, me: string, taxCents = 0, tipCents = 0) {
+  const totals = calculateListAmounts(
+    list.items.map((item) => ({
+      name: item.name,
+      quantity: 1,
+      priceCents: item.cents,
+      claimedBy: item.who,
+    })),
+    taxCents,
+    tipCents,
+  );
+  const perPersonTotal = new Map<string, { itemsDesc: string; totalCents: number }>();
+  for (const entry of totals.people) {
+    const extras: string[] = [];
+    if (entry.taxCents > 0) extras.push(`tax ${money(entry.taxCents)}`);
+    if (entry.tipCents > 0) extras.push(`tip ${money(entry.tipCents)}`);
+    const itemsDesc =
+      entry.items.map((i) => i.name).join(", ") +
+      (extras.length ? ` (+${extras.join(", ")})` : "");
+    perPersonTotal.set(entry.name, { itemsDesc, totalCents: entry.totalCents });
   }
-  const row = (name: string, items: Item[]) => ({
+
+  const row = (name: string, total: { itemsDesc: string; totalCents: number }) => ({
     name,
-    what: items.map((i) => i.name).join(", "),
-    cents: items.reduce((sum, i) => sum + i.cents, 0),
+    what: total.itemsDesc,
+    cents: total.totalCents,
   });
+
   const owedToYou =
-    list.paidBy === me ? [...perPerson].filter(([name]) => name !== me).map(([name, items]) => row(name, items)) : [];
-  const mine = perPerson.get(me);
+    list.paidBy === me
+      ? [...perPersonTotal.entries()]
+          .filter(([name]) => name !== me)
+          .map(([name, total]) => row(name, total))
+      : [];
+  const mine = perPersonTotal.get(me);
   const youOwe = list.paidBy !== me && mine ? [row(list.paidBy, mine)] : [];
   const owedCents = owedToYou.reduce((sum, r) => sum + r.cents, 0);
   const oweCents = youOwe.reduce((sum, r) => sum + r.cents, 0);
-  return { subtotal, unassigned, owedToYou, youOwe, owedCents, oweCents };
+  return { subtotal: totals.subtotal, unassigned: totals.unassigned, owedToYou, youOwe, owedCents, oweCents };
 }
 
 /* ------------------------------------------------------------------ icons */
@@ -141,7 +211,17 @@ const LogoMark = () => (
 // TODO: this page has no auth, groups or friends API. People are the names that have claimed items on this list.
 // Create, Add, Remove, Add to group and Sign out have no action until the list page is wired to Supabase
 // (see app/(site)/dashboard/actions.ts).
-function Sidebar({ me, people, onAdd }: { me: string; people: string[]; onAdd: (person: { name: string; phone?: string; email?: string }) => Promise<string> }) {
+function Sidebar({
+  me,
+  people,
+  onAdd,
+  allowContacts,
+}: {
+  me: string;
+  people: string[];
+  onAdd: (person: { name: string; phone?: string; email?: string }) => Promise<string>;
+  allowContacts: boolean;
+}) {
   const [by, setBy] = useState<"phone" | "email">("phone");
   const [contact, setContact] = useState("");
   const [addError, setAddError] = useState("");
@@ -226,8 +306,12 @@ function Sidebar({ me, people, onAdd }: { me: string; people: string[]; onAdd: (
             </li>
           ))}
         </ul>
-        {people.length === 0 && <p className="sub note">People you add can see this list.</p>}
-        <form onSubmit={addPerson}>
+        {people.length === 0 && (
+          <p className="sub note">
+            {allowContacts ? "People you add can see this list." : "Add group members from the dashboard before assigning items."}
+          </p>
+        )}
+        {allowContacts ? <form onSubmit={addPerson}>
           <p className="lbl">Add someone to this list</p>
           <div className="seg" role="group" aria-label="Add by">
             <button className={`sg${by === "phone" ? " on" : ""}`} type="button" aria-pressed={by === "phone"} onClick={() => setBy("phone")}>
@@ -256,7 +340,7 @@ function Sidebar({ me, people, onAdd }: { me: string; people: string[]; onAdd: (
             <PlusIcon />
             {adding ? "Adding…" : "Add to list"}
           </button>
-        </form>
+        </form> : null}
       </section>
 
       <div className="me">
@@ -308,6 +392,10 @@ export default function ListPage() {
   const [name, setName] = useState("");
   const [editingTitle, setEditingTitle] = useState(false);
   const [title, setTitle] = useState("");
+  const [newListTitle, setNewListTitle] = useState("");
+  const [creatingList, setCreatingList] = useState(false);
+  const [suggestingNewTitle, setSuggestingNewTitle] = useState(false);
+  const [startWithScan, setStartWithScan] = useState(false);
   const savingTitle = useRef(false);
   const [price, setPrice] = useState("");
   const [msg, setMsg] = useState("");
@@ -318,6 +406,14 @@ export default function ListPage() {
   const [splitMessage, setSplitMessage] = useState("");
   const [splitParsing, setSplitParsing] = useState(false);
   const [splitError, setSplitError] = useState("");
+  const splitInputRef = useRef<HTMLTextAreaElement>(null);
+  const [splitSuggestionsEnabled, setSplitSuggestionsEnabled] = useState(true);
+  const [splitCursorPosition, setSplitCursorPosition] = useState(0);
+  const [splitInputScrollTop, setSplitInputScrollTop] = useState(0);
+  const [taxInput, setTaxInput] = useState("");
+  const [tipInput, setTipInput] = useState("");
+  const [savingTotals, setSavingTotals] = useState(false);
+  const [suggestingName, setSuggestingName] = useState(false);
   // Pay links: one per person who owes. The amount is worked out on the server from this list.
   const [payLinks, setPayLinks] = useState<PayLink[]>([]);
   const [requestFor, setRequestFor] = useState<string | null>(null);
@@ -325,20 +421,16 @@ export default function ListPage() {
   const [requestBusy, setRequestBusy] = useState(false);
   const [requestMsg, setRequestMsg] = useState("");
 
-  // On load: use ?id= from the URL, or create a new list and put its id in the URL
+  // On load: use ?id= from the URL. New lists are only created after a name is supplied.
   useEffect(() => {
     (async () => {
       await Promise.resolve(); // keeps state updates out of the synchronous effect body
       const params = new URLSearchParams(window.location.search);
       const wantScan = params.get("scan") === "1";
+      setStartWithScan(wantScan);
       setScan(wantScan);
       const id = params.get("id");
-      if (id) return setListId(id);
-      const res = await fetch("/api/lists", { method: "POST", body: JSON.stringify({ name: "Shared list" }) });
-      const list = await res.json();
-      const next = wantScan ? `/list?id=${list.id}&scan=1` : `/list?id=${list.id}`;
-      window.history.replaceState(null, "", next);
-      setListId(list.id);
+      if (id) setListId(id);
     })();
   }, []);
 
@@ -371,7 +463,14 @@ export default function ListPage() {
     if (!listId) return;
     const res = await fetch(`/api/lists/${listId}`);
     if (res.status === 404) return setMsg("List not found (the server may have restarted). Open /list for a new one.");
-    setData(await res.json());
+    const json: ListData = await res.json();
+    setData(json);
+    if (json.list.name === "Shared list") {
+      setTitle((current) => current || json.list.name);
+      setEditingTitle(true);
+    }
+    setTaxInput((prev) => (prev === "" && json.list?.taxCents !== undefined ? (json.list.taxCents / 100).toFixed(2) : prev));
+    setTipInput((prev) => (prev === "" && json.list?.tipCents !== undefined ? (json.list.tipCents / 100).toFixed(2) : prev));
     const links = await fetch(`/api/shares?list=${listId}`).catch(() => null);
     if (links?.ok) setPayLinks(((await links.json()) as { shares: PayLink[] }).shares);
   }, [listId]);
@@ -402,15 +501,37 @@ export default function ListPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ imageDataUrl }),
       });
-      const body = await parsed.json();
+      const body: unknown = await parsed.json();
       if (!parsed.ok) {
-        setMsg(typeof body.error === "string" ? body.error : "The receipt could not be read.");
+        setMsg(
+          typeof body === "object" && body !== null && "error" in body && typeof body.error === "string"
+            ? body.error
+            : "The receipt could not be read.",
+        );
         return;
       }
-      const items = receiptToItems(Array.isArray(body.items) ? body.items : []);
+      if (typeof body !== "object" || body === null || !("items" in body) || !Array.isArray(body.items)) {
+        throw new Error("Gemini returned an invalid receipt.");
+      }
+      const receiptBody = body as {
+        items: ReceiptRow[];
+        merchant?: string;
+        totals?: { subtotal?: string; tax?: string; tip?: string; total?: string };
+      };
+      const items = receiptToItems(receiptBody.items);
       if (items.length === 0) {
         setMsg("The receipt has no items to add.");
         return;
+      }
+      const parsedTotals: Record<string, number> = {};
+      for (const field of ["subtotal", "tax", "tip", "total"] as const) {
+        const value = receiptBody.totals?.[field]?.trim();
+        if (!value) continue;
+        const cents = moneyToCents(value);
+        if (cents === undefined) {
+          throw new Error(`Gemini returned an invalid ${field}. Check the receipt and try again.`);
+        }
+        parsedTotals[field] = cents;
       }
       const saved = await fetch(`/api/lists/${listId}/items`, {
         method: "POST",
@@ -418,18 +539,180 @@ export default function ListPage() {
         body: JSON.stringify(items),
       });
       if (!saved.ok) {
-        const failed = await saved.json().catch(() => null);
-        setMsg(failed?.error ?? "Those items could not be added.");
+        const failed: unknown = await saved.json().catch(() => null);
+        setMsg(
+          typeof failed === "object" && failed !== null && "error" in failed && typeof failed.error === "string"
+            ? failed.error
+            : "Those items could not be added.",
+        );
         return;
       }
+
+      if (parsedTotals.tax !== undefined) setTaxInput((parsedTotals.tax / 100).toFixed(2));
+      if (parsedTotals.tip !== undefined) setTipInput((parsedTotals.tip / 100).toFixed(2));
+
+      const merchant = receiptBody.merchant?.trim() ?? "";
+      const needsName = !data?.list.name.trim() || data.list.name === "Shared list";
+      let suggestedName = "";
+      let suggestionWarning = "";
+      if (needsName) {
+        try {
+          const nameResponse = await fetch("/api/suggest-list-name", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              items: items.map((i) => i.name),
+              merchant: merchant || undefined,
+            }),
+          });
+          const nameResult: unknown = await nameResponse.json().catch(() => null);
+          if (
+            !nameResponse.ok ||
+            typeof nameResult !== "object" ||
+            nameResult === null ||
+            !("name" in nameResult) ||
+            typeof nameResult.name !== "string" ||
+            !nameResult.name.trim()
+          ) {
+            const reason =
+              typeof nameResult === "object" && nameResult !== null && "error" in nameResult && typeof nameResult.error === "string"
+                ? nameResult.error
+                : "Gemini could not suggest a list name.";
+            throw new Error(reason);
+          }
+          suggestedName = nameResult.name.trim();
+        } catch (error) {
+          suggestionWarning = error instanceof Error ? error.message : "Gemini could not suggest a list name.";
+        }
+      }
+
+      const patchBody: Record<string, string | number> = {};
+      if (suggestedName) patchBody.name = suggestedName;
+      if (merchant) patchBody.merchant = merchant;
+      if (parsedTotals.subtotal !== undefined) patchBody.receiptSubtotalCents = parsedTotals.subtotal;
+      if (parsedTotals.tax !== undefined) patchBody.taxCents = parsedTotals.tax;
+      if (parsedTotals.tip !== undefined) patchBody.tipCents = parsedTotals.tip;
+      if (parsedTotals.total !== undefined) patchBody.receiptTotalCents = parsedTotals.total;
+      if (Object.keys(patchBody).length > 0) {
+        const patched = await fetch(`/api/lists/${listId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patchBody),
+        });
+        if (!patched.ok) {
+          const failed: unknown = await patched.json().catch(() => null);
+          const reason =
+            typeof failed === "object" && failed !== null && "error" in failed && typeof failed.error === "string"
+              ? failed.error
+              : "Receipt totals and name could not be saved.";
+          setMsg(`Receipt items were added, but ${reason}`);
+          refresh();
+          return;
+        }
+        if (suggestedName) setTitle(suggestedName);
+      }
+
       setScan(false);
       window.history.replaceState(null, "", `/list?id=${listId}`);
-      setMsg(`${items.length} ${items.length === 1 ? "item" : "items"} added from the receipt.`);
+      setMsg(
+        `${items.length} ${items.length === 1 ? "item" : "items"} added from receipt.${
+          suggestedName ? ` Named "${suggestedName}".` : ""
+        }${suggestionWarning ? ` ${suggestionWarning}` : ""}`,
+      );
       refresh();
     } catch (error) {
       setMsg(error instanceof Error ? error.message : "The receipt could not be read.");
     } finally {
       setScanning(false);
+    }
+  }
+
+  async function suggestListName() {
+    if (!listId) return;
+    setSuggestingName(true);
+    setMsg("");
+    try {
+      const res = await fetch("/api/suggest-list-name", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: list.items.map((i) => i.name),
+          currentName: list.name,
+        }),
+      });
+      const result: unknown = await res.json().catch(() => null);
+      if (!res.ok) {
+        const message =
+          typeof result === "object" && result !== null && "error" in result && typeof result.error === "string"
+            ? result.error
+            : "Gemini could not suggest a list name.";
+        throw new Error(message);
+      }
+      if (
+        typeof result === "object" &&
+        result !== null &&
+        "name" in result &&
+        typeof result.name === "string" &&
+        result.name.trim()
+      ) {
+        const suggestedName = result.name.trim();
+        setTitle(result.name);
+        const saved = await fetch(`/api/lists/${listId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: suggestedName }),
+        });
+        if (!saved.ok) {
+          const failed: unknown = await saved.json().catch(() => null);
+          const message =
+            typeof failed === "object" && failed !== null && "error" in failed && typeof failed.error === "string"
+              ? failed.error
+              : "The suggested list name could not be saved.";
+          throw new Error(message);
+        }
+        if (data) {
+          setData({ ...data, list: { ...data.list, name: suggestedName } });
+        }
+        setMsg(`List named "${suggestedName}".`);
+      } else {
+        throw new Error("Gemini returned an invalid list name.");
+      }
+    } catch (error) {
+      setMsg(error instanceof Error ? error.message : "Could not suggest a list name.");
+    } finally {
+      setSuggestingName(false);
+    }
+  }
+
+  async function saveTotals() {
+    if (!listId || savingTotals) return;
+    const taxCents = taxInput.trim() ? moneyToCents(taxInput) : 0;
+    const tipCents = tipInput.trim() ? moneyToCents(tipInput) : 0;
+    if (taxCents === undefined || tipCents === undefined) {
+      setMsg("Enter tax and tip as non-negative amounts with up to two decimal places.");
+      return;
+    }
+    setSavingTotals(true);
+    try {
+      const response = await fetch(`/api/lists/${listId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taxCents, tipCents }),
+      });
+      const result: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message =
+          typeof result === "object" && result !== null && "error" in result && typeof result.error === "string"
+            ? result.error
+            : "Receipt totals could not be saved.";
+        throw new Error(message);
+      }
+      setMsg("Tax and tip saved.");
+      await refresh();
+    } catch (error) {
+      setMsg(error instanceof Error ? error.message : "Receipt totals could not be saved.");
+    } finally {
+      setSavingTotals(false);
     }
   }
 
@@ -444,12 +727,19 @@ export default function ListPage() {
     if (savingTitle.current) return;
     savingTitle.current = true;
     const next = title.trim();
-    setEditingTitle(false);
-    if (!listId || !data || !next || next === data.list.name) {
-      setTitle(data?.list.name ?? "");
+    if (!next) {
+      setMsg("Every list needs a name.");
+      setEditingTitle(true);
       savingTitle.current = false;
       return;
     }
+    if (!listId || !data || next === data.list.name) {
+      setTitle(data?.list.name ?? "");
+      setEditingTitle(data?.list.name === "Shared list");
+      savingTitle.current = false;
+      return;
+    }
+    setEditingTitle(false);
     const res = await fetch(`/api/lists/${listId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -458,7 +748,13 @@ export default function ListPage() {
     savingTitle.current = false;
     if (!res.ok) {
       setTitle(data.list.name);
-      setMsg((await res.json()).error ?? "The list name could not be saved.");
+      setEditingTitle(data.list.name === "Shared list");
+      const result: unknown = await res.json().catch(() => null);
+      setMsg(
+        typeof result === "object" && result !== null && "error" in result && typeof result.error === "string"
+          ? result.error
+          : "The list name could not be saved.",
+      );
       return;
     }
     setData({ ...data, list: { ...data.list, name: next } });
@@ -529,6 +825,7 @@ export default function ListPage() {
 
   async function addPerson(person: { name: string; phone?: string; email?: string }) {
     if (!listId) return "Open a list first.";
+    if (data?.list.groupId) return "Add group members from the dashboard before assigning them.";
     const res = await fetch(`/api/lists/${listId}/members`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -548,21 +845,27 @@ export default function ListPage() {
     setMsg("");
   }
 
-  function addContact(event: React.FormEvent, item: Item) {
+  async function addContact(event: React.FormEvent, item: Item) {
     event.preventDefault();
     if (contactBy === "phone") {
       const phone = normalizePhone(contact);
       if (!phone) return setMsg("Enter a phone number, including the area code.");
       const person = { id: `phone:${phone}`, name: phone, detail: "Phone" };
+      const error = await addPerson({ name: phone, phone });
+      if (error) return setMsg(error);
       remember(person);
-      void assignPerson(item, person);
+      const result = await togglePerson(item, person.name);
+      if (!result.success) setMsg(result.error ?? "That person could not be assigned.");
       return;
     }
     const email = contact.trim();
     if (!emailPattern.test(email)) return setMsg("Enter a valid email.");
     const person = { id: `email:${email.toLowerCase()}`, name: email, detail: "Email" };
+    const error = await addPerson({ name: email, email });
+    if (error) return setMsg(error);
     remember(person);
-    void assignPerson(item, person);
+    const result = await togglePerson(item, person.name);
+    if (!result.success) setMsg(result.error ?? "That person could not be assigned.");
   }
 
   // What this person has paid on the list, what's left, and their open link (if it's for what's left).
@@ -639,49 +942,48 @@ export default function ListPage() {
     refresh();
   }
 
-  async function assignPerson(
+  async function togglePerson(
     item: Item,
     assignee: Person | string
   ): Promise<{ success: boolean; error?: string }> {
-    setOpenItem(null);
     if (typeof assignee !== "string") {
       const contact = contactOf(assignee);
-      if (contact) void addPerson(contact);
-    }
-    const user = typeof assignee === "string" ? assignee : assignee.name;
-    if (item.who === user) return { success: true };
-    if (item.who) {
-      const cleared = await fetch(`/api/items/${item.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ action: "unclaim", user: item.who }),
-      });
-      if (!cleared.ok) {
-        const payload: unknown = await cleared.json();
-        const error =
-          typeof payload === "object" &&
-          payload !== null &&
-          "error" in payload &&
-          typeof payload.error === "string"
-            ? payload.error
-            : "That item could not be reassigned.";
-        setMsg(error);
-        refresh();
-        return { success: false, error };
+      if (contact) {
+        const error = await addPerson(contact);
+        if (error) return { success: false, error };
       }
     }
-    return act(item.id, "claim", user);
+    const user = typeof assignee === "string" ? assignee : assignee.name;
+    const assignees = getAssignees(item.who);
+    const isAssigned = assignees.some(
+      (name) => name.toLowerCase() === user.toLowerCase()
+    );
+    return act(item.id, isAssigned ? "unclaim" : "claim", user);
   }
 
-  function clearPerson(item: Item) {
-    if (!item.who) return;
+  async function clearAllPeople(item: Item) {
     setOpenItem(null);
-    return act(item.id, "unclaim", item.who);
+    const assignees = getAssignees(item.who);
+    for (const person of assignees) {
+      const result = await act(item.id, "unclaim", person);
+      if (!result.success) {
+        setMsg(result.error ?? `Could not remove ${person} from ${item.name}.`);
+        return;
+      }
+    }
   }
 
   async function sendSplitMessage(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const content = splitMessage.trim();
     if (!content || splitParsing || !data || !listId) return;
+    if (
+      (taxInput.trim() && moneyToCents(taxInput) === undefined) ||
+      (tipInput.trim() && moneyToCents(tipInput) === undefined)
+    ) {
+      setSplitError("Enter valid tax and tip amounts before asking the assistant to split the list.");
+      return;
+    }
 
     const messages: SplitInstructionMessage[] = [
       ...splitMessages.slice(-19),
@@ -696,31 +998,34 @@ export default function ListPage() {
         quantity: String(item.quantity),
         amount: (item.cents / 100).toFixed(2),
       }));
+      const participants = data.list.groupId
+        ? (data.list.members ?? []).map((member) => member.name)
+        : [
+            me,
+            ...(data.list.members ?? []).map((member) => member.name),
+            ...friends.map((friend) => friend.name),
+            ...added.map((person) => person.name),
+            ...list.items.flatMap((item) => getAssignees(item.who)),
+          ];
+      const allowedPeople = new Set(participants.map((person) => person.toLocaleLowerCase()));
       const response = await fetch("/api/split-receipt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mode: "list",
           currentUser: me,
-          participants: [
-            ...new Set([
-              me,
-              ...(data.list.members ?? []).map((member) => member.name),
-              ...friends.map((friend) => friend.name),
-              ...added.map((person) => person.name),
-              ...list.items.flatMap((item) => (item.who ? [item.who] : [])),
-            ]),
-          ],
+          participants: [...new Set(participants)],
           items,
           totals: {
             subtotal: (s.subtotal / 100).toFixed(2),
-            tax: "0",
-            tip: "0",
-            total: (s.subtotal / 100).toFixed(2),
+            tax: (parsedTaxCents / 100).toFixed(2),
+            tip: (parsedTipCents / 100).toFixed(2),
+            total: (finalTotalCents / 100).toFixed(2),
           },
-          assignments: list.items.flatMap((item, itemIndex) =>
-            item.who ? [{ itemIndex, people: [item.who] }] : []
-          ),
+          assignments: list.items.flatMap((item, itemIndex) => {
+            const assignees = getAssignees(item.who);
+            return assignees.length > 0 ? [{ itemIndex, people: assignees }] : [];
+          }),
           messages,
         }),
       });
@@ -739,6 +1044,10 @@ export default function ListPage() {
         !isSplitAssistantResult(result) ||
         result.assignments.some(
           (assignment) => assignment.itemIndex >= list.items.length
+        ) ||
+        new Set(result.assignments.map((assignment) => assignment.itemIndex)).size !== result.assignments.length ||
+        result.assignments.some((assignment) =>
+          assignment.people.some((person) => !allowedPeople.has(person.trim().toLocaleLowerCase()))
         )
       ) {
         throw new Error("The list assistant returned invalid assignments.");
@@ -747,13 +1056,21 @@ export default function ListPage() {
       let changedCount = 0;
       for (const assignment of result.assignments) {
         const item = list.items[assignment.itemIndex];
-        const assignee = assignment.people[0];
-        if (!item || item.who === assignee) continue;
-        const assignmentResult = await assignPerson(item, assignee);
-        if (!assignmentResult.success) {
-          throw new Error(
-            `The assistant planned ${result.assignments.length} assignment(s), but only ${changedCount} were saved. ${assignmentResult.error ?? "Refresh the list and try again."}`
-          );
+        if (!item) continue;
+        const targetPeople = assignment.people;
+        const currentPeople = getAssignees(item.who);
+
+        for (const p of currentPeople) {
+          if (!targetPeople.some((t) => t.toLowerCase() === p.toLowerCase())) {
+            const update = await act(item.id, "unclaim", p);
+            if (!update.success) throw new Error(update.error ?? `Could not unassign ${p} from ${item.name}.`);
+          }
+        }
+        for (const p of targetPeople) {
+          if (!currentPeople.some((c) => c.toLowerCase() === p.toLowerCase())) {
+            const update = await act(item.id, "claim", p);
+            if (!update.success) throw new Error(update.error ?? `Could not assign ${item.name} to ${p}.`);
+          }
         }
         changedCount += 1;
       }
@@ -768,20 +1085,21 @@ export default function ListPage() {
       setAdded((current) => {
         const next = [...current];
         for (const assignment of result.assignments) {
-          const assignedName = assignment.people[0];
-          if (
-            !friends.some(
-              (friend) => friend.name.toLocaleLowerCase() === assignedName.toLocaleLowerCase()
-            ) &&
-            !next.some(
-              (person) => person.name.toLocaleLowerCase() === assignedName.toLocaleLowerCase()
-            )
-          ) {
-            next.push({
-              id: `assistant:${assignedName.toLocaleLowerCase()}`,
-              name: assignedName,
-              detail: "Assigned by list chat",
-            });
+          for (const assignedName of assignment.people) {
+            if (
+              !friends.some(
+                (friend) => friend.name.toLocaleLowerCase() === assignedName.toLocaleLowerCase()
+              ) &&
+              !next.some(
+                (person) => person.name.toLocaleLowerCase() === assignedName.toLocaleLowerCase()
+              )
+            ) {
+              next.push({
+                id: `assistant:${assignedName.toLocaleLowerCase()}`,
+                name: assignedName,
+                detail: "Assigned by list chat",
+              });
+            }
           }
         }
         return next;
@@ -802,7 +1120,6 @@ export default function ListPage() {
 
   const list: SharedList = {
     name: data ? data.list.name : "Loading...",
-    // TODO: lists have no payer field yet, so the person viewing the list is treated as the payer.
     paidBy: me,
     items: (data?.items ?? []).map((i) => ({
       id: i.id,
@@ -815,12 +1132,26 @@ export default function ListPage() {
   const people = [
     ...new Set([
       ...(data?.list.members ?? []).filter((member) => member.userId !== meId).map((member) => member.name),
-      ...list.items.map((i) => i.who).filter((who): who is string => !!who && who !== me),
+      ...list.items.flatMap((i) => getAssignees(i.who)).filter((who): who is string => !!who && who !== me),
     ]),
   ];
 
+  const parsedTaxCents = taxInput.trim() ? moneyToCents(taxInput) ?? 0 : 0;
+  const parsedTipCents = tipInput.trim() ? moneyToCents(tipInput) ?? 0 : 0;
+  const totalsInputInvalid =
+    (taxInput.trim() && moneyToCents(taxInput) === undefined) ||
+    (tipInput.trim() && moneyToCents(tipInput) === undefined);
   const mine = list.paidBy === me;
-  const s = summarize(list, me);
+  const s = summarize(list, me, parsedTaxCents, parsedTipCents);
+  const finalTotalCents = s.subtotal + parsedTaxCents + parsedTipCents;
+  const receiptSubtotalMismatch =
+    !totalsInputInvalid &&
+    data?.list.receiptSubtotalCents !== undefined &&
+    data.list.receiptSubtotalCents !== s.subtotal;
+  const receiptTotalMismatch =
+    !totalsInputInvalid &&
+    data?.list.receiptTotalCents !== undefined &&
+    data.list.receiptTotalCents !== finalTotalCents;
   const total = s.owedCents + s.oweCents;
   const headline = mine
     ? s.owedCents
@@ -830,9 +1161,232 @@ export default function ListPage() {
       ? `You owe ${list.paidBy} ${money(s.oweCents)}`
       : "You owe nothing on this list";
 
+  const splitSafeCursor = Math.min(splitCursorPosition, splitMessage.length);
+  const splitTextBeforeCursor = splitMessage.slice(0, splitSafeCursor);
+  const splitTextAfterCursor = splitMessage.slice(splitSafeCursor);
+  const splitTokenBeforeCursor =
+    splitTextBeforeCursor.match(/[^\s;,\n]+$/)?.[0] ?? "";
+  const splitTokenAfterCursor =
+    splitTextAfterCursor.match(/^[^\s;,\n]*/)?.[0] ?? "";
+  const splitTokenStart = splitSafeCursor - splitTokenBeforeCursor.length;
+  const splitTokenEnd = splitSafeCursor + splitTokenAfterCursor.length;
+  const splitSuggestionQuery = (
+    splitTokenBeforeCursor + splitTokenAfterCursor
+  ).toLocaleLowerCase();
+
+  const splitSuggestions =
+    splitSuggestionsEnabled && splitSuggestionQuery.length >= 2
+      ? list.items
+          .map((item) => item.name.trim())
+          .filter(Boolean)
+          .map((description) => {
+            const words = description
+              .toLocaleLowerCase()
+              .split(/[^\p{L}\p{N}]+/u)
+              .filter(Boolean);
+            const scores = words.flatMap((word) => {
+              if (word === splitSuggestionQuery) return [];
+              if (word.startsWith(splitSuggestionQuery)) {
+                return [0.1 + (word.length - splitSuggestionQuery.length) / 100];
+              }
+              const distance = getEditDistance(splitSuggestionQuery, word);
+              const maxDistance = splitSuggestionQuery.length <= 4 ? 1 : 2;
+              return distance <= maxDistance
+                ? [1 + distance + Math.abs(word.length - splitSuggestionQuery.length) / 100]
+                : [];
+            });
+            const matchedWord = words
+              .filter((word) => word !== splitSuggestionQuery)
+              .find(
+                (word) =>
+                  word.startsWith(splitSuggestionQuery) ||
+                  getEditDistance(splitSuggestionQuery, word) <=
+                    (splitSuggestionQuery.length <= 4 ? 1 : 2),
+              );
+            return {
+              description,
+              score: Math.min(...scores),
+              matchedWord,
+              matchedWordStart: matchedWord
+                ? description
+                    .toLocaleLowerCase()
+                    .indexOf(matchedWord.toLocaleLowerCase())
+                : -1,
+            };
+          })
+          .filter((suggestion) => Number.isFinite(suggestion.score))
+          .sort((left, right) => left.score - right.score)
+          .filter(
+            (suggestion, index, all) =>
+              all.findIndex(
+                (candidate) =>
+                  candidate.description.toLocaleLowerCase() ===
+                  suggestion.description.toLocaleLowerCase(),
+              ) === index,
+          )
+      : [];
+  const splitItemSuggestions = splitSuggestions
+    .slice(0, 5)
+    .map((suggestion) => suggestion.description);
+  const splitInlineSuggestion = splitSuggestions[0] ?? null;
+
+  async function suggestNewListName() {
+    setSuggestingNewTitle(true);
+    setMsg("");
+    try {
+      const response = await fetch("/api/suggest-list-name", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentName: newListTitle.trim() || undefined }),
+      });
+      const result: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message =
+          typeof result === "object" && result !== null && "error" in result && typeof result.error === "string"
+            ? result.error
+            : "Gemini could not suggest a list name.";
+        throw new Error(message);
+      }
+      if (
+        typeof result !== "object" ||
+        result === null ||
+        !("name" in result) ||
+        typeof result.name !== "string" ||
+        !result.name.trim()
+      ) {
+        throw new Error("Gemini returned an invalid list name.");
+      }
+      setNewListTitle(result.name.trim());
+    } catch (error) {
+      setMsg(error instanceof Error ? error.message : "Gemini could not suggest a list name.");
+    } finally {
+      setSuggestingNewTitle(false);
+    }
+  }
+
+  async function createNamedList(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const requestedName = newListTitle.trim();
+    if (!requestedName || creatingList) {
+      if (!requestedName) setMsg("Enter a name for this list.");
+      return;
+    }
+    setCreatingList(true);
+    setMsg("");
+    try {
+      const response = await fetch("/api/lists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: requestedName }),
+      });
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        const message =
+          typeof result === "object" && result !== null && "error" in result && typeof result.error === "string"
+            ? result.error
+            : "The list could not be created.";
+        throw new Error(message);
+      }
+      if (
+        typeof result !== "object" ||
+        result === null ||
+        !("id" in result) ||
+        typeof result.id !== "string" ||
+        !result.id
+      ) {
+        throw new Error("The server did not return the new list.");
+      }
+      const nextUrl = startWithScan
+        ? `/list?id=${encodeURIComponent(result.id)}&scan=1`
+        : `/list?id=${encodeURIComponent(result.id)}`;
+      window.history.replaceState(null, "", nextUrl);
+      setScan(startWithScan);
+      setListId(result.id);
+    } catch (error) {
+      setMsg(error instanceof Error ? error.message : "The list could not be created.");
+    } finally {
+      setCreatingList(false);
+    }
+  }
+
+  function selectSplitItemSuggestion(description: string) {
+    const suffix = splitMessage.slice(splitTokenEnd);
+    const needsSpace = suffix.length === 0 && !/[;,\s]$/.test(description);
+    const updatedMessage =
+      splitMessage.slice(0, splitTokenStart) +
+      description +
+      (needsSpace ? " " : "") +
+      suffix;
+    const nextCursor =
+      splitTokenStart + description.length + (needsSpace ? 1 : 0);
+
+    setSplitMessage(updatedMessage);
+    setSplitCursorPosition(nextCursor);
+    requestAnimationFrame(() => {
+      splitInputRef.current?.focus();
+      splitInputRef.current?.setSelectionRange(nextCursor, nextCursor);
+    });
+  }
+
+  function handleSplitInputKeyDown(
+    event: React.KeyboardEvent<HTMLTextAreaElement>,
+  ) {
+    if (event.key === "Tab" && splitInlineSuggestion) {
+      event.preventDefault();
+      selectSplitItemSuggestion(splitInlineSuggestion.description);
+    }
+  }
+
+  if (!listId) {
+    return (
+      <div className="db">
+        <main className="main">
+          <div className="wrap">
+            <section className="sec list-start" aria-labelledby="new-list-heading">
+              <h1 id="new-list-heading">Name your list</h1>
+              <p className="sub">
+                Every shared list needs a name. You can change it at any time.
+              </p>
+              <form className="list-start-form" onSubmit={createNamedList}>
+                <label className="lbl" htmlFor="new-list-title">List name</label>
+                <div className="inrow">
+                  <input
+                    id="new-list-title"
+                    className="field"
+                    value={newListTitle}
+                    maxLength={80}
+                    placeholder="Friday night dinner"
+                    required
+                    onChange={(event) => setNewListTitle(event.target.value)}
+                  />
+                  <button
+                    className="btn line"
+                    type="button"
+                    disabled={suggestingNewTitle || creatingList}
+                    onClick={() => void suggestNewListName()}
+                  >
+                    {suggestingNewTitle ? "Suggesting…" : "AI suggest"}
+                  </button>
+                </div>
+                {msg ? <p className="msg" role="alert">{msg}</p> : null}
+                <button
+                  className="btn lg"
+                  type="submit"
+                  disabled={creatingList || !newListTitle.trim()}
+                >
+                  {creatingList ? "Creating…" : startWithScan ? "Create list and scan receipt" : "Create list"}
+                </button>
+              </form>
+            </section>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="db">
-      <Sidebar me={me} people={people} onAdd={addPerson} />
+      <Sidebar me={me} people={people} onAdd={addPerson} allowContacts={!data?.list.groupId} />
 
       <main className="main">
         <div className="wrap">
@@ -852,6 +1406,7 @@ export default function ListPage() {
                     id="list-name"
                     className="field title"
                     value={title}
+                    maxLength={80}
                     autoFocus
                     onChange={(event) => setTitle(event.target.value)}
                     onBlur={() => saveTitle()}
@@ -879,6 +1434,14 @@ export default function ListPage() {
             </div>
             <div className="acts">
               {/* TODO: there is no delete-list API route yet. */}
+              <button
+                className="btn txt"
+                type="button"
+                onClick={() => void suggestListName()}
+                disabled={!data || suggestingName}
+              >
+                {suggestingName ? "Suggesting…" : "AI suggest name"}
+              </button>
               <button className="btn txt" type="button" onClick={startRename} disabled={!data || editingTitle}>
                 Rename
               </button>
@@ -1021,7 +1584,10 @@ export default function ListPage() {
               <div>
                 <h2 id="it-h">Items</h2>
                 <p className="sub">
-                  Assign each item to a friend, or to a phone number or email. {mine ? "They owe you for their items." : `You owe ${list.paidBy} for yours.`}
+                  {data?.list.groupId
+                    ? "Choose one or more group members for each item."
+                    : "Assign each item to a friend, phone number or email."}{" "}
+                  {mine ? "They owe you for their items." : `You owe ${list.paidBy} for yours.`}
                 </p>
               </div>
             </div>
@@ -1069,13 +1635,23 @@ export default function ListPage() {
                       type="button"
                       aria-expanded={openItem === item.id}
                       aria-haspopup="menu"
-                      aria-label={item.who ? `${item.name}, assigned to ${item.who}. Change` : `Assign ${item.name}`}
+                      aria-label={
+                        item.who
+                          ? `${item.name}, assigned to ${getAssignees(item.who).join(", ")}. Change assignees`
+                          : `Assign ${item.name}`
+                      }
                       onClick={() => setOpenItem(openItem === item.id ? null : item.id)}
                     >
-                      {item.who ? (
+                      {getAssignees(item.who).length > 0 ? (
                         <>
-                          <Avatar name={item.who} me={me} />
-                          <span className="asg-name">{label(item.who, me)}</span>
+                          <span className="stack">
+                            {getAssignees(item.who).map((person) => (
+                              <Avatar key={person} name={person} me={me} />
+                            ))}
+                          </span>
+                          <span className="asg-name">
+                            {getAssignees(item.who).map((person) => label(person, me)).join(", ")}
+                          </span>
                         </>
                       ) : (
                         <>
@@ -1088,22 +1664,41 @@ export default function ListPage() {
                     </button>
                     {openItem === item.id ? (
                       <div className="menu" role="menu" aria-label={`Assign ${item.name}`}>
-                        {roster.length > 0 ? <p className="menu-h">Friends and contacts</p> : null}
-                        {roster.map((person) => (
-                          <button key={person.id} className="opt" type="button" role="menuitem" onClick={() => assignPerson(item, person)}>
+                        {roster.length > 0 ? (
+                          <p className="menu-h">{data?.list.groupId ? "Group members" : "Friends and contacts"}</p>
+                        ) : null}
+                        {roster.map((person) => {
+                          const selected = getAssignees(item.who).some(
+                            (name) => name.toLocaleLowerCase() === person.name.toLocaleLowerCase(),
+                          );
+                          return (
+                          <button
+                            key={person.id}
+                            className={`opt${selected ? " selected" : ""}`}
+                            type="button"
+                            role="menuitemcheckbox"
+                            aria-checked={selected}
+                            onClick={async () => {
+                              const result = await togglePerson(item, person);
+                              if (!result.success) setMsg(result.error ?? "That person could not be assigned.");
+                              else setMsg("");
+                            }}
+                          >
                             <Avatar name={person.name} me={me} />
                             <span className="on">
                               {person.name}
                               {person.detail && person.detail !== person.name ? <small>{person.detail}</small> : null}
                             </span>
+                            {selected ? <span className="chk" aria-hidden="true">✓</span> : null}
                           </button>
-                        ))}
-                        {item.who ? (
-                          <button className="opt un" type="button" role="menuitem" onClick={() => clearPerson(item)}>
-                            Unassign
+                          );
+                        })}
+                        {getAssignees(item.who).length > 0 ? (
+                          <button className="opt un" type="button" role="menuitem" onClick={() => void clearAllPeople(item)}>
+                            Clear all assignees
                           </button>
                         ) : null}
-                        <form onSubmit={(event) => addContact(event, item)}>
+                        {!data?.list.groupId ? <form onSubmit={async (event) => addContact(event, item)}>
                           <div className="seg" role="group" aria-label="Add a contact by">
                             <button className={`sg${contactBy === "phone" ? " on" : ""}`} type="button" aria-pressed={contactBy === "phone"} onClick={() => setContactBy("phone")}>
                               Phone
@@ -1129,7 +1724,7 @@ export default function ListPage() {
                               Add
                             </button>
                           </div>
-                        </form>
+                        </form> : null}
                       </div>
                     ) : null}
                   </div>
@@ -1141,14 +1736,65 @@ export default function ListPage() {
             </ul>
             {data && list.items.length === 0 && <p className="empty">No items yet. Add one below.</p>}
 
-            <div className="lfoot">
-              <span>
-                Subtotal <b>{money(s.subtotal)}</b>
-              </span>
-              <span>
-                Not assigned yet <b>{money(s.unassigned)}</b>
-              </span>
+            <div className="list-totals-box" aria-label="List totals">
+              <div className="list-total-row">
+                <span>Subtotal</span>
+                <b>{money(s.subtotal)}</b>
+              </div>
+              <div className="list-total-row">
+                <label htmlFor="list-tax">Tax</label>
+                <span className="money-input-wrap">
+                  <span aria-hidden="true">$</span>
+                  <input
+                    id="list-tax"
+                    className="field"
+                    type="text"
+                    inputMode="decimal"
+                    value={taxInput}
+                    aria-label="Tax amount"
+                    onChange={(event) => setTaxInput(event.target.value)}
+                  />
+                </span>
+              </div>
+              <div className="list-total-row">
+                <label htmlFor="list-tip">Tip</label>
+                <span className="money-input-wrap">
+                  <span aria-hidden="true">$</span>
+                  <input
+                    id="list-tip"
+                    className="field"
+                    type="text"
+                    inputMode="decimal"
+                    value={tipInput}
+                    aria-label="Tip amount"
+                    onChange={(event) => setTipInput(event.target.value)}
+                  />
+                </span>
+              </div>
+              <div className="list-total-row grand">
+                <span>Total</span>
+                <b>{totalsInputInvalid ? "—" : money(finalTotalCents)}</b>
+              </div>
+              <div className="list-total-row unassigned">
+                <span>Not assigned yet</span>
+                <b>{money(s.unassigned)}</b>
+              </div>
+              <button
+                className="btn line"
+                type="button"
+                disabled={savingTotals || !data}
+                onClick={() => void saveTotals()}
+              >
+                {savingTotals ? "Saving…" : "Save tax and tip"}
+              </button>
             </div>
+            {totalsInputInvalid || receiptSubtotalMismatch || receiptTotalMismatch ? (
+              <p className="list-receipt-warning" role={totalsInputInvalid ? "alert" : "status"}>
+                {totalsInputInvalid
+                  ? "Enter tax and tip as non-negative amounts with up to two decimal places."
+                  : "Receipt mismatch: the item subtotal or calculated total differs from the scanned receipt. Check the item prices, tax and tip."}
+              </p>
+            ) : null}
 
             <form className="addrow" onSubmit={addItem}>
               <div>
@@ -1220,16 +1866,97 @@ export default function ListPage() {
               </div>
               {splitError ? <p className="list-chat-error" role="alert">{splitError}</p> : null}
               <form className="list-chat-form" onSubmit={sendSplitMessage}>
-                <label className="sr" htmlFor="list-split-message">Tell the assistant how to assign items</label>
-                <textarea
-                  id="list-split-message"
-                  value={splitMessage}
-                  maxLength={1000}
-                  rows={2}
-                  placeholder="Who should get each item?"
-                  disabled={splitParsing}
-                  onChange={(event) => setSplitMessage(event.target.value)}
-                />
+                <div className="list-chat-heading">
+                  <label className="lbl" htmlFor="list-split-message">
+                    Tell the assistant how to assign items
+                  </label>
+                  <button
+                    className="list-suggestion-toggle"
+                    type="button"
+                    aria-pressed={splitSuggestionsEnabled}
+                    onClick={() => setSplitSuggestionsEnabled((enabled) => !enabled)}
+                  >
+                    Item suggestions: {splitSuggestionsEnabled ? "On" : "Off"}
+                  </button>
+                </div>
+                <div className="list-suggestion-field">
+                  {splitInlineSuggestion ? (
+                    <div className="list-suggestion-preview" aria-hidden="true">
+                      <div style={{ transform: `translateY(-${splitInputScrollTop}px)` }}>
+                        <span>{splitMessage.slice(0, splitTokenStart)}</span>
+                        {splitInlineSuggestion.matchedWord?.startsWith(splitSuggestionQuery) &&
+                        splitInlineSuggestion.matchedWordStart === 0 ? (
+                          <>
+                            <span>{splitTokenBeforeCursor + splitTokenAfterCursor}</span>
+                            <span className="list-suggestion-completion">
+                              {splitInlineSuggestion.description.slice(
+                                splitInlineSuggestion.matchedWordStart + splitSuggestionQuery.length,
+                              )}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="list-suggestion-replaced">
+                              {splitTokenBeforeCursor + splitTokenAfterCursor}
+                            </span>
+                            <span className="list-suggestion-match">
+                              {splitInlineSuggestion.description}
+                            </span>
+                          </>
+                        )}
+                        <span>{splitMessage.slice(splitTokenEnd) || "\u200b"}</span>
+                      </div>
+                    </div>
+                  ) : null}
+                  <textarea
+                    ref={splitInputRef}
+                    id="list-split-message"
+                    value={splitMessage}
+                    maxLength={1000}
+                    rows={2}
+                    placeholder="Who should get each item?"
+                    disabled={splitParsing}
+                    aria-autocomplete="list"
+                    aria-controls="list-item-suggestions"
+                    className={`list-suggestion-textarea${splitInlineSuggestion ? " has-suggestion" : ""}`}
+                    onChange={(event) => {
+                      setSplitMessage(event.target.value);
+                      setSplitCursorPosition(event.currentTarget.selectionStart);
+                    }}
+                    onClick={(event) => setSplitCursorPosition(event.currentTarget.selectionStart)}
+                    onSelect={(event) => setSplitCursorPosition(event.currentTarget.selectionStart)}
+                    onKeyUp={(event) => setSplitCursorPosition(event.currentTarget.selectionStart)}
+                    onKeyDown={handleSplitInputKeyDown}
+                    onScroll={(event) => setSplitInputScrollTop(event.currentTarget.scrollTop)}
+                  />
+                </div>
+                {splitInlineSuggestion ? (
+                  <p className="list-suggestion-hint" aria-live="polite">
+                    Press <kbd>Tab</kbd> to replace with <strong>{splitInlineSuggestion.description}</strong>
+                  </p>
+                ) : null}
+                {splitItemSuggestions.length > 0 ? (
+                  <ul
+                    id="list-item-suggestions"
+                    className="list-item-suggestions"
+                    role="listbox"
+                    aria-label="List item suggestions"
+                  >
+                    {splitItemSuggestions.map((description) => (
+                      <li key={description} role="presentation">
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected="false"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => selectSplitItemSuggestion(description)}
+                        >
+                          {description}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
                 <button className="btn" type="submit" disabled={splitParsing || !splitMessage.trim()}>
                   {splitParsing ? "Assigning…" : "Send"}
                 </button>

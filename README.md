@@ -62,13 +62,20 @@ updates automatically as their sum.
 
 From the dashboard, choose **New list → Scan a receipt** to open the dedicated
 camera and upload screen. After reviewing the parsed items, choose **Continue
-to split chat** to return the receipt items and totals to `/detect`, where the
-chat and manual assignment controls are available.
+to split chat** to open the AI split chat and manual assignment controls on the
+same page. Save the receipt to a named group list from the receipt review.
 
-On `/list`, choose **Split with chat** to assign general list items with
-natural-language instructions, or keep using the per-item controls. Each list
-item has one assignee; chat assignments are saved through the same controls
-and update the list totals.
+On `/list`, enter a name before creating a list. **AI suggest name** uses
+Gemini to suggest one from the current items or receipt. Receipt item names
+appear as live suggestions in the split chat; press **Tab** or choose a
+suggestion to correct a partial or mistyped item name. Assign an item to
+multiple people from its assignee menu; its price is split evenly, and tax and
+tip are allocated proportionally. Subtotal, tax, tip, and total appear below
+the item list, and scanned receipt totals are checked against the item amounts.
+
+If you already use the production file-backed shared-list tables in Supabase,
+re-run `supabase/shared-lists.sql` to add the receipt-total columns used by the
+list page.
 
 ## Routes
 
@@ -82,7 +89,6 @@ and update the list totals.
 | `/account` | Account, payouts (Stripe Connect) and bank (Plaid) |
 | `/scan` | Receipt scanner (moved from `/`) |
 | `/dashboard/item-by-item` | Dedicated receipt camera and upload screen (requires sign-in) |
-| `/detect` | Receipt review, manual assignment, and split chat |
 | `/list` | Shared list with manual and chat-based item assignment |
 | any other URL | 404 page (`app/global-not-found.tsx`) |
 

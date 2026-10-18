@@ -3,6 +3,7 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { calculateListAmounts } from "@/lib/list-totals";
 
 export type Item = {
   id: string;
@@ -26,6 +27,11 @@ export type List = {
   ownerId?: string | null;
   groupId?: string;
   members?: ListMember[];
+  merchant?: string;
+  receiptSubtotalCents?: number;
+  taxCents?: number;
+  tipCents?: number;
+  receiptTotalCents?: number;
 };
 
 function digits(value: string): string {
@@ -104,13 +110,32 @@ function save(db: DB): void {
   writeFileSync(path, `${JSON.stringify(saved, null, 2)}\n`, "utf8");
 }
 
-export function renameList(id: string, name: string): List | null {
+export function updateList(
+  id: string,
+  patch: {
+    name?: string;
+    merchant?: string;
+    receiptSubtotalCents?: number;
+    taxCents?: number;
+    tipCents?: number;
+    receiptTotalCents?: number;
+  }
+): List | null {
   const db = load();
   const list = db.lists.get(id);
   if (!list) return null;
-  list.name = name.trim();
+  if (patch.name !== undefined) list.name = patch.name.trim();
+  if (patch.merchant !== undefined) list.merchant = patch.merchant.trim();
+  if (patch.receiptSubtotalCents !== undefined) list.receiptSubtotalCents = patch.receiptSubtotalCents;
+  if (patch.taxCents !== undefined) list.taxCents = patch.taxCents;
+  if (patch.tipCents !== undefined) list.tipCents = patch.tipCents;
+  if (patch.receiptTotalCents !== undefined) list.receiptTotalCents = patch.receiptTotalCents;
   save(db);
   return list;
+}
+
+export function renameList(id: string, name: string): List | null {
+  return updateList(id, { name });
 }
 
 export function createList(name: string, ownerId: string | null = null, member?: ListMember): List {
@@ -168,10 +193,12 @@ export function getList(id: string) {
   const list = db.lists.get(id);
   if (!list) return null;
   const items = [...db.items.values()].filter((i) => i.listId === id);
-  const totals: Record<string, number> = {};
-  for (const i of items) {
-    if (i.claimedBy) totals[i.claimedBy] = (totals[i.claimedBy] ?? 0) + i.priceCents * i.quantity;
-  }
+  const totals = Object.fromEntries(
+    calculateListAmounts(items, list.taxCents ?? 0, list.tipCents ?? 0).people.map((person) => [
+      person.name,
+      person.totalCents,
+    ]),
+  );
   return { list, items, totals };
 }
 
@@ -230,9 +257,14 @@ export function claimItem(id: string, user: string): Item | "taken" | null {
   const db = load();
   const item = db.items.get(id);
   if (!item) return null;
-  if (item.claimedBy) return "taken";
-  item.claimedBy = user;
-  save(db);
+  const existing = item.claimedBy
+    ? item.claimedBy.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+  if (!existing.some((name) => name.toLowerCase() === user.trim().toLowerCase())) {
+    existing.push(user.trim());
+    item.claimedBy = existing.join(", ");
+    save(db);
+  }
   return item;
 }
 
@@ -240,8 +272,16 @@ export function unclaimItem(id: string, user: string): Item | "not-yours" | null
   const db = load();
   const item = db.items.get(id);
   if (!item) return null;
-  if (item.claimedBy !== user) return "not-yours";
-  item.claimedBy = null;
+  const existing = item.claimedBy
+    ? item.claimedBy.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+  const filtered = existing.filter(
+    (name) => name.toLowerCase() !== user.trim().toLowerCase()
+  );
+  if (filtered.length === existing.length && user !== item.claimedBy) {
+    return "not-yours";
+  }
+  item.claimedBy = filtered.length > 0 ? filtered.join(", ") : null;
   save(db);
   return item;
 }

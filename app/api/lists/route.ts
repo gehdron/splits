@@ -29,8 +29,18 @@ export async function GET() {
 
 export async function POST(req: Request) {
   await connection();
-  const body = await req.json().catch(() => ({}));
-  const name = String(body.name ?? "").trim() || "Shared list";
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "Request body must be valid JSON." }, { status: 400 });
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return Response.json({ error: "Request body must be an object." }, { status: 400 });
+  }
+  const name = "name" in body && typeof body.name === "string" ? body.name.trim() : "";
+  if (!name) return Response.json({ error: "Every list needs a name." }, { status: 400 });
+  if (name.length > 80) return Response.json({ error: "List names must be 80 characters or fewer." }, { status: 400 });
   try {
     const viewer = await currentListViewer();
     const list = await createList(name, viewer?.userId ?? null, viewer ? creatorMember(viewer) : undefined);
