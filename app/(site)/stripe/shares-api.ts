@@ -3,6 +3,7 @@ import { supabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient, supabaseAdminConfigured } from "@/lib/supabase/admin";
 import { getList } from "@/lib/live-lists";
+import { calculateListAmounts } from "@/lib/list-totals";
 import { createShare, listShares, markShareSent, maxShareCents, MIN_SHARE_CENTS, payUrl, type Share } from "@/app/(site)/stripe/shares";
 import { settlePerson } from "@/app/(site)/stripe/settle";
 import { normalizeHandle, photonConfigured, sendText } from "@/lib/photon-send";
@@ -65,9 +66,10 @@ export async function POST(request: Request) {
   // The amount comes from the list on the server, never from the browser.
   const data = await getList(listId);
   if (!data) return Response.json({ error: "List not found." }, { status: 404 });
-  const owedCents = data.items
-    .filter((item) => item.claimedBy === personName)
-    .reduce((sum, item) => sum + item.priceCents * item.quantity, 0);
+  const owedCents =
+    calculateListAmounts(data.items, data.list.taxCents ?? 0, data.list.tipCents ?? 0).people.find(
+      (person) => person.name.toLocaleLowerCase() === personName.toLocaleLowerCase(),
+    )?.totalCents ?? 0;
 
   const who = await organizer();
   if (!who.ok) return Response.json({ error: who.error }, { status: 401 });

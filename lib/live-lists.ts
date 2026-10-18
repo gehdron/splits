@@ -3,6 +3,7 @@ import { revalidateTag } from "next/cache";
 import { createAdminClient, supabaseAdminConfigured } from "@/lib/supabase/admin";
 import { supabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
+import { calculateListAmounts } from "@/lib/list-totals";
 import {
   addItems as fileAddItems,
   addListMember as fileAddListMember,
@@ -17,6 +18,7 @@ import {
   sameListMember,
   unclaimItem as fileUnclaimItem,
   updateItem as fileUpdateItem,
+  updateList as fileUpdateList,
   type Item,
   type List,
   type ListMember,
@@ -28,7 +30,17 @@ const SETUP =
 
 type DbError = { message: string } | null;
 
-type ListRow = { id: string; name: string; owner_id: string | null; created_at: string };
+type ListRow = {
+  id: string;
+  name: string;
+  owner_id: string | null;
+  created_at: string;
+  merchant?: string | null;
+  receipt_subtotal_cents?: number | null;
+  tax_cents?: number | null;
+  tip_cents?: number | null;
+  receipt_total_cents?: number | null;
+};
 type MemberRow = { list_id: string; name: string; user_id: string | null; phone: string | null; email: string | null };
 type ItemRow = {
   id: string;
@@ -71,6 +83,11 @@ function toList(row: ListRow, members: MemberRow[]): List {
     createdAt: Date.parse(row.created_at),
     ownerId: row.owner_id,
     members: members.map(toMember),
+    merchant: row.merchant ?? undefined,
+    receiptSubtotalCents: row.receipt_subtotal_cents ?? undefined,
+    taxCents: row.tax_cents ?? undefined,
+    tipCents: row.tip_cents ?? undefined,
+    receiptTotalCents: row.receipt_total_cents ?? undefined,
   };
 }
 
@@ -94,7 +111,11 @@ async function membersFor(listIds: string[]): Promise<MemberRow[]> {
 }
 
 async function listRow(id: string): Promise<ListRow | null> {
-  const { data, error } = await db().from("bill_lists").select("id, name, owner_id, created_at").eq("id", id).maybeSingle();
+  const { data, error } = await db()
+    .from("bill_lists")
+    .select("id, name, owner_id, created_at, merchant, receipt_subtotal_cents, tax_cents, tip_cents, receipt_total_cents")
+    .eq("id", id)
+    .maybeSingle();
   raise(error);
   return (data as ListRow | null) ?? null;
 }
@@ -127,7 +148,9 @@ export async function createList(name: string, ownerId: string | null = null, me
 
 export async function listSummaries(): Promise<(List & { itemCount: number })[]> {
   if (!isRemoteEnabled()) return fileListSummaries();
-  const { data: lists, error } = await db().from("bill_lists").select("id, name, owner_id, created_at");
+  const { data: lists, error } = await db()
+    .from("bill_lists")
+    .select("id, name, owner_id, created_at, merchant, receipt_subtotal_cents, tax_cents, tip_cents, receipt_total_cents");
   raise(error);
   const rows = (lists ?? []) as ListRow[];
   const ids = rows.map((list) => list.id);
@@ -288,81 +311,97 @@ function refreshGroupDashboards(
 }
 
 function withTotals(list: List, items: Item[]) {
-  const totals: Record<string, number> = {};
-  for (const item of items) {
-    if (item.claimedBy) totals[item.claimedBy] = (totals[item.claimedBy] ?? 0) + item.priceCents * item.quantity;
-  }
+  const totals = Object.fromEntries(
+    calculateListAmounts(items, list.taxCents ?? 0, list.tipCents ?? 0).people.map((person) => [
+      person.name,
+      person.totalCents,
+    ]),
+  );
   return { list, items, totals };
 }
 
 // Group bills live in public.lists. The dashboard shows them beside the file-backed lists, and this
 // lets the same /list page open either one.
 async function groupList(id: string): Promise<{ list: List; items: Item[]; totals: Record<string, number> } | null> {
-  try {
-    const supabase = await createClient();
-    const { data: auth } = await supabase.auth.getUser();
-    if (!auth.user) return null;
-    const { data: list, error } = await supabase
-      .from("lists")
-      .select("id, name, group_id, created_by, created_at")
-      .eq("id", id)
-      .maybeSingle();
-    if (error || !list) return null;
-    const { data: itemRows, error: itemError } = await supabase
-      .from("items")
-      .select("id, name, quantity, price_cents, purchased")
-      .eq("list_id", id);
-    if (itemError) return null;
-    const rows = itemRows ?? [];
-    const itemIds = rows.map((item) => item.id);
-    const claimResult = itemIds.length
-      ? await supabase.from("item_claims").select("item_id, member_id").in("item_id", itemIds)
-      : { data: [], error: null };
-    if (claimResult.error) return null;
-    const { data: memberRows, error: memberError } = await supabase
-      .from("group_members")
-      .select("id, user_id, profiles(display_name, phone)")
-      .eq("group_id", list.group_id);
-    if (memberError) return null;
-    const people = new Map<string, { name: string; userId: string; phone?: string }>();
-    for (const member of memberRows ?? []) {
-      const profile = profileOf(member.profiles);
-      people.set(member.id, { name: profile.name, userId: member.user_id, phone: profile.phone });
-    }
-    const claims = new Map<string, string[]>();
-    for (const claim of claimResult.data ?? []) {
-      const person = people.get(claim.member_id);
-      if (!person) continue;
-      claims.set(claim.item_id, [...(claims.get(claim.item_id) ?? []), person.name]);
-    }
-    const items: Item[] = rows.map((item) => ({
-      id: item.id,
-      listId: id,
-      name: item.name,
-      quantity: item.quantity,
-      priceCents: item.price_cents,
-      claimedBy: (claims.get(item.id) ?? []).join(", ") || null,
-      purchased: item.purchased ?? false,
-    }));
-    const members: ListMember[] = [...people.values()].map((person) => {
-      const member: ListMember = { name: person.name, userId: person.userId };
-      if (person.phone) member.phone = person.phone;
-      return member;
-    });
-    return withTotals(
-      {
-        id: list.id,
-        name: list.name,
-        createdAt: Date.parse(list.created_at),
-        ownerId: list.created_by,
-        groupId: list.group_id,
-        members,
-      },
-      items,
-    );
-  } catch {
-    return null;
+  const supabase = await createClient();
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  if (authError) throw new Error(authError.message);
+  if (!auth.user) return null;
+  const { data: list, error } = await supabase
+    .from("lists")
+    .select("id, name, group_id, created_by, created_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!list) return null;
+  const { data: itemRows, error: itemError } = await supabase
+    .from("items")
+    .select("id, name, quantity, price_cents, purchased")
+    .eq("list_id", id);
+  if (itemError) throw new Error(itemError.message);
+  const rows = itemRows ?? [];
+  const itemIds = rows.map((item) => item.id);
+  const claimResult = itemIds.length
+    ? await supabase.from("item_claims").select("item_id, member_id").in("item_id", itemIds)
+    : { data: [], error: null };
+  if (claimResult.error) throw new Error(claimResult.error.message);
+  const { data: memberRows, error: memberError } = await supabase
+    .from("group_members")
+    .select("id, user_id, profiles(display_name, phone)")
+    .eq("group_id", list.group_id);
+  if (memberError) throw new Error(memberError.message);
+  const people = new Map<string, { name: string; userId: string; phone?: string }>();
+  for (const member of memberRows ?? []) {
+    const profile = profileOf(member.profiles);
+    people.set(member.id, { name: profile.name, userId: member.user_id, phone: profile.phone });
   }
+  const claims = new Map<string, string[]>();
+  for (const claim of claimResult.data ?? []) {
+    const person = people.get(claim.member_id);
+    if (!person) continue;
+    claims.set(claim.item_id, [...(claims.get(claim.item_id) ?? []), person.name]);
+  }
+  for (const names of claims.values()) {
+    names.sort((left, right) => left.localeCompare(right));
+  }
+  const items: Item[] = rows.map((item) => ({
+    id: item.id,
+    listId: id,
+    name: item.name,
+    quantity: item.quantity,
+    priceCents: item.price_cents,
+    claimedBy: (claims.get(item.id) ?? []).join(", ") || null,
+    purchased: item.purchased ?? false,
+  }));
+  const members: ListMember[] = [...people.values()].map((person) => {
+    const member: ListMember = { name: person.name, userId: person.userId };
+    if (person.phone) member.phone = person.phone;
+    return member;
+  });
+  const { data: receipt, error: receiptError } = await supabase
+    .from("receipts")
+    .select("merchant, subtotal_cents, tax_cents, tip_cents, total_cents")
+    .eq("list_id", id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (receiptError) throw new Error(receiptError.message);
+  return withTotals(
+    {
+      id: list.id,
+      name: list.name,
+      createdAt: Date.parse(list.created_at),
+      ownerId: list.created_by,
+      groupId: list.group_id,
+      members,
+      merchant: receipt?.merchant ?? undefined,
+      receiptSubtotalCents: receipt?.subtotal_cents ?? undefined,
+      taxCents: receipt?.tax_cents ?? undefined,
+      tipCents: receipt?.tip_cents ?? undefined,
+      receiptTotalCents: receipt?.total_cents ?? undefined,
+    },
+    items,
+  );
 }
 
 export async function getList(id: string): Promise<{ list: List; items: Item[]; totals: Record<string, number> } | null> {
@@ -378,13 +417,84 @@ export async function getList(id: string): Promise<{ list: List; items: Item[]; 
   return withTotals(toList(row, members), items);
 }
 
-export async function renameList(id: string, name: string): Promise<List | null> {
-  if (!isRemoteEnabled()) return fileRenameList(id, name);
-  const { data, error } = await db().from("bill_lists").update({ name: name.trim() }).eq("id", id).select("id").maybeSingle();
-  raise(error);
-  if (!data) return null;
+export async function updateList(
+  id: string,
+  patch: {
+    name?: string;
+    merchant?: string;
+    receiptSubtotalCents?: number;
+    taxCents?: number;
+    tipCents?: number;
+    receiptTotalCents?: number;
+  }
+): Promise<List | null> {
+  const group = await groupListContext(id);
+  if (group) {
+    const supabase = await createClient();
+    if (patch.name !== undefined) {
+      const trimmed = patch.name.trim();
+      if (trimmed) {
+        const { error } = await supabase.from("lists").update({ name: trimmed }).eq("id", id);
+        if (error) throw new Error(error.message);
+      }
+    }
+    const hasReceiptPatch =
+      patch.merchant !== undefined ||
+      patch.receiptSubtotalCents !== undefined ||
+      patch.taxCents !== undefined ||
+      patch.tipCents !== undefined ||
+      patch.receiptTotalCents !== undefined;
+    if (hasReceiptPatch) {
+      const { data: existingReceipt, error: receiptError } = await supabase
+        .from("receipts")
+        .select("id")
+        .eq("list_id", id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (receiptError) throw new Error(receiptError.message);
+      const fields: Record<string, string | number | null> = {};
+      if (patch.merchant !== undefined) fields.merchant = patch.merchant.trim() || null;
+      if (patch.receiptSubtotalCents !== undefined) fields.subtotal_cents = patch.receiptSubtotalCents;
+      if (patch.taxCents !== undefined) fields.tax_cents = patch.taxCents;
+      if (patch.tipCents !== undefined) fields.tip_cents = patch.tipCents;
+      if (patch.receiptTotalCents !== undefined) fields.total_cents = patch.receiptTotalCents;
+      if (existingReceipt) {
+        const { error } = await supabase.from("receipts").update(fields).eq("id", existingReceipt.id);
+        if (error) throw new Error(error.message);
+      } else {
+        const { error } = await supabase.from("receipts").insert({ list_id: id, ...fields });
+        if (error) throw new Error(error.message);
+      }
+    }
+    const loaded = await getList(id);
+    return loaded?.list ?? null;
+  }
+
+  if (!isRemoteEnabled()) return fileUpdateList(id, patch);
+  if (patch.name !== undefined) {
+    const trimmed = patch.name.trim();
+    if (trimmed) {
+      const { error } = await db().from("bill_lists").update({ name: trimmed }).eq("id", id);
+      raise(error);
+    }
+  }
+  const receiptFields: Record<string, string | number | null> = {};
+  if (patch.merchant !== undefined) receiptFields.merchant = patch.merchant.trim() || null;
+  if (patch.receiptSubtotalCents !== undefined) receiptFields.receipt_subtotal_cents = patch.receiptSubtotalCents;
+  if (patch.taxCents !== undefined) receiptFields.tax_cents = patch.taxCents;
+  if (patch.tipCents !== undefined) receiptFields.tip_cents = patch.tipCents;
+  if (patch.receiptTotalCents !== undefined) receiptFields.receipt_total_cents = patch.receiptTotalCents;
+  if (Object.keys(receiptFields).length > 0) {
+    const { error } = await db().from("bill_lists").update(receiptFields).eq("id", id);
+    raise(error);
+  }
   const loaded = await getList(id);
   return loaded?.list ?? null;
+}
+
+export async function renameList(id: string, name: string): Promise<List | null> {
+  return updateList(id, { name });
 }
 
 export async function addListMember(listId: string, member: ListMember): Promise<List | null> {
@@ -514,7 +624,6 @@ export async function claimItem(
     if (group.claims.some((claim) => claim.member_id === target.id)) {
       return groupItem(group);
     }
-    if (group.claims.length > 0) return "taken";
 
     const currentMember = group.members.find(
       (member) => member.userId === group.currentUserId,
@@ -533,21 +642,28 @@ export async function claimItem(
       .insert({ item_id: id, member_id: target.id });
     if (error) throw new Error(error.message);
     refreshGroupDashboards(group.members);
-    return groupItem(group, [{ member_id: target.id }]);
+    return groupItem(group, [...group.claims, { member_id: target.id }]);
   }
 
   if (!isRemoteEnabled()) return fileClaimItem(id, user);
   const item = await itemRow(id);
   if (!item) return null;
-  if (item.claimed_by) return "taken";
-  const { data, error } = await db()
-    .from("bill_items")
-    .update({ claimed_by: user })
-    .eq("id", id)
-    .select("id, list_id, name, quantity, price_cents, claimed_by, purchased")
-    .single();
-  raise(error);
-  return toItem(data as ItemRow);
+  const existing = item.claimed_by
+    ? item.claimed_by.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+  if (!existing.some((name) => name.toLowerCase() === user.trim().toLowerCase())) {
+    existing.push(user.trim());
+    const nextClaimed = existing.join(", ");
+    const { data, error } = await db()
+      .from("bill_items")
+      .update({ claimed_by: nextClaimed })
+      .eq("id", id)
+      .select("id, list_id, name, quantity, price_cents, claimed_by, purchased")
+      .single();
+    raise(error);
+    return toItem(data as ItemRow);
+  }
+  return toItem(item);
 }
 
 export async function unclaimItem(
@@ -567,11 +683,8 @@ export async function unclaimItem(
     const targets = claimedMembers.filter((member) =>
       requestedNames.includes(member.name.trim().toLocaleLowerCase()),
     );
-    if (
-      targets.length === 0 ||
-      targets.length !== requestedNames.length
-    ) {
-      return "not-yours";
+    if (targets.length === 0) {
+      return groupItem(group);
     }
 
     const currentMember = group.members.find(
@@ -594,7 +707,6 @@ export async function unclaimItem(
       .in("member_id", memberIds)
       .select("member_id");
     if (error) throw new Error(error.message);
-    if ((removed ?? []).length !== memberIds.length) return "not-yours";
 
     refreshGroupDashboards(group.members);
     const remainingClaims = group.claims.filter(
@@ -606,10 +718,16 @@ export async function unclaimItem(
   if (!isRemoteEnabled()) return fileUnclaimItem(id, user);
   const item = await itemRow(id);
   if (!item) return null;
-  if (item.claimed_by !== user) return "not-yours";
+  const existing = item.claimed_by
+    ? item.claimed_by.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+  const filtered = existing.filter(
+    (name) => name.toLowerCase() !== user.trim().toLowerCase()
+  );
+  const nextClaimed = filtered.length > 0 ? filtered.join(", ") : null;
   const { data, error } = await db()
     .from("bill_items")
-    .update({ claimed_by: null })
+    .update({ claimed_by: nextClaimed })
     .eq("id", id)
     .select("id, list_id, name, quantity, price_cents, claimed_by, purchased")
     .single();

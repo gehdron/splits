@@ -4,6 +4,7 @@ import { updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { normalizePhone } from "@/lib/phone";
 import { createClient } from "@/lib/supabase/server";
+import { reconcileList } from "@/app/(site)/stripe/settle";
 
 export type DashState = { error?: string } | undefined;
 
@@ -240,6 +241,7 @@ export async function createList(_state: DashState, formData: FormData): Promise
   const name = String(formData.get("name") ?? "").trim();
   if (!groupId) return { error: "Choose a group first." };
   if (name.length < 2) return { error: "Name the list." };
+  if (name.length > 80) return { error: "List names must be 80 characters or fewer." };
 
   const { supabase, user } = await requireUser();
   const id = crypto.randomUUID();
@@ -268,6 +270,74 @@ function hasNegativeAmount(rows: ReceiptRow[]) {
 
 const NEGATIVE_AMOUNT_ERROR = "A line on the receipt is a discount or has a negative price. Delete it or fix the price, then save again.";
 
+type ReceiptMetadata = {
+  merchant?: string;
+  subtotalCents?: number;
+  taxCents?: number;
+  tipCents?: number;
+  totalCents?: number;
+};
+
+function readReceiptMetadata(formData: FormData): { metadata: ReceiptMetadata; error?: string } {
+  const merchant = String(formData.get("merchant") ?? "").trim();
+  const rawTotals = String(formData.get("receiptTotals") ?? "");
+  if (!rawTotals) return { metadata: merchant ? { merchant } : {} };
+
+  let totals: unknown;
+  try {
+    totals = JSON.parse(rawTotals);
+  } catch {
+    return { metadata: {}, error: "Receipt totals could not be read." };
+  }
+  if (!totals || typeof totals !== "object" || Array.isArray(totals)) {
+    return { metadata: {}, error: "Receipt totals could not be read." };
+  }
+
+  const metadata: ReceiptMetadata = {};
+  if (merchant) metadata.merchant = merchant;
+  for (const [field, key] of [
+    ["subtotal", "subtotalCents"],
+    ["tax", "taxCents"],
+    ["tip", "tipCents"],
+    ["total", "totalCents"],
+  ] as const) {
+    const value = (totals as Record<string, unknown>)[field];
+    if (typeof value !== "string" || !value.trim()) continue;
+    const normalized = value.trim().replace(/[$,\s]/g, "");
+    if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) {
+      return { metadata: {}, error: `Enter a valid non-negative ${field} amount.` };
+    }
+    const cents = Math.round(Number(normalized) * 100);
+    if (!Number.isSafeInteger(cents)) {
+      return { metadata: {}, error: `Enter a valid non-negative ${field} amount.` };
+    }
+    metadata[key] = cents;
+  }
+  return { metadata };
+}
+
+async function insertReceipt(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  listId: string,
+  metadata: ReceiptMetadata,
+): Promise<string | null> {
+  if (Object.keys(metadata).length === 0) return null;
+  const { data, error } = await supabase
+    .from("receipts")
+    .insert({
+      list_id: listId,
+      merchant: metadata.merchant ?? null,
+      subtotal_cents: metadata.subtotalCents ?? null,
+      tax_cents: metadata.taxCents ?? null,
+      tip_cents: metadata.tipCents ?? null,
+      total_cents: metadata.totalCents ?? null,
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  return data.id;
+}
+
 // Receipt amounts are line totals; store a per-unit price only when it divides evenly.
 function receiptItemInserts(listId: string, rows: ReceiptRow[]) {
   return rows
@@ -281,6 +351,7 @@ function receiptItemInserts(listId: string, rows: ReceiptRow[]) {
       return {
         id: crypto.randomUUID(),
         list_id: listId,
+        receipt_id: null,
         name: exact || qty === 1 ? name : `${name} x${qty}`,
         quantity: exact ? qty : 1,
         price_cents: exact ? line / qty : line,
@@ -297,13 +368,26 @@ export async function importReceipt(_state: DashState, formData: FormData): Prom
   const rows = readReceiptRows(formData);
   if (!rows) return { error: "The receipt items could not be read." };
   if (hasNegativeAmount(rows)) return { error: NEGATIVE_AMOUNT_ERROR };
+  const { metadata, error: metadataError } = readReceiptMetadata(formData);
+  if (metadataError) return { error: metadataError };
 
+  const insertsWithoutReceipt = receiptItemInserts(listId, rows);
+  if (insertsWithoutReceipt.length === 0) return { error: "The receipt has no items to add." };
   const { supabase, user } = await requireUser();
-  const inserts = receiptItemInserts(listId, rows);
-  if (inserts.length === 0) return { error: "The receipt has no items to add." };
+  let receiptId: string | null;
+  try {
+    receiptId = await insertReceipt(supabase, listId, metadata);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Receipt totals could not be saved." };
+  }
+  const inserts = insertsWithoutReceipt.map((row) => ({ ...row, receipt_id: receiptId }));
 
   const { error } = await supabase.from("items").insert(inserts);
-  if (error) return { error: error.message };
+  if (error) {
+    if (receiptId) await supabase.from("receipts").delete().eq("id", receiptId);
+    return { error: error.message };
+  }
+  await reconcileList(listId);
   updateTag(`dashboard-${user.id}`);
   redirect(listHref(groupId, listId, false, false));
 }
@@ -311,21 +395,32 @@ export async function importReceipt(_state: DashState, formData: FormData): Prom
 // Item-by-item split: the scanned receipt becomes a new list in the chosen group.
 export async function createListFromReceipt(_state: DashState, formData: FormData): Promise<DashState> {
   const groupId = String(formData.get("groupId") ?? "");
-  const name = String(formData.get("name") ?? "").trim() || "Receipt";
+  const name = String(formData.get("name") ?? "").trim();
   if (!groupId) return { error: "Choose a group first." };
+  if (!name) return { error: "Every list needs a name." };
+  if (name.length > 80) return { error: "List names must be 80 characters or fewer." };
 
   const rows = readReceiptRows(formData);
   if (!rows) return { error: "The receipt items could not be read." };
   if (hasNegativeAmount(rows)) return { error: NEGATIVE_AMOUNT_ERROR };
+  const { metadata, error: metadataError } = readReceiptMetadata(formData);
+  if (metadataError) return { error: metadataError };
 
   const listId = crypto.randomUUID();
-  const inserts = receiptItemInserts(listId, rows);
-  if (inserts.length === 0) return { error: "The receipt has no items to add." };
-
+  const insertsWithoutReceipt = receiptItemInserts(listId, rows);
+  if (insertsWithoutReceipt.length === 0) return { error: "The receipt has no items to add." };
   const { supabase, user } = await requireUser();
   const { error: listError } = await supabase.from("lists").insert({ id: listId, group_id: groupId, created_by: user.id, name });
   if (listError) return { error: listError.message };
 
+  let receiptId: string | null;
+  try {
+    receiptId = await insertReceipt(supabase, listId, metadata);
+  } catch (error) {
+    await supabase.from("lists").delete().eq("id", listId);
+    return { error: error instanceof Error ? error.message : "Receipt totals could not be saved." };
+  }
+  const inserts = insertsWithoutReceipt.map((row) => ({ ...row, receipt_id: receiptId }));
   const { error } = await supabase.from("items").insert(inserts);
   if (error) {
     // Don't leave an empty list behind if the items were rejected.

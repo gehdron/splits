@@ -360,11 +360,67 @@ function Sidebar({ me, groups, group, people, loadError }: Omit<ScannerProps, "c
   );
 }
 
-function SaveReceiptButton({ rows, group, listName }: { rows: AiReceiptItem[]; group: ScannerGroup | null; listName: string }) {
+function SaveReceiptButton({
+  rows,
+  group,
+  listName,
+  merchant,
+  receiptTotals,
+  displayedReceiptTotal,
+}: {
+  rows: AiReceiptItem[];
+  group: ScannerGroup | null;
+  listName: string;
+  merchant: string;
+  receiptTotals: AiReceiptTotals;
+  displayedReceiptTotal: string;
+}) {
   const params = useSearchParams();
   const listId = params.get("list");
   const [importState, importAction, importPending] = useActionState(importReceipt, undefined);
   const [createState, createAction, createPending] = useActionState(createListFromReceipt, undefined);
+  const [customName, setCustomName] = useState(listName && listName !== "Receipt" ? listName : "");
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestionError, setSuggestionError] = useState("");
+
+  async function suggestName() {
+    setSuggesting(true);
+    setSuggestionError("");
+    try {
+      const res = await fetch("/api/suggest-list-name", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: rows.map((r) => r.description),
+          merchant: merchant || undefined,
+        }),
+      });
+      const data: unknown = await res.json().catch(() => null);
+      if (!res.ok) {
+        const message =
+          typeof data === "object" && data !== null && "error" in data && typeof data.error === "string"
+            ? data.error
+            : "Gemini could not suggest a list name.";
+        throw new Error(message);
+      }
+      if (
+        typeof data === "object" &&
+        data !== null &&
+        "name" in data &&
+        typeof data.name === "string" &&
+        data.name.trim()
+      ) {
+        setCustomName(data.name.trim());
+      } else {
+        throw new Error("Gemini returned an invalid list name.");
+      }
+    } catch (error) {
+      setSuggestionError(error instanceof Error ? error.message : "Gemini could not suggest a list name.");
+    } finally {
+      setSuggesting(false);
+    }
+  }
+
   if (!group || rows.length === 0) return null;
   // Only group owners can add lists and items (see supabase/schema.sql), so don't offer a save that can't work.
   if (group.role !== "owner") {
@@ -376,11 +432,49 @@ function SaveReceiptButton({ rows, group, listName }: { rows: AiReceiptItem[]; g
   return (
     <form action={listId ? importAction : createAction} className="acts2">
       <input type="hidden" name="groupId" value={group.id} />
-      {listId ? <input type="hidden" name="listId" value={listId} /> : <input type="hidden" name="name" value={listName} />}
+      <input type="hidden" name="merchant" value={merchant} />
+      <input type="hidden" name="receiptTotals" value={JSON.stringify({
+        ...receiptTotals,
+        total: displayedReceiptTotal,
+      })} />
+      {listId ? (
+        <input type="hidden" name="listId" value={listId} />
+      ) : (
+        <div style={{ width: "100%", margin: "10px 0" }}>
+          <label className="lbl" htmlFor="scanner-list-name">
+            List name (required)
+          </label>
+          <div className="inrow" style={{ gap: 8, alignItems: "center" }}>
+            <input
+              id="scanner-list-name"
+              className="field"
+              name="name"
+              value={customName}
+              maxLength={80}
+              placeholder="e.g. Olive Garden Dinner"
+              required
+              onChange={(e) => setCustomName(e.target.value)}
+            />
+            <button
+              type="button"
+              className="btn line"
+              disabled={suggesting}
+              onClick={suggestName}
+            >
+              {suggesting ? "Suggesting…" : "✨ AI suggest"}
+            </button>
+          </div>
+        </div>
+      )}
       <input type="hidden" name="items" value={JSON.stringify(rows)} />
-      <button type="submit" disabled={pending} className="btn lg">
+      <button
+        type="submit"
+        disabled={pending || (!listId && !customName.trim())}
+        className="btn lg"
+      >
         {pending ? "Saving…" : listId ? "Add these items to the list" : `Save as a list in ${group.name}`}
       </button>
+      {suggestionError ? <p className="msg err" role="alert">{suggestionError}</p> : null}
       {state?.error ? <p className="msg err" role="alert">{state.error}</p> : null}
     </form>
   );
@@ -2076,7 +2170,14 @@ export function ReceiptScanner({
                     )}
                   </p>
                   <Suspense fallback={null}>
-                    <SaveReceiptButton rows={receiptRows} group={group} listName={charge?.merchant ?? "Receipt"} />
+                    <SaveReceiptButton
+                      rows={receiptRows}
+                      group={group}
+                      listName={charge?.merchant ?? "Receipt"}
+                      merchant={charge?.merchant ?? ""}
+                      receiptTotals={receiptTotals}
+                      displayedReceiptTotal={displayedReceiptTotal}
+                    />
                   </Suspense>
                   <button
                     className="btn lg"

@@ -12,6 +12,7 @@ export type AiReceiptTotals = {
 };
 
 export type AiParsedReceipt = {
+  merchant?: string;
   items: AiReceiptItem[];
   totals: AiReceiptTotals;
 };

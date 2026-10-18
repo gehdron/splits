@@ -71,6 +71,7 @@ export function Board({ data }: { data: DashboardData }) {
   const [listName, setListName] = useState("");
   const [listError, setListError] = useState("");
   const [creatingList, setCreatingList] = useState(false);
+  const [suggestingName, setSuggestingName] = useState(false);
   const [sharedLists, setSharedLists] = useState<{ id: string; name: string; itemCount: number }[] | null>(null);
   const [charges, setCharges] = useState<Charge[] | null>(null);
   const [chargesNote, setChargesNote] = useState("");
@@ -112,13 +113,55 @@ export function Board({ data }: { data: DashboardData }) {
     });
   }
 
+  async function suggestBlankListName() {
+    setSuggestingName(true);
+    setListError("");
+    try {
+      const res = await fetch("/api/suggest-list-name", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentName: listName }),
+      });
+      const data: unknown = await res.json().catch(() => null);
+      if (!res.ok) {
+        const message =
+          typeof data === "object" && data !== null && "error" in data && typeof data.error === "string"
+            ? data.error
+            : "Gemini could not suggest a list name.";
+        throw new Error(message);
+      }
+      if (
+        typeof data === "object" &&
+        data !== null &&
+        "name" in data &&
+        typeof data.name === "string" &&
+        data.name.trim()
+      ) {
+        const suggested = data.name.trim();
+        setListName(suggested);
+        if (listNameInput.current) listNameInput.current.value = suggested;
+      } else {
+        throw new Error("Gemini returned an invalid list name.");
+      }
+    } catch (error) {
+      setListError(error instanceof Error ? error.message : "Could not suggest a name.");
+    } finally {
+      setSuggestingName(false);
+    }
+  }
+
   async function createBlankList(event?: React.FormEvent) {
     event?.preventDefault();
     if (creatingRef.current) return;
+    const name = (listNameInput.current?.value ?? listName).trim();
+    if (!name) {
+      setListError("Every list needs a name.");
+      listNameInput.current?.focus();
+      return;
+    }
     creatingRef.current = true;
     setCreatingList(true);
     setListError("");
-    const name = (listNameInput.current?.value ?? listName).trim() || "Shared list";
     try {
       const res = await fetch("/api/lists", {
         method: "POST",
@@ -448,26 +491,38 @@ export function Board({ data }: { data: DashboardData }) {
                 {namingList ? (
                   <form onSubmit={createBlankList}>
                     <h2>Name this list</h2>
-                    <p>Leave it blank to keep the name Shared list.</p>
+                    <p>Every list needs a name. Type one or let AI suggest one.</p>
                     <div>
                       <label className="lbl" htmlFor="new-list-name">
                         List name
                       </label>
-                      <input
-                        ref={listNameInput}
-                        id="new-list-name"
-                        className="field"
-                        value={listName}
-                        placeholder="Shared list"
-                        onChange={(event) => {
-                          setListName(event.target.value);
-                          setListError("");
-                        }}
-                      />
+                      <div className="inrow" style={{ gap: 8 }}>
+                        <input
+                          ref={listNameInput}
+                          id="new-list-name"
+                          className="field"
+                          value={listName}
+                          maxLength={80}
+                          placeholder="e.g. Apartment Groceries"
+                          required
+                          onChange={(event) => {
+                            setListName(event.target.value);
+                            setListError("");
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="btn line"
+                          disabled={creatingList || suggestingName}
+                          onClick={suggestBlankListName}
+                        >
+                          {suggestingName ? "Suggesting…" : "✨ AI suggest"}
+                        </button>
+                      </div>
                     </div>
                     {listError ? <p className="err">{listError}</p> : null}
                     <div className="pop-acts">
-                      <button className="btn" type="submit" disabled={creatingList}>
+                      <button className="btn" type="submit" disabled={creatingList || !listName.trim()}>
                         {creatingList ? "Creating…" : "Create list"}
                       </button>
                       <button className="btn txt" type="button" onClick={() => setNamingList(false)} disabled={creatingList}>

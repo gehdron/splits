@@ -6,8 +6,20 @@ create table if not exists public.bill_lists (
   id uuid primary key,
   name text not null,
   owner_id uuid,
+  merchant text,
+  receipt_subtotal_cents integer check (receipt_subtotal_cents is null or receipt_subtotal_cents >= 0),
+  tax_cents integer check (tax_cents is null or tax_cents >= 0),
+  tip_cents integer check (tip_cents is null or tip_cents >= 0),
+  receipt_total_cents integer check (receipt_total_cents is null or receipt_total_cents >= 0),
   created_at timestamptz not null default now()
 );
+
+alter table public.bill_lists
+  add column if not exists merchant text,
+  add column if not exists receipt_subtotal_cents integer,
+  add column if not exists tax_cents integer,
+  add column if not exists tip_cents integer,
+  add column if not exists receipt_total_cents integer;
 
 create table if not exists public.bill_list_members (
   id uuid primary key default gen_random_uuid(),
