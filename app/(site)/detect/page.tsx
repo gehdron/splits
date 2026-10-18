@@ -1,10 +1,13 @@
 
 "use client";
 
+import Link from "next/link";
 import { Suspense, useActionState, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
-import { importReceipt } from "../Dashboard/actions";
+import { importReceipt } from "../dashboard/actions";
 import Tesseract from "tesseract.js";
+import "./detect.css";
 import type {
   AiParsedReceipt,
   AiReceiptItem,
@@ -16,11 +19,7 @@ import {
   formatCents,
   type TipSplitMode,
 } from "@/app/split-calculations";
-import type {
-  ReceiptAssignment,
-  SplitAssistantResult,
-  SplitInstructionMessage,
-} from "@/app/split-types";
+import type { ReceiptAssignment } from "@/app/split-types";
 
 type DetectedWord = {
   text: string;
@@ -74,33 +73,6 @@ function isAiParsedReceipt(value: unknown): value is AiParsedReceipt {
   );
 }
 
-function isSplitAssistantResult(value: unknown): value is SplitAssistantResult {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "reply" in value &&
-    typeof value.reply === "string" &&
-    "clarification" in value &&
-    typeof value.clarification === "string" &&
-    "assignments" in value &&
-    Array.isArray(value.assignments) &&
-    value.assignments.every(
-      (assignment: unknown) =>
-        typeof assignment === "object" &&
-        assignment !== null &&
-        "itemIndex" in assignment &&
-        typeof assignment.itemIndex === "number" &&
-        Number.isInteger(assignment.itemIndex) &&
-        "people" in assignment &&
-        Array.isArray(assignment.people) &&
-        assignment.people.every(
-          (person: unknown) =>
-            typeof person === "string" && person.trim().length > 0
-        )
-    )
-  );
-}
-
 function enhanceOcrImage(
   context: CanvasRenderingContext2D,
   width: number,
@@ -122,26 +94,98 @@ function enhanceOcrImage(
   context.putImageData(pixels, 0, 0);
 }
 
-function getEditDistance(left: string, right: string) {
-  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
-  const current = new Array<number>(right.length + 1);
+/* ===== helpers and icons ===== */
+const Svg = ({ children }: { children: ReactNode }) => (
+  <svg className="i" viewBox="0 0 24 24" aria-hidden="true">{children}</svg>
+);
+const CheckIcon = () => <Svg><path d="M5 12l5 5 9-10" /></Svg>;
+const CloseIcon = () => <Svg><path d="M6 6l12 12M18 6L6 18" /></Svg>;
+const PlusIcon = () => <Svg><path d="M12 5v14M5 12h14" /></Svg>;
+const BackIcon = () => <Svg><path d="M15 6l-6 6 6 6" /></Svg>;
+const ChevIcon = () => <svg className="i chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>;
+const CameraIcon = () => <Svg><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></Svg>;
+const UploadIcon = () => <Svg><path d="M12 15V4M7 9l5-5 5 5" /><path d="M5 15v4h14v-4" /></Svg>;
+const SwitchIcon = () => <Svg><path d="M4 10a8 8 0 0 1 14-4l2 2M20 14a8 8 0 0 1-14 4l-2-2" /><path d="M20 4v4h-4M4 20v-4h4" /></Svg>;
+const RetakeIcon = () => <Svg><path d="M4 12a8 8 0 1 0 3-6.2" /><path d="M4 4v5h5" /></Svg>;
+const CopyIcon = () => <Svg><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a1 1 0 0 1 1-1h10" /></Svg>;
+const SparkIcon = () => <Svg><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" /></Svg>;
+const PeopleIcon = () => <Svg><circle cx="9" cy="9" r="3" /><path d="M3.5 19c.6-2.8 2.8-4.5 5.5-4.5s4.9 1.7 5.5 4.5" /><circle cx="17" cy="8" r="2.5" /><path d="M16 13.6c2.4 0 4.1 1.6 4.6 4" /></Svg>;
+const FlatIcon = () => <Svg><path d="M7 3h10v18l-2.5-1.5L12 21l-2.5-1.5L7 21z" /></Svg>;
+const BulbIcon = () => <Svg><path d="M9 18h6M10 21h4" /><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z" /></Svg>;
+const FrameIcon = () => <Svg><path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4" /></Svg>;
+const LogoMark = () => (
+  <svg width="32" height="32" viewBox="3 3 60 60" aria-hidden="true">
+    <g strokeWidth="6" strokeLinejoin="round">
+      <polygon points="10,10 48,10 10,48" fill="#0FB67F" stroke="#0FB67F" />
+      <polygon points="56,16 56,56 16,56" fill="#6C4DFF" stroke="#6C4DFF" />
+    </g>
+  </svg>
+);
 
-  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
-    current[0] = leftIndex;
-    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
-      current[rightIndex] = Math.min(
-        current[rightIndex - 1] + 1,
-        previous[rightIndex] + 1,
-        previous[rightIndex - 1] +
-          (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1)
-      );
-    }
-    for (let index = 0; index <= right.length; index += 1) {
-      previous[index] = current[index];
-    }
-  }
+type ProcState = "waiting" | "running" | "done" | "error";
+function ProcRow({ n, state, title, detail }: { n: number; state: ProcState; title: string; detail: string }) {
+  const tag = { waiting: "Waiting", running: "In progress", done: "Done", error: "Didn’t work" }[state];
+  return (
+    <li>
+      <span className={`pst ${state === "done" ? "done" : state === "running" ? "run" : state === "error" ? "err" : ""}`}>
+        {state === "done" ? <CheckIcon /> : state === "running" ? <span className="spin" role="img" aria-label="In progress" /> : state === "error" ? "!" : n}
+      </span>
+      <div><b>{title}</b><small>{detail}</small></div>
+      <span className={`ptag ${state === "done" ? "ok" : state === "running" ? "run" : state === "error" ? "err" : ""}`}>{tag}</span>
+    </li>
+  );
+}
 
-  return previous[right.length];
+function Steps({ current }: { current: 1 | 2 | 3 }) {
+  const labels = ["Take a photo", "Read the receipt", "Check the items"];
+  return (
+    <ol className="steps" aria-label="Steps">
+      {labels.map((label, i) => {
+        const n = i + 1;
+        const cls = n === current ? "cur" : n < current ? "done" : "";
+        return (
+          <li key={label} className={`step ${cls}`} aria-current={n === current ? "step" : undefined}>
+            <span className="n">{n < current ? <CheckIcon /> : n}</span>
+            {label}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function Sidebar() {
+  const friends = [{ name: "Brayden", ini: "B", cls: "p1", inGroup: true }, { name: "Maya", ini: "M", cls: "p2", inGroup: true }, { name: "Jay", ini: "J", cls: "p1", inGroup: true }, { name: "Riley", ini: "R", cls: "p3", inGroup: false }];
+  return (
+    <aside className="side">
+      <div className="brand"><LogoMark /><span>Splits</span></div>
+      <section aria-labelledby="g-h">
+        <h2 className="sh" id="g-h">Your groups</h2>
+        <ul>{["Apartment 4B", "Lisbon trip"].map((g) => <li key={g}><button className="gbtn" type="button"><span>{g}</span><span className="cnt" /></button></li>)}</ul>
+        <label className="lbl" htmlFor="ng">New group</label>
+        <div className="inrow"><input id="ng" className="field" type="text" placeholder="Group name" /><button className="btn" type="button">Create</button></div>
+      </section>
+      <section aria-labelledby="f-h">
+        <h2 className="sh" id="f-h">People</h2>
+        <ul>
+          {friends.map((f) => (
+            <li key={f.name} className="fr">
+              <span className={`av ${f.cls}`} aria-hidden="true">{f.ini}</span>
+              <div><b>{f.name}</b><small>{f.inGroup ? "In Apartment 4B" : "Not in this group"}</small></div>
+              <button className="mini" type="button" disabled={f.inGroup}>{f.inGroup ? "Added" : "Add"}</button>
+              <button className="xb" type="button" aria-label={`Remove ${f.name}`}><CloseIcon /></button>
+            </li>
+          ))}
+        </ul>
+        <p className="lbl">Add someone to Apartment 4B</p>
+        <div className="seg" role="group" aria-label="Add by"><button className="sg on" type="button" aria-pressed="true">Phone</button><button className="sg" type="button" aria-pressed="false">Email</button></div>
+        <label className="lbl" htmlFor="ct">Phone number</label>
+        <input id="ct" className="field" type="tel" placeholder="(555) 123-4567" />
+        <button className="btn full" type="button"><PlusIcon />Add to group</button>
+      </section>
+      <div className="me"><span className="av lgav p0">GZ</span><div><b>Gordon Zeng</b><small>gordon@example.com</small></div><button className="btn txt" type="button">Sign out</button></div>
+    </aside>
+  );
 }
 
 function SaveReceiptButton({ rows }: { rows: AiReceiptItem[] }) {
@@ -152,18 +196,14 @@ function SaveReceiptButton({ rows }: { rows: AiReceiptItem[] }) {
   if (!listId || !groupId || rows.length === 0) return null;
 
   return (
-    <form action={action} className="flex flex-wrap items-center gap-3">
+    <form action={action} className="acts2">
       <input type="hidden" name="listId" value={listId} />
       <input type="hidden" name="groupId" value={groupId} />
       <input type="hidden" name="items" value={JSON.stringify(rows)} />
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-lg bg-[#0B1020] px-4 py-2 font-semibold text-white disabled:cursor-wait disabled:opacity-60"
-      >
+      <button type="submit" disabled={pending} className="btn lg">
         {pending ? "Adding to the list…" : "Add these items to the list"}
       </button>
-      {state?.error ? <p className="text-sm text-red-700">{state.error}</p> : null}
+      {state?.error ? <p className="msg err" role="alert">{state.error}</p> : null}
     </form>
   );
 }
@@ -173,7 +213,6 @@ export default function ReceiptScanner() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const receiptFileInputRef = useRef<HTMLInputElement>(null);
-  const splitInputRef = useRef<HTMLTextAreaElement>(null);
 
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraFacingMode, setCameraFacingMode] =
@@ -206,17 +245,10 @@ export default function ReceiptScanner() {
   const [aiParsed, setAiParsed] = useState(false);
   const [aiError, setAiError] = useState("");
   const [itemAssignmentsOpen, setItemAssignmentsOpen] = useState(false);
-  const [splitAssistantOpen, setSplitAssistantOpen] = useState(false);
-  const [splitMessages, setSplitMessages] = useState<SplitInstructionMessage[]>([]);
-  const [splitMessage, setSplitMessage] = useState("");
-  const [splitSuggestionsEnabled, setSplitSuggestionsEnabled] = useState(true);
-  const [splitCursorPosition, setSplitCursorPosition] = useState(0);
-  const [splitInputScrollTop, setSplitInputScrollTop] = useState(0);
   const [userNames, setUserNames] = useState<string[]>([]);
   const [userNameInput, setUserNameInput] = useState("");
   const [splitAssignments, setSplitAssignments] = useState<ReceiptAssignment[]>([]);
-  const [splitParsing, setSplitParsing] = useState(false);
-  const [splitError, setSplitError] = useState("");
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const [tipOptionsOpen, setTipOptionsOpen] = useState(false);
   const [tipSplitMode, setTipSplitMode] =
     useState<TipSplitMode>("proportional");
@@ -261,76 +293,6 @@ export default function ReceiptScanner() {
         : processingStage === "error"
           ? "Failed · retry available"
           : "Waiting";
-  const splitSafeCursor = Math.min(splitCursorPosition, splitMessage.length);
-  const splitTextBeforeCursor = splitMessage.slice(0, splitSafeCursor);
-  const splitTextAfterCursor = splitMessage.slice(splitSafeCursor);
-  const splitTokenBeforeCursor =
-    splitTextBeforeCursor.match(/[^\s;,\n]+$/)?.[0] ?? "";
-  const splitTokenAfterCursor =
-    splitTextAfterCursor.match(/^[^\s;,\n]*/)?.[0] ?? "";
-  const splitTokenStart = splitSafeCursor - splitTokenBeforeCursor.length;
-  const splitTokenEnd = splitSafeCursor + splitTokenAfterCursor.length;
-  const splitSuggestionQuery = (
-    splitTokenBeforeCursor + splitTokenAfterCursor
-  ).toLocaleLowerCase();
-  const splitSuggestions = splitSuggestionsEnabled && splitSuggestionQuery.length >= 2
-    ? receiptRows
-        .map((item) => item.description.trim())
-        .filter(Boolean)
-        .map((description) => {
-          const words = description
-            .toLocaleLowerCase()
-            .split(/[^\p{L}\p{N}]+/u)
-            .filter(Boolean);
-          const scores = words.flatMap((word) => {
-            if (word === splitSuggestionQuery) return [];
-            if (word.startsWith(splitSuggestionQuery)) {
-              return [
-                0.1 +
-                  (word.length - splitSuggestionQuery.length) / 100,
-              ];
-            }
-            const distance = getEditDistance(splitSuggestionQuery, word);
-            const maxDistance = splitSuggestionQuery.length <= 4 ? 1 : 2;
-            return distance <= maxDistance
-              ? [1 + distance + Math.abs(word.length - splitSuggestionQuery.length) / 100]
-              : [];
-          });
-          const matchedWord = words
-            .filter((word) => word !== splitSuggestionQuery)
-            .find(
-              (word) =>
-                word.startsWith(splitSuggestionQuery) ||
-                getEditDistance(splitSuggestionQuery, word) <=
-                  (splitSuggestionQuery.length <= 4 ? 1 : 2)
-            );
-          return {
-            description,
-            score: Math.min(...scores),
-            matchedWord,
-            matchedWordStart: matchedWord
-              ? description
-                  .toLocaleLowerCase()
-                  .indexOf(matchedWord.toLocaleLowerCase())
-              : -1,
-          };
-        })
-        .filter((suggestion) => Number.isFinite(suggestion.score))
-        .sort((left, right) => left.score - right.score)
-        .filter(
-          (suggestion, index, all) =>
-            all.findIndex(
-              (candidate) =>
-                candidate.description.toLocaleLowerCase() ===
-                suggestion.description.toLocaleLowerCase()
-            ) === index
-        )
-    : [];
-  const splitItemSuggestions = splitSuggestions
-    .slice(0, 5)
-    .map((suggestion) => suggestion.description);
-  const splitInlineSuggestion = splitSuggestions[0] ?? null;
-
   function selectTipSplitMode(mode: TipSplitMode) {
     if (mode === "manual" && tipSplitMode !== "manual") {
       setManualTipAmounts((currentAmounts) => {
@@ -366,15 +328,18 @@ export default function ReceiptScanner() {
     try {
       if (!window.isSecureContext) {
         setStatus("Camera access requires a secure HTTPS connection.");
+        setCameraError("Camera access requires a secure HTTPS connection.");
         return;
       }
 
       if (!navigator.mediaDevices?.getUserMedia) {
         setStatus("This browser does not support camera access.");
+        setCameraError("This browser does not support camera access.");
         return;
       }
 
       setStatus("Opening camera...");
+      setCameraError(null);
 
       stream = await navigator.mediaDevices.getUserMedia({
         video: deviceId
@@ -409,13 +374,9 @@ export default function ReceiptScanner() {
       setReceiptTotalEdited(false);
       setAiParsed(false);
       setAiError("");
-      setSplitAssistantOpen(false);
-      setSplitMessages([]);
       setSplitAssignments([]);
       setUserNames([]);
       setUserNameInput("");
-      setSplitMessage("");
-      setSplitError("");
       setFrameSize({ width: 0, height: 0 });
       setStatus(
         cameras.length < 2
@@ -435,13 +396,14 @@ export default function ReceiptScanner() {
             : errorName === "NotReadableError"
               ? "The camera is busy or unavailable. Close other apps using it and try again."
               : "Could not access the camera. Check browser permissions and try again.";
-      setStatus(
+      const message =
         deviceId &&
-          errorName !== "NotAllowedError" &&
-          errorName !== "SecurityError"
+        errorName !== "NotAllowedError" &&
+        errorName !== "SecurityError"
           ? "Could not switch cameras. Try reopening the camera."
-          : cameraErrorMessage
-      );
+          : cameraErrorMessage;
+      setStatus(message);
+      setCameraError(message);
     }
   }
 
@@ -661,13 +623,9 @@ export default function ReceiptScanner() {
       setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
       setReceiptTotalEdited(false);
       setAiParsed(false);
-      setSplitAssistantOpen(false);
-      setSplitMessages([]);
       setSplitAssignments([]);
       setUserNames([]);
       setUserNameInput("");
-      setSplitMessage("");
-      setSplitError("");
 
       const image = new Image();
       image.src = imageUrl;
@@ -904,13 +862,9 @@ export default function ReceiptScanner() {
       setReceiptRows([]);
       setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
       setReceiptTotalEdited(false);
-      setSplitAssistantOpen(false);
-      setSplitMessages([]);
       setSplitAssignments([]);
       setUserNames([]);
       setUserNameInput("");
-      setSplitMessage("");
-      setSplitError("");
       setTipOptionsOpen(false);
       setTipSplitMode("proportional");
       setManualTipAmounts({});
@@ -995,12 +949,9 @@ export default function ReceiptScanner() {
       setReceiptTotalEdited(false);
       setAiParsed(true);
       setItemAssignmentsOpen(false);
-      setSplitMessages([]);
       setSplitAssignments([]);
       setUserNames([]);
       setUserNameInput("");
-      setSplitMessage("");
-      setSplitError("");
       setTipOptionsOpen(false);
       setTipSplitMode("proportional");
       setManualTipAmounts({});
@@ -1018,26 +969,6 @@ export default function ReceiptScanner() {
     } finally {
       setAiParsing(false);
     }
-  }
-
-  function selectSplitItemSuggestion(description: string) {
-    const suffix = splitMessage.slice(splitTokenEnd);
-    const needsSpace =
-      suffix.length === 0 && !/[;,\s]$/.test(description);
-    const updatedMessage =
-      splitMessage.slice(0, splitTokenStart) +
-      description +
-      (needsSpace ? " " : "") +
-      suffix;
-    const nextCursor =
-      splitTokenStart + description.length + (needsSpace ? 1 : 0);
-
-    setSplitMessage(updatedMessage);
-    setSplitCursorPosition(nextCursor);
-    requestAnimationFrame(() => {
-      splitInputRef.current?.focus();
-      splitInputRef.current?.setSelectionRange(nextCursor, nextCursor);
-    });
   }
 
   function addUser(event: React.FormEvent<HTMLFormElement>) {
@@ -1081,89 +1012,6 @@ export default function ReceiptScanner() {
     });
   }
 
-  function handleSplitInputKeyDown(
-    event: React.KeyboardEvent<HTMLTextAreaElement>
-  ) {
-    if (event.key === "Tab" && splitInlineSuggestion) {
-      event.preventDefault();
-      selectSplitItemSuggestion(splitInlineSuggestion.description);
-    }
-  }
-
-  async function sendSplitMessage(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const content = splitMessage.trim();
-    if (!content || splitParsing || !aiParsed) return;
-
-    setSplitParsing(true);
-    setSplitError("");
-    const messages = [
-      ...splitMessages.slice(-(20 - 1)),
-      { role: "user" as const, content },
-    ];
-    try {
-      const response = await fetch("/api/split-receipt", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: receiptRows,
-          totals: receiptTotals,
-          assignments: splitAssignments,
-          messages,
-        }),
-      });
-      const result: unknown = await response.json();
-      if (!response.ok) {
-        const message =
-          typeof result === "object" &&
-          result !== null &&
-          "error" in result &&
-          typeof result.error === "string"
-            ? result.error
-            : "The split assistant could not process that message.";
-        throw new Error(message);
-      }
-      if (!isSplitAssistantResult(result)) {
-        throw new Error("The split assistant returned an unexpected result.");
-      }
-
-      const assistantReply = result.clarification
-        ? `${result.reply} ${result.clarification}`
-        : result.reply;
-      setSplitAssignments(result.assignments);
-      setUserNames((existingNames) => {
-        const names = [...existingNames];
-        for (const person of result.assignments.flatMap(
-          (assignment) => assignment.people
-        )) {
-          if (
-            !names.some(
-              (name) =>
-                name.toLocaleLowerCase() === person.toLocaleLowerCase()
-            )
-          ) {
-            names.push(person);
-          }
-        }
-        return names;
-      });
-      setSplitMessages([
-        ...messages,
-        { role: "assistant", content: assistantReply },
-      ]);
-      setSplitMessage("");
-    } catch (error) {
-      console.error(error);
-      setSplitError(
-        error instanceof Error
-          ? error.message
-          : "The split assistant could not process that message."
-      );
-    } finally {
-      setSplitParsing(false);
-    }
-  }
-
   function retake() {
     setFrozenImage(null);
     setReceiptDocumentDataUrl(null);
@@ -1177,13 +1025,9 @@ export default function ReceiptScanner() {
     setReceiptTotalEdited(false);
     setAiParsed(false);
     setAiError("");
-    setSplitAssistantOpen(false);
-    setSplitMessages([]);
     setSplitAssignments([]);
     setUserNames([]);
     setUserNameInput("");
-    setSplitMessage("");
-    setSplitError("");
     setProgress(0);
   }
 
@@ -1193,1082 +1037,735 @@ export default function ReceiptScanner() {
     };
   }, []);
 
-  return (
-    <main className="mx-auto min-h-svh w-full max-w-2xl space-y-5 overflow-x-hidden px-4 py-5 font-sans sm:px-6 sm:py-6">
-      <h1 className="text-2xl font-bold sm:text-3xl">
-        Splits Receipt Scanner
-      </h1>
-      <p className="text-sm text-gray-600 sm:text-base">
-        Fit the receipt inside the guide, keep it flat and well lit, then freeze
-        it. Select Extract text when you are ready to scan it.
-      </p>
+  const step: 1 | 2 | 3 =
+    aiParsed && receiptRows.length > 0 ? 3 : receiptDocumentDataUrl ? 2 : 1;
+  const isProcessing =
+    processingStage === "extracting" || processingStage === "parsing";
+  const ocrState: ProcState = isPdfReceipt
+    ? "done"
+    : processingStage === "extracting"
+      ? "running"
+      : ocrCompleted
+        ? "done"
+        : processingStage === "parsing" ||
+            processingStage === "complete" ||
+            processingStage === "error"
+          ? "error"
+          : "waiting";
+  const aiState: ProcState =
+    processingStage === "parsing"
+      ? "running"
+      : processingStage === "complete"
+        ? "done"
+        : processingStage === "error"
+          ? "error"
+          : "waiting";
+  const ocrDetail =
+    ocrState === "waiting"
+      ? "Reads every line on the receipt"
+      : ocrState === "done" && !isPdfReceipt && extractedText.trim()
+        ? "Text found"
+        : extractionStatus;
+  const aiDetail =
+    aiState === "waiting" || aiState === "done"
+      ? "Matches prices to items with AI"
+      : parsingStatus;
+  const liveText =
+    cameraOn || status === "Opening camera..."
+      ? status
+      : "Turn on the camera, or upload a photo below.";
+  const assignedCount = splitAssignments.filter(
+    (assignment) => assignment.people.length > 0
+  ).length;
 
-      <div className="relative w-full min-w-0 overflow-hidden rounded-xl bg-black">
+  // Items should add up to the subtotal (within a cent) before anyone is charged.
+  const itemsCents = splitCalculation.lines.reduce<number | null>(
+    (sum, line) =>
+      sum === null || line.amountCents === null ? null : sum + line.amountCents,
+    0
+  );
+  const subtotalText = calculateReceiptTotal({
+    subtotal: receiptTotals.subtotal,
+    tax: "",
+    tip: "",
+    total: "",
+  });
+  const subtotalCents = subtotalText
+    ? Math.round(Number(subtotalText.replace("$", "")) * 100)
+    : null;
+  const itemsMatch =
+    itemsCents !== null &&
+    subtotalCents !== null &&
+    Math.abs(itemsCents - subtotalCents) <= 1;
+
+  const title =
+    step === 1
+      ? "Scan the receipt"
+      : step === 2
+        ? isProcessing
+          ? "Reading your receipt"
+          : "Read the receipt"
+        : "Check the items";
+  const meta =
+    step === 1
+      ? "Fit the whole receipt inside the frame, keep it flat and well lit, then take the photo."
+      : step === 2
+        ? isProcessing
+          ? "This usually takes a few seconds. You can check and fix everything on the next step."
+          : "Looks good? Read it to find the items and totals."
+        : "Compare with your photo and fix anything that’s off. Then assign the items.";
+
+  function openUpload() {
+    receiptFileInputRef.current?.click();
+  }
+
+  // PDFs skip OCR, and a failed AI pass after good OCR only needs the AI step again.
+  function readReceipt() {
+    if (isPdfReceipt || (processingStage === "error" && ocrCompleted)) {
+      void parseWithAi(extractedText, receiptDocumentDataUrl, receiptPdfFile);
+      return;
+    }
+    void extractText();
+  }
+
+  function updateRow(index: number, field: keyof AiReceiptItem, value: string) {
+    setReceiptRows((currentRows) =>
+      currentRows.map((currentRow, rowIndex) =>
+        rowIndex === index ? { ...currentRow, [field]: value } : currentRow
+      )
+    );
+  }
+
+  function removeRow(index: number) {
+    setReceiptRows((currentRows) =>
+      currentRows.filter((_, rowIndex) => rowIndex !== index)
+    );
+    // Assignments point at item positions, so shift the ones after the removed row.
+    setSplitAssignments((assignments) =>
+      assignments
+        .filter((assignment) => assignment.itemIndex !== index)
+        .map((assignment) =>
+          assignment.itemIndex > index
+            ? { ...assignment, itemIndex: assignment.itemIndex - 1 }
+            : assignment
+        )
+    );
+  }
+
+  function addRow() {
+    setReceiptRows((currentRows) => [
+      ...currentRows,
+      { quantity: "1", description: "", amount: "" },
+    ]);
+  }
+
+  function updateTotal(field: "subtotal" | "tax" | "tip", value: string) {
+    setReceiptTotalEdited(true);
+    setReceiptTotals((currentTotals) => ({ ...currentTotals, [field]: value }));
+  }
+
+  const photoCard = (
+    <section className="sec">
+      <h2 className="sh">Your photo</h2>
+      <div className="shot">
         {isPdfReceipt ? (
-          <div className="flex min-h-48 flex-col items-center justify-center gap-2 bg-white px-4 text-center sm:min-h-64">
-            <span className="text-4xl font-bold text-red-700" aria-hidden="true">
-              PDF
-            </span>
-            <span className="max-w-full break-all text-sm text-gray-700">
-              {receiptDocumentName}
-            </span>
+          <div>
+            <b>PDF</b>
+            <small>{receiptDocumentName}</small>
           </div>
-        ) : frozenImage ? (
-          <img
-            src={frozenImage}
-            alt="Uploaded or captured receipt"
-            className="block max-h-[65dvh] min-h-48 w-full object-contain sm:max-h-[70vh] sm:min-h-64"
-          />
         ) : (
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="block max-h-[65dvh] min-h-48 w-full object-contain sm:max-h-[70vh] sm:min-h-64"
-          />
-        )}
-        {detectedWords.length > 0 && frameSize.width > 0 && (
-          <svg
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 h-full w-full"
-            viewBox={`0 0 ${frameSize.width} ${frameSize.height}`}
-            preserveAspectRatio="xMidYMid meet"
-          >
-            {detectedWords.map(({ text, bbox }, index) => (
-              <g key={`${bbox.x0}-${bbox.y0}-${index}`}>
-                <rect
-                  x={bbox.x0}
-                  y={bbox.y0}
-                  width={bbox.x1 - bbox.x0}
-                  height={bbox.y1 - bbox.y0}
-                  fill="rgba(34, 197, 94, 0.12)"
-                  stroke="#22c55e"
-                  strokeWidth={Math.max(2, frameSize.width / 500)}
-                />
-                <text
-                  x={bbox.x0 + 2}
-                  y={Math.max(bbox.y0 - 4, 12)}
-                  fill="#86efac"
-                  fontSize={Math.max(
-                    8,
-                    Math.min(24, (bbox.y1 - bbox.y0) * 0.55)
-                  )}
-                  fontWeight="600"
-                  paintOrder="stroke"
-                  stroke="#14532d"
-                  strokeWidth={1.5}
-                >
-                  {text}
-                </text>
-              </g>
-            ))}
-          </svg>
-        )}
-        {!frozenImage && frameSize.width > 0 && frameSize.height > 0 && (
-          <svg
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 h-full w-full"
-            viewBox={`0 0 ${frameSize.width} ${frameSize.height}`}
-            preserveAspectRatio="xMidYMid meet"
-          >
-            <rect
-              x={frameSize.width * 0.08}
-              y={frameSize.height * 0.08}
-              width={frameSize.width * 0.84}
-              height={frameSize.height * 0.84}
-              fill="none"
-              stroke="white"
-              strokeDasharray={`${frameSize.width * 0.012} ${frameSize.width * 0.008}`}
-              strokeWidth={Math.max(2, frameSize.width / 400)}
-            />
-          </svg>
+          frozenImage && <img src={frozenImage} alt="Your receipt" />
         )}
       </div>
-
-      <canvas ref={canvasRef} className="hidden" />
-
-      <p role="status" className="break-words text-sm text-gray-600">
-        {status}
-      </p>
-
-      <input
-        ref={receiptFileInputRef}
-        type="file"
-        accept="image/jpeg,image/png,image/webp,application/pdf"
-        className="hidden"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          event.target.value = "";
-          if (file) void uploadReceipt(file);
-        }}
-      />
-
-      <div
-        className={
-          frozenImage
-            ? "grid w-full grid-cols-3 gap-2"
-            : "grid grid-cols-2 gap-3 sm:flex sm:flex-wrap"
-        }
-      >
-        {!cameraOn && !frozenImage && (
-          <button
-            onClick={() => void startCamera()}
-            className="col-span-2 min-h-12 min-w-0 rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white sm:col-span-1 sm:text-base"
-          >
-            Open camera
+      <div className="acts2">
+        <button className="btn line" type="button" onClick={retake}>
+          <RetakeIcon />
+          Retake
+        </button>
+        {step === 3 ? (
+          <button className="btn txt" type="button" onClick={readReceipt} disabled={isProcessing}>
+            Read again
+          </button>
+        ) : (
+          <button className="btn txt" type="button" onClick={openUpload}>
+            <UploadIcon />
+            Upload instead
           </button>
         )}
-
-        {cameraOn && (
-          <>
-            <button
-              onClick={freezeFrame}
-              className="col-span-2 min-h-12 min-w-0 rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white sm:col-span-1 sm:text-base"
-            >
-              Freeze frame
-            </button>
-            <button
-              onClick={() => void flipCamera()}
-              disabled={switchingCamera}
-              className="min-h-12 min-w-0 rounded-lg border px-3 py-3 text-sm disabled:opacity-50 sm:px-4 sm:text-base"
-              aria-label="Switch camera"
-            >
-              {switchingCamera
-                ? "Switching camera..."
-                : `Switch camera${videoDevices.length > 1 ? ` (${videoDevices.length} available)` : ""}`}
-            </button>
-            <button
-              onClick={stopCamera}
-              className="min-h-12 min-w-0 rounded-lg border px-3 py-3 text-sm sm:px-4 sm:text-base"
-            >
-              Stop camera
-            </button>
-          </>
-        )}
-
-        {frozenImage && (
-          <>
-            <button
-              type="button"
-              onClick={extractText}
-              disabled={
-                processingStage === "extracting" ||
-                processingStage === "parsing"
-              }
-              className="min-h-12 min-w-0 rounded-lg bg-green-600 px-2 py-3 text-xs font-semibold text-white disabled:cursor-wait disabled:opacity-60 sm:px-4 sm:text-base"
-            >
-              {processingStage === "extracting"
-                ? "Extracting..."
-                : processingStage === "parsing"
-                  ? "Organizing..."
-                  : extractedText
-                    ? "Extract again"
-                    : "Extract text"}
-            </button>
-            <button
-              onClick={retake}
-              className="min-h-12 min-w-0 rounded-lg border px-2 py-3 text-xs sm:px-4 sm:text-base"
-            >
-              Retake
-            </button>
-          </>
-        )}
-
-        <button
-          type="button"
-          onClick={() => receiptFileInputRef.current?.click()}
-          aria-label="Upload receipt image or PDF"
-          className={`min-h-12 min-w-0 rounded-lg border bg-white px-2 py-3 text-xs font-semibold sm:px-4 sm:text-base ${
-            frozenImage ? "" : "col-span-2 sm:col-span-1"
-          }`}
-        >
-          {frozenImage ? "Upload" : "Upload receipt image or PDF"}
-        </button>
       </div>
-      {!receiptDocumentDataUrl && aiError && (
-        <p role="alert" className="break-words text-sm text-red-700">
-          {aiError}
-        </p>
-      )}
-      {receiptDocumentDataUrl && (
-        <section
-          aria-live="polite"
-          aria-busy={
-            processingStage === "extracting" || processingStage === "parsing"
-          }
-          className="space-y-3 rounded-xl border bg-white p-4"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-semibold">Receipt processing</h2>
-            <span className="max-w-full break-all text-sm text-gray-600">
-              {receiptDocumentName}
-            </span>
-          </div>
-          <ol className="space-y-3">
-            {[
-              {
-                label: "Read receipt text",
-                detail: extractionStatus,
-                active: processingStage === "extracting",
-                done: isPdfReceipt || ocrCompleted,
-              },
-              {
-                label: "Organize items and totals with AI",
-                detail: parsingStatus,
-                active: processingStage === "parsing",
-                done: processingStage === "complete",
-                failed: processingStage === "error",
-              },
-              {
-                label: "Review parsed receipt",
-                detail: aiParsed ? "Ready" : "Available when parsing finishes",
-                active: false,
-                done: aiParsed,
-              },
-            ].map((step, index) => (
-              <li key={step.label} className="flex items-start gap-3">
-                <span
-                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
-                    step.failed
-                      ? "bg-red-100 text-red-800"
-                      : step.done
-                        ? "bg-green-100 text-green-800"
-                        : step.active
-                          ? "bg-blue-100 text-blue-800"
-                          : "bg-gray-100 text-gray-600"
-                  }`}
-                  aria-hidden="true"
-                >
-                  {step.failed ? "!" : step.done ? "✓" : index + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                    <span className="font-medium">{step.label}</span>
-                    <span
-                      className={`text-sm ${
-                        step.failed ? "text-red-700" : "text-gray-600"
-                      }`}
-                    >
-                      {step.detail}
-                    </span>
-                  </div>
-                  {step.active && (
-                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-blue-100">
-                      {processingStage === "extracting" && progress > 0 ? (
-                        <div
-                          className="h-full bg-blue-600 transition-all"
-                          style={{ width: `${progress}%` }}
-                        />
-                      ) : (
-                        <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-600" />
-                      )}
-                    </div>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ol>
+    </section>
+  );
+
+  return (
+    <div className="db">
+      <Sidebar />
+      <main className="main">
+        <div className="wrap">
+          <Link className="back" href="/dashboard/item-by-item">
+            <BackIcon />
+            Item by item
+          </Link>
+          <header>
+            <h1>{title}</h1>
+            <p className="meta">{meta}</p>
+          </header>
+          <Steps current={step} />
           {aiError && (
-            <p role="alert" className="break-words text-sm text-red-700">
+            <p className="msg err" role="alert">
               {aiError}
             </p>
           )}
-        </section>
-      )}
 
-      {receiptDocumentDataUrl && (
-        <section className="min-w-0 space-y-3 rounded-xl border p-3 sm:p-4">
-          <h2 className="text-xl font-semibold">Receipt text</h2>
-          <p className="text-sm text-gray-600">
-            {isPdfReceipt
-              ? "The PDF (up to 4 MB) is sent to Gemini for item and total extraction."
-              : "Select Extract text to read the receipt. Its image and extracted text are then sent to Gemini for item and total extraction."}{" "}
-            AI parsing sends the receipt to Gemini and may use your project’s API
-            quota.{" "}
-            Review the results against the original receipt.
-          </p>
-          {aiParsed && (
-            <>
-              <div className="max-w-full overflow-x-auto">
-                <table className="w-full min-w-[28rem] border-collapse text-left text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th scope="col" className="w-20 px-2 py-2 font-semibold">
-                        Qty
-                      </th>
-                      <th scope="col" className="px-2 py-2 font-semibold">
-                        Description
-                      </th>
-                      <th
-                        scope="col"
-                        className="w-36 px-2 py-2 text-right font-semibold"
+          {/* Capture canvas and file input stay mounted on every step. */}
+          <canvas ref={canvasRef} hidden />
+          <input
+            ref={receiptFileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,application/pdf"
+            className="sr"
+            tabIndex={-1}
+            aria-hidden="true"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) void uploadReceipt(file);
+            }}
+          />
+
+          {step === 1 && (
+            <div className="grid2">
+              <section className="sec" aria-label="Camera">
+                <div className="vf">
+                  <video ref={videoRef} playsInline muted autoPlay />
+                  {cameraOn && detectedWords.length > 0 && frameSize.width > 0 && (
+                    <svg
+                      aria-hidden="true"
+                      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}
+                      viewBox={`0 0 ${frameSize.width} ${frameSize.height}`}
+                      preserveAspectRatio="xMidYMid slice"
+                    >
+                      {detectedWords.map(({ text, bbox }, index) => (
+                        <g key={`${bbox.x0}-${bbox.y0}-${index}`}>
+                          <rect
+                            x={bbox.x0}
+                            y={bbox.y0}
+                            width={bbox.x1 - bbox.x0}
+                            height={bbox.y1 - bbox.y0}
+                            fill="rgba(46, 242, 166, 0.12)"
+                            stroke="#2EF2A6"
+                            strokeWidth={Math.max(2, frameSize.width / 500)}
+                          />
+                          <text
+                            x={bbox.x0 + 2}
+                            y={Math.max(bbox.y0 - 4, 12)}
+                            fill="#86efac"
+                            fontSize={Math.max(
+                              8,
+                              Math.min(24, (bbox.y1 - bbox.y0) * 0.55)
+                            )}
+                            fontWeight="600"
+                            paintOrder="stroke"
+                            stroke="#14532d"
+                            strokeWidth={1.5}
+                          >
+                            {text}
+                          </text>
+                        </g>
+                      ))}
+                    </svg>
+                  )}
+                  {cameraOn ? (
+                    <>
+                      <span className="corner c1" />
+                      <span className="corner c2" />
+                      <span className="corner c3" />
+                      <span className="corner c4" />
+                      <span className="vf-hint">Hold steady</span>
+                    </>
+                  ) : (
+                    <div className="vf-empty">
+                      <span>{cameraError ?? "The camera is off."}</span>
+                      <button
+                        className="btn line"
+                        type="button"
+                        onClick={() => void startCamera()}
+                        disabled={switchingCamera || status === "Opening camera..."}
                       >
-                        Amount
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                        <CameraIcon />
+                        Turn on camera
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <p className={`live${cameraOn ? "" : " idle"}`} role="status">
+                  <i />
+                  {liveText}
+                </p>
+                <div className="ctrl">
+                  <button className="btn lg" type="button" onClick={freezeFrame} disabled={!cameraOn}>
+                    <CameraIcon />
+                    Take photo
+                  </button>
+                  <button
+                    className="btn line"
+                    type="button"
+                    onClick={() => void flipCamera()}
+                    disabled={!cameraOn || switchingCamera}
+                  >
+                    <SwitchIcon />
+                    {switchingCamera ? "Switching camera..." : "Switch camera"}
+                  </button>
+                  <span className="sp" />
+                  {cameraOn && (
+                    <button className="btn txt" type="button" onClick={stopCamera}>
+                      Turn off camera
+                    </button>
+                  )}
+                </div>
+                <p className="or">or</p>
+                <div className="drop">
+                  <div>
+                    <b>Already have a photo?</b>
+                    <small>Upload a JPG, PNG, WebP or PDF of the receipt.</small>
+                  </div>
+                  <button className="btn line" type="button" onClick={openUpload}>
+                    <UploadIcon />
+                    Upload a photo or PDF
+                  </button>
+                </div>
+              </section>
+              <aside className="col" aria-label="Tips">
+                <section className="sec">
+                  <h2 className="sh">For the best scan</h2>
+                  <ul className="tips">
+                    <li><span className="ic"><FlatIcon /></span><div><b>Lay it flat</b><small>Smooth out folds and curls.</small></div></li>
+                    <li><span className="ic"><BulbIcon /></span><div><b>Good light, no glare</b><small>Avoid shadows across the prices.</small></div></li>
+                    <li><span className="ic"><FrameIcon /></span><div><b>Whole receipt in frame</b><small>From the store name down to the total.</small></div></li>
+                  </ul>
+                </section>
+              </aside>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="grid2">
+              <section
+                className="sec"
+                aria-labelledby="p-h"
+                aria-live="polite"
+                aria-busy={isProcessing}
+              >
+                <div className="shead">
+                  <h2 id="p-h">{isProcessing ? "Working on it" : "Ready to read"}</h2>
+                  <p className="sub">{receiptDocumentName || "Your receipt photo"}</p>
+                </div>
+                <ul className="proc">
+                  <ProcRow n={1} state={ocrState} title="Read the receipt text" detail={ocrDetail} />
+                  <ProcRow n={2} state={aiState} title="Find the items and totals" detail={aiDetail} />
+                  <ProcRow n={3} state="waiting" title="Check the items" detail="Opens when the items are ready" />
+                </ul>
+                <p className="ai-note">
+                  <SparkIcon />
+                  <span>
+                    {isPdfReceipt
+                      ? "The PDF (up to 4 MB) is sent to Gemini to find the items and totals. Always check the results against the receipt."
+                      : "The photo and its text are sent to Gemini to find the items and totals. Always check the results against the receipt."}
+                  </span>
+                </p>
+                <div className="acts2">
+                  {isProcessing ? (
+                    <button className="btn lg" type="button" disabled>
+                      Reading…
+                    </button>
+                  ) : (
+                    <button className="btn lg" type="button" onClick={readReceipt}>
+                      {processingStage === "error" ? "Read again" : "Read receipt"}
+                    </button>
+                  )}
+                </div>
+              </section>
+              <aside className="col" aria-label="Your photo">
+                {photoCard}
+              </aside>
+            </div>
+          )}
+
+          {step === 3 && (
+            <>
+              <div className="grid2">
+                <section className="sec" aria-labelledby="i-h">
+                  <div className="shead">
+                    <h2 id="i-h">Items on the receipt</h2>
+                    <p className="sub">
+                      {receiptRows.length} {receiptRows.length === 1 ? "item" : "items"} found. Tap any field to edit it.
+                    </p>
+                  </div>
+                  <ul>
+                    <li className="ir ih" aria-hidden="true">
+                      <span style={{ textAlign: "center" }}>Qty</span>
+                      <span>Item</span>
+                      <span style={{ textAlign: "right" }}>Price</span>
+                      <span />
+                    </li>
                     {receiptRows.map((row, index) => (
-                      <tr key={index} className="border-b last:border-0">
-                        <td className="px-2 py-1">
+                      <li key={index} className="ir">
+                        <input
+                          className="field qty"
+                          type="text"
+                          inputMode="numeric"
+                          aria-label={`Quantity for row ${index + 1}`}
+                          value={row.quantity}
+                          onChange={(event) => updateRow(index, "quantity", event.target.value)}
+                        />
+                        <input
+                          className="field"
+                          type="text"
+                          aria-label={`Description for row ${index + 1}`}
+                          value={row.description}
+                          onChange={(event) => updateRow(index, "description", event.target.value)}
+                        />
+                        <div className="money-in">
+                          <span aria-hidden="true">$</span>
                           <input
-                            value={row.quantity}
-                            onChange={(event) =>
-                              setReceiptRows((currentRows) =>
-                                currentRows.map((currentRow, rowIndex) =>
-                                  rowIndex === index
-                                    ? { ...currentRow, quantity: event.target.value }
-                                    : currentRow
-                                )
-                              )
-                            }
-                            className="w-full min-w-0 rounded border px-2 py-2 text-base"
-                            aria-label={`Quantity for row ${index + 1}`}
-                          />
-                        </td>
-                        <td className="px-2 py-1">
-                          <input
-                            value={row.description}
-                            onChange={(event) =>
-                              setReceiptRows((currentRows) =>
-                                currentRows.map((currentRow, rowIndex) =>
-                                  rowIndex === index
-                                    ? { ...currentRow, description: event.target.value }
-                                    : currentRow
-                                )
-                              )
-                            }
-                            className="w-full min-w-0 rounded border px-2 py-2 text-base"
-                            aria-label={`Description for row ${index + 1}`}
-                          />
-                        </td>
-                        <td className="px-2 py-1">
-                          <input
-                            value={row.amount}
-                            onChange={(event) =>
-                              setReceiptRows((currentRows) =>
-                                currentRows.map((currentRow, rowIndex) =>
-                                  rowIndex === index
-                                    ? { ...currentRow, amount: event.target.value }
-                                    : currentRow
-                                )
-                              )
-                            }
-                            className="w-full min-w-0 rounded border px-2 py-2 text-right text-base"
+                            className="field num"
+                            type="text"
+                            inputMode="decimal"
                             aria-label={`Amount for row ${index + 1}`}
+                            value={row.amount}
+                            onChange={(event) => updateRow(index, "amount", event.target.value)}
                           />
-                        </td>
-                      </tr>
+                        </div>
+                        <button
+                          className="xb"
+                          type="button"
+                          aria-label={`Delete ${row.description || "item"}`}
+                          onClick={() => removeRow(index)}
+                        >
+                          <CloseIcon />
+                        </button>
+                      </li>
                     ))}
-                  </tbody>
-                </table>
+                  </ul>
+                  <button className="addline" type="button" onClick={addRow}>
+                    <PlusIcon />
+                    Add a missing item
+                  </button>
+                  <div className="tots">
+                    <div>
+                      <label className="lbl" htmlFor="st">Subtotal</label>
+                      <div className="money-in">
+                        <span aria-hidden="true">$</span>
+                        <input id="st" className="field" type="text" inputMode="decimal" value={receiptTotals.subtotal} onChange={(event) => updateTotal("subtotal", event.target.value)} />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="lbl" htmlFor="tx">Tax</label>
+                      <div className="money-in">
+                        <span aria-hidden="true">$</span>
+                        <input id="tx" className="field" type="text" inputMode="decimal" value={receiptTotals.tax} onChange={(event) => updateTotal("tax", event.target.value)} />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="lbl" htmlFor="tp">Tip</label>
+                      <div className="money-in">
+                        <span aria-hidden="true">$</span>
+                        <input id="tp" className="field" type="text" inputMode="decimal" placeholder="0.00" value={receiptTotals.tip} onChange={(event) => updateTotal("tip", event.target.value)} />
+                      </div>
+                    </div>
+                    <div>
+                      <p className="lbl">Total</p>
+                      <div className="tot-out" aria-live="polite">{displayedReceiptTotal}</div>
+                    </div>
+                  </div>
+                  <p className={`check${itemsMatch ? "" : " warn"}`}>
+                    {itemsMatch ? (
+                      <>
+                        <CheckIcon />
+                        Items add up to the subtotal. The total updates when you change subtotal, tax or tip.
+                      </>
+                    ) : (
+                      "Items don’t add up to the subtotal yet. Check the prices against your photo."
+                    )}
+                  </p>
+                  <Suspense fallback={null}>
+                    <SaveReceiptButton rows={receiptRows} />
+                  </Suspense>
+                </section>
+                <aside className="col" aria-label="Your receipt">
+                  {photoCard}
+                  {extractedText && (
+                    <section className="sec">
+                      <details className="raw">
+                        <summary>
+                          Text from the photo<span className="ptag">Show</span>
+                        </summary>
+                        <pre>{extractedText}</pre>
+                        <button className="btn line" type="button" onClick={() => navigator.clipboard.writeText(extractedText)}>
+                          <CopyIcon />
+                          Copy text
+                        </button>
+                      </details>
+                    </section>
+                  )}
+                </aside>
               </div>
-              <div className="space-y-3">
+
+              <section className="sec" aria-labelledby="n-h">
+                <h2 id="n-h">Assign items</h2>
                 <button
+                  className="opt2"
                   type="button"
                   aria-expanded={itemAssignmentsOpen}
                   aria-controls="interactive-item-assignments"
                   onClick={() => setItemAssignmentsOpen((open) => !open)}
-                  className="min-h-12 w-full rounded-lg border px-4 py-3 text-left font-semibold sm:w-auto"
                 >
-                  {itemAssignmentsOpen
-                    ? "Hide item assignments"
-                    : `Assign items manually · ${
-                        splitAssignments.filter(
-                          (assignment) => assignment.people.length > 0
-                        ).length
-                      }/${receiptRows.length} assigned`}
+                  <span className="oic"><PeopleIcon /></span>
+                  <span>
+                    <b>{itemAssignmentsOpen ? "Hide item assignments" : "Assign items yourself"}</b>
+                    <span className="d">Pick who had each item, like a shared list.</span>
+                    <small>{assignedCount} of {receiptRows.length} assigned</small>
+                  </span>
+                  <ChevIcon />
                 </button>
+
                 {itemAssignmentsOpen && (
-              <section
-                id="interactive-item-assignments"
-                className="space-y-4 rounded-xl border border-blue-200 bg-blue-50/60 p-3 sm:p-4"
-              >
-                <div>
-                  <h3 className="font-semibold">Assign receipt items</h3>
-                  <p className="mt-1 text-sm text-gray-600">
-                    Add users, then select who shares each item. You can also
-                    describe assignments in the split chat below.
-                  </p>
-                </div>
-                <form onSubmit={addUser} className="flex flex-wrap gap-2">
-                  <label htmlFor="user-name" className="sr-only">
-                    User name
-                  </label>
-                  <input
-                    id="user-name"
-                    value={userNameInput}
-                    onChange={(event) => setUserNameInput(event.target.value)}
-                    maxLength={40}
-                    placeholder="Add a user"
-                    className="min-h-11 min-w-0 flex-1 rounded-lg border bg-white px-3 py-2 text-base"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!userNameInput.trim()}
-                    className="min-h-11 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Add user
-                  </button>
-                </form>
-                <div className="space-y-3">
-                  {receiptRows.map((row, index) => {
-                    const assignment = splitAssignments.find(
-                      (entry) => entry.itemIndex === index
-                    );
-                    const line = splitCalculation.lines[index];
-                    return (
-                      <article
-                        key={`assignment-${index}`}
-                        className="rounded-lg border bg-white p-3 transition-shadow"
-                      >
-                        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                          <h4 className="font-medium">
-                            {row.quantity.trim()
-                              ? `${row.quantity.trim()} × `
-                              : ""}
-                            {row.description || `Receipt item ${index + 1}`}
-                          </h4>
-                          <span className="text-sm font-semibold">
-                            {row.amount.trim() || "Amount needs review"}
-                          </span>
-                        </div>
-                        {userNames.length > 0 ? (
-                          <div
-                            className="mt-3 flex flex-wrap gap-2"
-                            role="group"
-                            aria-label={`Assign ${row.description || `item ${index + 1}`} to users`}
-                          >
-                            {userNames.map((person) => {
-                              const selected = assignment?.people.some(
-                                (name) =>
-                                  name.toLocaleLowerCase() ===
-                                  person.toLocaleLowerCase()
-                              ) ?? false;
-                              return (
-                                <button
-                                  key={person}
-                                  type="button"
-                                  aria-pressed={selected}
-                                  onClick={() =>
-                                    toggleItemAssignment(index, person)
-                                  }
-                                  className={`min-h-10 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
-                                    selected
-                                      ? "border-blue-700 bg-blue-700 text-white"
-                                      : "border-gray-300 bg-white text-gray-800 hover:bg-gray-100"
-                                  }`}
-                                >
-                                  {selected ? "✓ " : ""}
-                                  {person}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <p className="mt-2 text-sm text-gray-600">
-                            Add users here or name them in the split chat to
-                            assign this item.
-                          </p>
-                        )}
-                        <p
-                          className="mt-2 text-sm text-gray-600 transition-all"
-                          aria-live="polite"
-                        >
-                          {line.amountCents === null
-                            ? "Check this item's amount before splitting."
-                            : line.shares.length > 0
-                              ? line.shares
-                                  .map(
-                                    (share) =>
-                                      `${share.person}: ${formatCents(share.amountCents)}`
-                                  )
-                                  .join(" · ")
-                              : "Unassigned"}
-                        </p>
-                      </article>
-                    );
-                  })}
-                </div>
-                <div className="space-y-3 border-t border-blue-200 pt-4">
-                  <h3 className="font-semibold">Each person&apos;s share</h3>
-                  {splitCalculation.people.length > 0 ? (
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {splitCalculation.people.map((person) => {
-                        const personKey = person.person.toLocaleLowerCase();
-                        const personItems = splitCalculation.lines.flatMap(
-                          (line) =>
-                            line.shares
-                              .filter(
-                                (share) =>
-                                  share.person.toLocaleLowerCase() === personKey
-                              )
-                              .map((share) => ({
-                                description: line.description,
-                                amountCents: share.amountCents,
-                              }))
-                        );
-                        const totalCents =
-                          person.itemsCents + person.taxCents + person.tipCents;
-                        return (
-                          <article
-                            key={personKey}
-                            className="rounded-lg border bg-white p-3 transition-all"
-                          >
-                            <div className="flex items-baseline justify-between gap-2">
-                              <h4 className="font-semibold">{person.person}</h4>
-                              <span className="text-lg font-bold">
-                                {formatCents(totalCents)}
-                              </span>
-                            </div>
-                            <ul className="mt-2 space-y-1 text-sm text-gray-700">
-                              {personItems.map((item, itemIndex) => (
-                                <li
-                                  key={`${item.description}-${itemIndex}`}
-                                  className="flex justify-between gap-2"
-                                >
-                                  <span className="min-w-0 break-words">
-                                    {item.description}
-                                  </span>
-                                  <span className="shrink-0">
-                                    {formatCents(item.amountCents)}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                            <p className="mt-2 border-t pt-2 text-xs text-gray-600">
-                              Items {formatCents(person.itemsCents)} · Tax{" "}
-                              {formatCents(person.taxCents)} · Tip{" "}
-                              {formatCents(person.tipCents)}
-                            </p>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-600">
-                      Add users and assign items to see everyone&apos;s
-                      calculated share.
-                    </p>
-                  )}
-                  {splitCalculation.unassignedCents > 0 && (
-                    <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                      Unassigned items:{" "}
-                      {formatCents(
-                        splitCalculation.unassignedCents +
-                          splitCalculation.unassignedTaxCents +
-                          splitCalculation.unassignedTipCents
-                      )}
-                      . Their share of tax and tip stays unassigned too.
-                    </p>
-                  )}
-                  {!splitCalculation.canAllocateTaxAndTip && (
-                    <p className="text-xs text-amber-800">
-                      Enter a valid, non-negative amount for every item to
-                      allocate tax and tip proportionally.
-                    </p>
-                  )}
-                </div>
-              </section>
-                )}
-              </div>
-              <div className="space-y-2">
-                <h3 className="font-semibold">Receipt totals</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  {(
-                    [
-                      ["subtotal", "Subtotal"],
-                      ["tax", "Tax"],
-                      ["tip", "Tip / gratuity"],
-                      ["total", "Total"],
-                    ] as const
-                  ).map(([field, label]) => (
-                    <label key={field} className="space-y-1 text-sm">
-                      <span className="block">{label}</span>
-                      <input
-                        value={
-                          field === "total"
-                            ? displayedReceiptTotal
-                            : receiptTotals[field]
-                        }
-                        readOnly={field === "total"}
-                        onChange={
-                          field === "total"
-                            ? undefined
-                            : (event) => {
-                                setReceiptTotalEdited(true);
-                                setReceiptTotals((currentTotals) => ({
-                                  ...currentTotals,
-                                  [field]: event.target.value,
-                                }));
-                              }
-                        }
-                        className={`w-full min-w-0 rounded border px-2 py-2 text-base ${
-                          field === "total" ? "bg-gray-100" : ""
-                        }`}
-                        aria-label={label}
-                      />
-                    </label>
-                  ))}
-                </div>
-                <p className="text-xs text-gray-600">
-                  Total updates from subtotal, tax, and tip when you edit them.
-                </p>
-              </div>
-              <Suspense fallback={null}>
-                <SaveReceiptButton rows={receiptRows} />
-              </Suspense>
-            </>
-          )}
-          {aiParsed && receiptRows.length > 0 && (
-            <div className="space-y-3 border-t pt-3">
-              <button
-                type="button"
-                aria-expanded={splitAssistantOpen}
-                onClick={() => setSplitAssistantOpen((open) => !open)}
-                className="min-h-12 w-full rounded-lg border px-4 py-3 text-left font-semibold sm:w-auto"
-              >
-                {splitAssistantOpen ? "Hide split chat" : "Split items with chat"}
-              </button>
-              {splitAssistantOpen && (
-                <div className="space-y-4 rounded-lg bg-gray-50 p-3 sm:p-4">
-                  <div>
-                    <h3 className="font-semibold">Split items with chat</h3>
-                    <p className="mt-1 text-sm text-gray-600">
-                      Tell the assistant who had each item. For example:
-                      “Sandy gets the burger, John gets the fries, and Bob and
-                      Joe split the pizza.” Shared items are divided equally.
-                      Tax and tip are allocated in proportion to each person’s
-                      share of the item subtotal.
-                    </p>
-                  </div>
-
-                  <div
-                    aria-live="polite"
-                    className="max-h-64 space-y-3 overflow-y-auto rounded-lg border bg-white p-3"
-                  >
-                    {splitMessages.length === 0 && (
-                      <p className="text-sm text-gray-600">
-                        Start by naming the person or people for an item. If an
-                        item is unclear, the assistant will ask you to clarify.
-                      </p>
-                    )}
-                    {splitMessages.map((message, index) => (
-                      <div
-                        key={`${index}-${message.role}`}
-                        className={`max-w-[90%] break-words rounded-lg px-3 py-2 text-sm ${
-                          message.role === "user"
-                            ? "ml-auto bg-blue-100 text-blue-950"
-                            : "bg-gray-100 text-gray-900"
-                        }`}
-                      >
-                        <div className="mb-1 text-xs font-semibold">
-                          {message.role === "user" ? "You" : "Split assistant"}
-                        </div>
-                        {message.content}
-                      </div>
-                    ))}
-                    {splitParsing && (
-                      <p className="text-sm text-gray-500" role="status">
-                        Checking the receipt items...
-                      </p>
-                    )}
-                  </div>
-
-                  <form onSubmit={sendSplitMessage} className="space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <label htmlFor="split-instruction" className="text-sm font-medium">
-                        Describe how to split the receipt items
-                      </label>
-                      <button
-                        type="button"
-                        aria-pressed={splitSuggestionsEnabled}
-                        onClick={() =>
-                          setSplitSuggestionsEnabled((enabled) => !enabled)
-                        }
-                        className="min-h-10 rounded-lg border px-3 py-2 text-sm font-medium"
-                      >
-                        Receipt item suggestions:{" "}
-                        {splitSuggestionsEnabled ? "On" : "Off"}
-                      </button>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="relative">
-                        {splitInlineSuggestion && (
-                          <div
-                            aria-hidden="true"
-                            className="pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent"
-                          >
-                            <div
-                              className="whitespace-pre-wrap break-words px-3 py-3 font-sans text-base leading-6 text-gray-900"
-                              style={{
-                                transform: `translateY(-${splitInputScrollTop}px)`,
-                              }}
-                            >
-                              <span>
-                                {splitMessage.slice(0, splitTokenStart)}
-                              </span>
-                              {splitInlineSuggestion.matchedWord?.startsWith(
-                                splitSuggestionQuery
-                              ) && splitInlineSuggestion.matchedWordStart ===
-                                0 ? (
-                                <>
-                                  <span>
-                                    {splitTokenBeforeCursor +
-                                      splitTokenAfterCursor}
-                                  </span>
-                                  <span className="text-gray-400">
-                                    {splitInlineSuggestion.description.slice(
-                                      splitInlineSuggestion.matchedWordStart +
-                                        splitSuggestionQuery.length
-                                    )}
-                                  </span>
-                                </>
-                              ) : (
-                                <>
-                                  <span className="text-gray-500 line-through">
-                                    {splitTokenBeforeCursor +
-                                      splitTokenAfterCursor}
-                                  </span>
-                                  <span className="font-semibold text-blue-700">
-                                    {splitInlineSuggestion.description}
-                                  </span>
-                                </>
-                              )}
-                              <span>
-                                {splitMessage.slice(splitTokenEnd) || "\u200b"}
-                              </span>
-                            </div>
-                          </div>
-                        )}
-                        <textarea
-                          ref={splitInputRef}
-                          id="split-instruction"
-                          value={splitMessage}
-                          onChange={(event) => {
-                            setSplitMessage(event.target.value);
-                            setSplitCursorPosition(
-                              event.currentTarget.selectionStart
-                            );
-                          }}
-                          onClick={(event) =>
-                            setSplitCursorPosition(
-                              event.currentTarget.selectionStart
-                            )
-                          }
-                          onSelect={(event) =>
-                            setSplitCursorPosition(
-                              event.currentTarget.selectionStart
-                            )
-                          }
-                          onKeyUp={(event) =>
-                            setSplitCursorPosition(
-                              event.currentTarget.selectionStart
-                            )
-                          }
-                          onKeyDown={handleSplitInputKeyDown}
-                          onScroll={(event) =>
-                            setSplitInputScrollTop(
-                              event.currentTarget.scrollTop
-                            )
-                          }
-                          placeholder="e.g. Sandy gets the burger; Bob and Joe split the pizza"
-                          rows={3}
-                          maxLength={1000}
-                          aria-autocomplete="list"
-                          aria-controls="split-item-suggestions"
-                          className={`relative w-full min-w-0 rounded-lg border p-3 text-base leading-6 ${
-                            splitInlineSuggestion
-                              ? "bg-transparent text-transparent caret-gray-900 selection:bg-blue-200"
-                              : ""
-                          }`}
+                  <div id="interactive-item-assignments">
+                    <p className="sub">Add people, then pick who had each item. Shared items split evenly.</p>
+                    <form onSubmit={addUser}>
+                      <label htmlFor="user-name" className="lbl">Add a person</label>
+                      <div className="inrow">
+                        <input
+                          id="user-name"
+                          className="field"
+                          value={userNameInput}
+                          onChange={(event) => setUserNameInput(event.target.value)}
+                          maxLength={40}
+                          placeholder="[Friend name]"
                         />
-                      </div>
-                      {splitInlineSuggestion && (
-                        <p className="text-xs text-gray-600" aria-live="polite">
-                          Press <kbd className="rounded border px-1">Tab</kbd>{" "}
-                          to replace with{" "}
-                          <span className="font-medium text-gray-800">
-                            {splitInlineSuggestion.description}
-                          </span>
-                        </p>
-                      )}
-                      {splitItemSuggestions.length > 0 && (
-                        <ul
-                          id="split-item-suggestions"
-                          role="listbox"
-                          aria-label="Receipt item suggestions"
-                          className="overflow-hidden rounded-lg border bg-white"
-                        >
-                          {splitItemSuggestions.map((description) => (
-                            <li key={description} role="presentation">
-                              <button
-                                type="button"
-                                role="option"
-                                aria-selected="false"
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() =>
-                                  selectSplitItemSuggestion(description)
-                                }
-                                className="min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-blue-50 focus:bg-blue-50"
-                              >
-                                {description}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={!splitMessage.trim() || splitParsing}
-                      className="min-h-12 w-full rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-                    >
-                      {splitParsing ? "Splitting..." : "Send"}
-                    </button>
-                  </form>
-
-                  {splitError && (
-                    <p role="alert" className="text-sm text-red-700">
-                      {splitError}
-                    </p>
-                  )}
-
-                  <div className="space-y-3 border-t pt-3">
-                        <button
-                          type="button"
-                          aria-expanded={tipOptionsOpen}
-                          onClick={() => setTipOptionsOpen((open) => !open)}
-                          className="min-h-11 rounded-lg border px-3 py-2 text-left font-semibold"
-                        >
-                          {tipOptionsOpen ? "Hide tip options" : "Tip options"}
-                          {` · ${
-                            tipSplitMode === "proportional"
-                              ? "Split proportionally"
-                              : tipSplitMode === "manual"
-                                ? "Custom per person"
-                                : "Not included"
-                          }`}
+                        <button className="btn" type="submit" disabled={!userNameInput.trim()}>
+                          Add
                         </button>
-                        {tipOptionsOpen && (
-                          <div className="space-y-3 rounded-lg border bg-white p-3">
-                            <p className="text-sm text-gray-600">
-                              Tax remains proportional. Choose how the tip is
-                              handled.
-                            </p>
-                            <div className="flex flex-wrap gap-2">
-                              {(
-                                [
-                                  ["proportional", "Split proportionally"],
-                                  ["manual", "Set each person’s tip"],
-                                  ["disabled", "Don’t split tip"],
-                                ] as const
-                              ).map(([mode, label]) => (
-                                <button
-                                  key={mode}
-                                  type="button"
-                                  aria-pressed={tipSplitMode === mode}
-                                  onClick={() => selectTipSplitMode(mode)}
-                                  className={`min-h-10 rounded-lg border px-3 py-2 text-sm font-medium ${
-                                    tipSplitMode === mode
-                                      ? "border-blue-700 bg-blue-50 text-blue-900"
-                                      : "bg-white"
-                                  }`}
+                      </div>
+                    </form>
+
+                    <p className="lbl">Who had each item</p>
+                    <ul className="proc">
+                      {receiptRows.map((row, index) => {
+                        const assignment = splitAssignments.find(
+                          (entry) => entry.itemIndex === index
+                        );
+                        const line = splitCalculation.lines[index];
+                        return (
+                          <li key={`assignment-${index}`}>
+                            <span className="pst">{index + 1}</span>
+                            <div>
+                              <b>
+                                {row.quantity.trim() ? `${row.quantity.trim()} × ` : ""}
+                                {row.description || `Receipt item ${index + 1}`}
+                              </b>
+                              <small aria-live="polite">
+                                {line.amountCents === null
+                                  ? "Check this item's amount before splitting."
+                                  : line.shares.length > 0
+                                    ? line.shares
+                                        .map((share) => `${share.person}: ${formatCents(share.amountCents)}`)
+                                        .join(", ")
+                                    : "Unassigned"}
+                              </small>
+                              {userNames.length > 0 ? (
+                                <div
+                                  className="seg"
+                                  role="group"
+                                  aria-label={`Assign ${row.description || `item ${index + 1}`} to people`}
                                 >
-                                  {label}
-                                </button>
-                              ))}
-                            </div>
-                            {tipSplitMode === "manual" && (
-                              <div className="space-y-2">
-                                <p className="text-sm text-gray-600">
-                                  Enter each person’s tip amount. These amounts
-                                  replace the receipt tip allocation.
-                                </p>
-                                <div className="grid gap-2 sm:grid-cols-2">
-                                  {splitCalculation.people.length === 0 && (
-                                    <p className="text-sm text-gray-600 sm:col-span-2">
-                                      Assign receipt items above to set each
-                                      person’s tip.
-                                    </p>
-                                  )}
-                                  {splitCalculation.people.map((person) => {
-                                    const key = person.person.toLowerCase();
+                                  {userNames.map((person) => {
+                                    const selected =
+                                      assignment?.people.some(
+                                        (name) => name.toLocaleLowerCase() === person.toLocaleLowerCase()
+                                      ) ?? false;
                                     return (
-                                      <label
-                                        key={key}
-                                        className="flex items-center justify-between gap-3 text-sm"
+                                      <button
+                                        key={person}
+                                        className={`sg${selected ? " on" : ""}`}
+                                        type="button"
+                                        aria-pressed={selected}
+                                        onClick={() => toggleItemAssignment(index, person)}
                                       >
-                                        <span>{person.person}</span>
-                                        <input
-                                          type="text"
-                                          inputMode="decimal"
-                                          value={
-                                            manualTipAmounts[key] ??
-                                            ((
-                                              proportionalTipCalculation.people.find(
-                                                (entry) =>
-                                                  entry.person.toLowerCase() ===
-                                                  key
-                                              )?.tipCents ?? 0
-                                            ) / 100).toFixed(2)
-                                          }
-                                          onChange={(event) =>
-                                            setManualTipAmounts((amounts) => ({
-                                              ...amounts,
-                                              [key]: event.target.value,
-                                            }))
-                                          }
-                                          className="w-28 rounded border px-2 py-2 text-right text-base"
-                                          aria-label={`${person.person} tip amount`}
-                                        />
-                                      </label>
+                                        {person}
+                                      </button>
                                     );
                                   })}
-                                  {splitCalculation.unassignedCents > 0 && (
-                                    <label className="flex items-center justify-between gap-3 text-sm">
-                                      <span>Unassigned items</span>
-                                      <input
-                                        type="text"
-                                        inputMode="decimal"
-                                        value={
-                                          manualTipAmounts.__unassigned__ ??
-                                          (
-                                            proportionalTipCalculation.unassignedTipCents /
-                                            100
-                                          ).toFixed(2)
-                                        }
-                                        onChange={(event) =>
-                                          setManualTipAmounts((amounts) => ({
-                                            ...amounts,
-                                            __unassigned__: event.target.value,
-                                          }))
-                                        }
-                                        className="w-28 rounded border px-2 py-2 text-right text-base"
-                                        aria-label="Unassigned items tip amount"
-                                      />
-                                    </label>
-                                  )}
+                                </div>
+                              ) : (
+                                <small>Add people above to assign this item.</small>
+                              )}
+                            </div>
+                            <span className="ptag">{row.amount.trim() || "Amount needs review"}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+
+                    <p className="lbl">Each person’s share</p>
+                    {splitCalculation.people.length > 0 ? (
+                      <ul className="proc">
+                        {splitCalculation.people.map((person) => (
+                          <li key={person.person.toLocaleLowerCase()}>
+                            <span className="av p1" aria-hidden="true">
+                              {person.person.trim().charAt(0).toUpperCase()}
+                            </span>
+                            <div>
+                              <b>{person.person}</b>
+                              <small>
+                                Items {formatCents(person.itemsCents)}, tax {formatCents(person.taxCents)}, tip {formatCents(person.tipCents)}
+                              </small>
+                            </div>
+                            <span className="ptag ok">
+                              {formatCents(person.itemsCents + person.taxCents + person.tipCents)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="sub">Add people and assign items to see everyone’s share.</p>
+                    )}
+                    {splitCalculation.unassignedCents > 0 && (
+                      <p className="msg">
+                        Unassigned items:{" "}
+                        {formatCents(
+                          splitCalculation.unassignedCents +
+                            splitCalculation.unassignedTaxCents +
+                            splitCalculation.unassignedTipCents
+                        )}
+                        . Their share of tax and tip stays unassigned too.
+                      </p>
+                    )}
+                    {!splitCalculation.canAllocateTaxAndTip && (
+                      <p className="msg">
+                        Enter a valid, non-negative amount for every item to allocate tax and tip proportionally.
+                      </p>
+                    )}
+
+                    <div className="acts2">
+                      <button
+                        className="btn line"
+                        type="button"
+                        aria-expanded={tipOptionsOpen}
+                        onClick={() => setTipOptionsOpen((open) => !open)}
+                      >
+                        {tipOptionsOpen ? "Hide tip options" : "Tip options"}
+                        {`: ${
+                          tipSplitMode === "proportional"
+                            ? "Split proportionally"
+                            : tipSplitMode === "manual"
+                              ? "Custom per person"
+                              : "Not included"
+                        }`}
+                      </button>
+                    </div>
+                    {tipOptionsOpen && (
+                      <div>
+                        <p className="sub">Tax stays proportional. Choose how the tip is handled.</p>
+                        <p className="lbl">Tip</p>
+                        <div className="seg" role="group" aria-label="Tip split">
+                          {(
+                            [
+                              ["proportional", "Split proportionally"],
+                              ["manual", "Set each person’s tip"],
+                              ["disabled", "Don’t split tip"],
+                            ] as const
+                          ).map(([mode, label]) => (
+                            <button
+                              key={mode}
+                              className={`sg${tipSplitMode === mode ? " on" : ""}`}
+                              type="button"
+                              aria-pressed={tipSplitMode === mode}
+                              onClick={() => selectTipSplitMode(mode)}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        {tipSplitMode === "manual" && (
+                          <div>
+                            <p className="sub">Enter each person’s tip. These amounts replace the receipt tip allocation.</p>
+                            {splitCalculation.people.length === 0 && (
+                              <p className="sub">Assign items above to set each person’s tip.</p>
+                            )}
+                            {splitCalculation.people.map((person) => {
+                              const key = person.person.toLowerCase();
+                              return (
+                                <div key={key}>
+                                  <label className="lbl" htmlFor={`tip-${key}`}>{person.person}</label>
+                                  <div className="money-in">
+                                    <span aria-hidden="true">$</span>
+                                    <input
+                                      id={`tip-${key}`}
+                                      className="field"
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={
+                                        manualTipAmounts[key] ??
+                                        ((
+                                          proportionalTipCalculation.people.find(
+                                            (entry) => entry.person.toLowerCase() === key
+                                          )?.tipCents ?? 0
+                                        ) / 100).toFixed(2)
+                                      }
+                                      onChange={(event) =>
+                                        setManualTipAmounts((amounts) => ({
+                                          ...amounts,
+                                          [key]: event.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {splitCalculation.unassignedCents > 0 && (
+                              <div>
+                                <label className="lbl" htmlFor="tip-unassigned">Unassigned items</label>
+                                <div className="money-in">
+                                  <span aria-hidden="true">$</span>
+                                  <input
+                                    id="tip-unassigned"
+                                    className="field"
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={
+                                      manualTipAmounts.__unassigned__ ??
+                                      (proportionalTipCalculation.unassignedTipCents / 100).toFixed(2)
+                                    }
+                                    onChange={(event) =>
+                                      setManualTipAmounts((amounts) => ({
+                                        ...amounts,
+                                        __unassigned__: event.target.value,
+                                      }))
+                                    }
+                                  />
                                 </div>
                               </div>
                             )}
-                            {tipSplitMode === "disabled" && (
-                              <p className="text-sm text-gray-600">
-                                The receipt tip will not be included in anyone’s
-                                total.
+                            {splitCalculation.manualTipNeedsReview && (
+                              <p className="msg err" role="alert">
+                                Enter a valid non-negative amount for each tip share. Invalid amounts are not included in the totals.
                               </p>
                             )}
                           </div>
                         )}
-                  </div>
-
-                  {splitAssignments.length > 0 && (
-                    <div className="space-y-3 border-t pt-3">
-                      <h4 className="font-semibold">Each person owes</h4>
-                      <ul className="space-y-2 text-sm">
-                        {splitCalculation.people.map((person) => (
-                          <li
-                            key={person.person}
-                            className="flex flex-col gap-1 border-b pb-2 sm:flex-row sm:justify-between"
-                          >
-                            <span>{person.person}</span>
-                            <span className="sm:text-right">
-                              Items {formatCents(person.itemsCents)}
-                              {person.taxCents > 0 &&
-                                ` · Tax ${formatCents(person.taxCents)}`}
-                              {person.tipCents > 0 &&
-                                ` · Tip ${formatCents(person.tipCents)}`}
-                              {` · Total ${formatCents(person.itemsCents + person.taxCents + person.tipCents)}`}
-                            </span>
-                          </li>
-                        ))}
-                        {(splitCalculation.unassignedCents > 0 ||
-                          splitCalculation.unassignedTaxCents > 0 ||
-                          splitCalculation.unassignedTipCents > 0) && (
-                          <li className="flex flex-col gap-1 text-gray-600 sm:flex-row sm:justify-between">
-                            <span>Unassigned</span>
-                            <span className="sm:text-right">
-                              Items {formatCents(splitCalculation.unassignedCents)}
-                              {splitCalculation.unassignedTaxCents > 0 &&
-                                ` · Tax ${formatCents(splitCalculation.unassignedTaxCents)}`}
-                              {splitCalculation.unassignedTipCents > 0 &&
-                                ` · Tip ${formatCents(splitCalculation.unassignedTipCents)}`}
-                            </span>
-                          </li>
+                        {tipSplitMode === "disabled" && (
+                          <p className="sub">The receipt tip will not be included in anyone’s total.</p>
                         )}
-                      </ul>
-                      {!splitCalculation.canAllocateTaxAndTip && (
-                        <p className="text-sm text-amber-800">
-                          Some item amounts could not be read as numbers, so
-                          tax and tip cannot be allocated reliably. Review the
-                          item amounts above.
-                        </p>
-                      )}
-                      {splitCalculation.manualTipNeedsReview && (
-                        <p className="text-sm text-amber-800" role="alert">
-                          Enter a valid non-negative amount for each tip share.
-                          Invalid amounts are not included in the totals.
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            </>
           )}
-          <div className="flex flex-wrap items-center gap-3">
-            {aiError && !aiParsed && (
-              <button
-                type="button"
-                onClick={() =>
-                  void parseWithAi(
-                    extractedText,
-                    receiptDocumentDataUrl,
-                    receiptPdfFile
-                  )
-                }
-                disabled={aiParsing}
-                className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white disabled:cursor-wait disabled:opacity-60"
-              >
-                {aiParsing ? "Retrying..." : "Retry AI parsing"}
-              </button>
-            )}
-            {extractedText && (
-              <button
-                onClick={() => navigator.clipboard.writeText(extractedText)}
-                className="rounded-lg border px-4 py-2"
-              >
-                Copy text
-              </button>
-            )}
-          </div>
-          {extractedText ? (
-            <textarea
-              value={extractedText}
-              onChange={(event) => {
-                setExtractedText(event.target.value);
-                setAiParsed(false);
-              }}
-              rows={12}
-              className="w-full min-w-0 rounded-lg border p-3 font-mono text-base sm:text-sm"
-              aria-label="Edit extracted receipt text"
-            />
-          ) : (
-            <p className="text-sm text-gray-600">
-              {isPdfReceipt
-                ? "The PDF will be read directly by the AI parser."
-                : processingStage === "idle"
-                  ? "Select Extract text to run OCR. When it finishes, AI parsing starts automatically."
-                  : aiParsing
-                    ? "Reading text and organizing receipt items..."
-                    : ocrCompleted
-                      ? "No text was extracted. The AI parser will try reading the original image."
-                      : "Text extraction has not started."}
-            </p>
-          )}
-        </section>
-      )}
-    </main>
+        </div>
+      </main>
+    </div>
   );
 }
