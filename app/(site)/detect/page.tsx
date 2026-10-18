@@ -1059,6 +1059,79 @@ export default function ReceiptScanner() {
         </button>
       )}
 
+      <input
+        ref={receiptFileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,application/pdf"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) void uploadReceipt(file);
+        }}
+      />
+
+      <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
+        {!cameraOn && !frozenImage && (
+          <button
+            onClick={() => void startCamera()}
+            className="col-span-2 min-h-12 min-w-0 rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white sm:col-span-1 sm:text-base"
+          >
+            Open camera
+          </button>
+        )}
+
+        {cameraOn && (
+          <>
+            <button
+              onClick={freezeFrame}
+              className="col-span-2 min-h-12 min-w-0 rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white sm:col-span-1 sm:text-base"
+            >
+              Freeze frame
+            </button>
+            <button
+              onClick={() => void flipCamera()}
+              disabled={switchingCamera}
+              className="min-h-12 min-w-0 rounded-lg border px-3 py-3 text-sm disabled:opacity-50 sm:px-4 sm:text-base"
+              aria-label="Switch camera"
+            >
+              {switchingCamera
+                ? "Switching camera..."
+                : `Switch camera${videoDevices.length > 1 ? ` (${videoDevices.length} available)` : ""}`}
+            </button>
+            <button
+              onClick={stopCamera}
+              className="min-h-12 min-w-0 rounded-lg border px-3 py-3 text-sm sm:px-4 sm:text-base"
+            >
+              Stop camera
+            </button>
+          </>
+        )}
+
+        {frozenImage && (
+          <>
+            <button
+              onClick={retake}
+              className="min-h-12 min-w-0 rounded-lg border px-4 py-3 text-sm sm:text-base"
+            >
+              Retake
+            </button>
+          </>
+        )}
+
+        <button
+          type="button"
+          onClick={() => receiptFileInputRef.current?.click()}
+          className="col-span-2 min-h-12 min-w-0 rounded-lg border bg-white px-4 py-3 text-sm font-semibold sm:col-span-1 sm:text-base"
+        >
+          Upload receipt image or PDF
+        </button>
+      </div>
+      {!receiptDocumentDataUrl && aiError && (
+        <p role="alert" className="break-words text-sm text-red-700">
+          {aiError}
+        </p>
+      )}
       {receiptDocumentDataUrl && (
         <section
           aria-live="polite"
@@ -1145,79 +1218,6 @@ export default function ReceiptScanner() {
         </section>
       )}
 
-      <input
-        ref={receiptFileInputRef}
-        type="file"
-        accept="image/jpeg,image/png,image/webp,application/pdf"
-        className="hidden"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          event.target.value = "";
-          if (file) void uploadReceipt(file);
-        }}
-      />
-
-      <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
-        {!cameraOn && !frozenImage && (
-          <button
-            onClick={() => void startCamera()}
-            className="col-span-2 min-h-12 min-w-0 rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white sm:col-span-1 sm:text-base"
-          >
-            Open camera
-          </button>
-        )}
-
-        {cameraOn && (
-          <>
-            <button
-              onClick={freezeFrame}
-              className="col-span-2 min-h-12 min-w-0 rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white sm:col-span-1 sm:text-base"
-            >
-              Freeze frame
-            </button>
-            <button
-              onClick={() => void flipCamera()}
-              disabled={switchingCamera}
-              className="min-h-12 min-w-0 rounded-lg border px-3 py-3 text-sm disabled:opacity-50 sm:px-4 sm:text-base"
-              aria-label="Switch camera"
-            >
-              {switchingCamera
-                ? "Switching camera..."
-                : `Switch camera${videoDevices.length > 1 ? ` (${videoDevices.length} available)` : ""}`}
-            </button>
-            <button
-              onClick={stopCamera}
-              className="min-h-12 min-w-0 rounded-lg border px-3 py-3 text-sm sm:px-4 sm:text-base"
-            >
-              Stop camera
-            </button>
-          </>
-        )}
-
-        {frozenImage && (
-          <>
-            <button
-              onClick={retake}
-              className="min-h-12 min-w-0 rounded-lg border px-4 py-3 text-sm sm:text-base"
-            >
-              Retake
-            </button>
-          </>
-        )}
-
-        <button
-          type="button"
-          onClick={() => receiptFileInputRef.current?.click()}
-          className="col-span-2 min-h-12 min-w-0 rounded-lg border bg-white px-4 py-3 text-sm font-semibold sm:col-span-1 sm:text-base"
-        >
-          Upload receipt image or PDF
-        </button>
-      </div>
-      {!receiptDocumentDataUrl && aiError && (
-        <p role="alert" className="break-words text-sm text-red-700">
-          {aiError}
-        </p>
-      )}
       {receiptDocumentDataUrl && (
         <section className="min-w-0 space-y-3 rounded-xl border p-3 sm:p-4">
           <h2 className="text-xl font-semibold">Receipt text</h2>
