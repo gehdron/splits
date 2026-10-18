@@ -201,6 +201,26 @@ function Sidebar({ me, people }: { me: string; people: string[] }) {
 
 /* ------------------------------------------------------------------- page */
 
+type ReceiptRow = { description?: string; quantity?: string; amount?: string };
+
+function receiptToItems(rows: ReceiptRow[]) {
+  return rows.flatMap((row) => {
+    const description = String(row.description ?? "").trim();
+    const line = Math.round(Number(String(row.amount ?? "").replace(/[^0-9.]/g, "")) * 100);
+    const parsedQty = Math.round(Number(row.quantity));
+    const qty = Number.isInteger(parsedQty) && parsedQty >= 1 ? parsedQty : 1;
+    if (!description || !Number.isInteger(line) || line < 0) return [];
+    const exact = line % qty === 0;
+    return [
+      {
+        name: exact || qty === 1 ? description : `${description} x${qty}`,
+        quantity: exact ? qty : 1,
+        priceCents: exact ? line / qty : line,
+      },
+    ];
+  });
+}
+
 export default function ListPage() {
   const [listId, setListId] = useState<string | null>(null);
   const [data, setData] = useState<ListData | null>(null);
@@ -208,17 +228,23 @@ export default function ListPage() {
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
   const [msg, setMsg] = useState("");
+  const [scan, setScan] = useState(false);
+  const [scanning, setScanning] = useState(false);
 
   // On load: use ?id= from the URL, or create a new list and put its id in the URL
   useEffect(() => {
     (async () => {
       await Promise.resolve(); // keeps state updates out of the synchronous effect body
       setMe(localStorage.getItem("splits-name") ?? "");
-      const id = new URLSearchParams(window.location.search).get("id");
+      const params = new URLSearchParams(window.location.search);
+      const wantScan = params.get("scan") === "1";
+      setScan(wantScan);
+      const id = params.get("id");
       if (id) return setListId(id);
       const res = await fetch("/api/lists", { method: "POST", body: JSON.stringify({ name: "Shared list" }) });
       const list = await res.json();
-      window.history.replaceState(null, "", `/list?id=${list.id}`);
+      const next = wantScan ? `/list?id=${list.id}&scan=1` : `/list?id=${list.id}`;
+      window.history.replaceState(null, "", next);
       setListId(list.id);
     })();
   }, []);
@@ -239,6 +265,53 @@ export default function ListPage() {
       clearInterval(t);
     };
   }, [refresh]);
+
+  async function scanReceipt(file: File) {
+    if (!listId) return;
+    setScanning(true);
+    setMsg("");
+    try {
+      const imageDataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("That file could not be read."));
+        reader.readAsDataURL(file);
+      });
+      const parsed = await fetch("/api/parse-receipt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageDataUrl }),
+      });
+      const body = await parsed.json();
+      if (!parsed.ok) {
+        setMsg(typeof body.error === "string" ? body.error : "The receipt could not be read.");
+        return;
+      }
+      const items = receiptToItems(Array.isArray(body.items) ? body.items : []);
+      if (items.length === 0) {
+        setMsg("The receipt has no items to add.");
+        return;
+      }
+      const saved = await fetch(`/api/lists/${listId}/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(items),
+      });
+      if (!saved.ok) {
+        const failed = await saved.json().catch(() => null);
+        setMsg(failed?.error ?? "Those items could not be added.");
+        return;
+      }
+      setScan(false);
+      window.history.replaceState(null, "", `/list?id=${listId}`);
+      setMsg(`${items.length} ${items.length === 1 ? "item" : "items"} added from the receipt.`);
+      refresh();
+    } catch (error) {
+      setMsg(error instanceof Error ? error.message : "The receipt could not be read.");
+    } finally {
+      setScanning(false);
+    }
+  }
 
   async function addItem(e: React.FormEvent) {
     e.preventDefault();
@@ -427,6 +500,28 @@ export default function ListPage() {
                 </p>
               </div>
             </div>
+
+            {scan ? (
+              <form className="scan">
+                <label className="lbl" htmlFor="receipt">
+                  Scan a receipt
+                </label>
+                <p className="sub">Upload a photo or PDF. The items are added to this list.</p>
+                <input
+                  id="receipt"
+                  className="field"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                  disabled={scanning || !listId}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (file) void scanReceipt(file);
+                  }}
+                />
+                {scanning ? <p className="sub">Reading the receipt…</p> : null}
+              </form>
+            ) : null}
 
             <div className="lt lh" aria-hidden="true">
               <span>Item</span>

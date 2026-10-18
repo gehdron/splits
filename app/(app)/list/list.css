@@ -116,6 +116,9 @@
 .db .addrow .field{min-height:48px;border-radius:12px}
 .db .addrow .btn{min-height:48px;border-radius:12px}
 .db .msg{margin:14px 0 0;padding:10px 14px;border-radius:12px;background:#E8E3FF;color:#2F2380;font-size:14px;font-weight:600}
+.db .scan{display:grid;gap:8px;margin-bottom:22px;padding-bottom:22px;border-bottom:1px solid var(--line)}
+.db .scan .lbl,.db .scan .sub{margin:0}
+.db .scan .field{padding:10px 12px}
 
 .db .back{display:inline-flex;align-items:center;gap:6px;min-height:44px;margin:-6px 0 18px -10px;padding:0 12px 0 6px;border:0;border-radius:10px;background:none;color:var(--mut);font-weight:700;font-size:15px;cursor:pointer;text-decoration:none}
 .db .back:hover{background:var(--soft);color:var(--ink)}

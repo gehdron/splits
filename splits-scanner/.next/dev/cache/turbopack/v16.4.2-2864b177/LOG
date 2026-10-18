@@ -257,3 +257,10 @@ Commit 00000136 31 keys in 6ms 622µs 500ns
 FAM | META SEQ | SST SEQ         | RANGE
   0 | 00000135 | 00000134 SST    |                                                                             O                        | c44bdff4074eecdb-c44bdff4074eecdb (0 MiB, fresh, 38 bytes, 1 entries, 0 tombstones)
   1 | 00000136 | 00000133 SST    | [===============================================================================================]    | 01f6a7fba65271a3-f6840dd17a5e2e4c (0 MiB, fresh, 1227 bytes, 30 entries, 0 tombstones)
+Time 2026-10-18T02:01:47.9760209Z
+Commit 00000144 1895 keys in 4ms 514µs 700ns
+FAM | META SEQ | SST SEQ         | RANGE
+  0 | 00000141 | 00000140 SST    |                                                                             O                        | c44bdff4074eecdb-c44bdff4074eecdb (0 MiB, fresh, 38 bytes, 1 entries, 0 tombstones)
+  3 | 00000142 | 00000137 SST    |                  [==============================================================================]    | 2b9cd5debedba1b2-f747b9917da55ee9 (0 MiB, fresh, 273 bytes, 20 entries, 0 tombstones)
+  1 | 00000143 | 00000139 SST    | [==================================================================================================] | 002050ee818b3e7d-fff789b06fbecf3c (0 MiB, fresh, 374933 bytes, 1854 entries, 0 tombstones)
+  2 | 00000144 | 00000138 SST    |  [============================================================================]                      | 02990fe82e9971b1-c86999e7e08b99ec (0 MiB, fresh, 393 bytes, 20 entries, 0 tombstones)

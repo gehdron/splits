@@ -1,7 +1,9 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useActionState, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { importReceipt } from "../dashboard/actions";
 import Tesseract from "tesseract.js";
 import type {
   AiParsedReceipt,
@@ -142,6 +144,30 @@ function getEditDistance(left: string, right: string) {
   return previous[right.length];
 }
 
+function SaveReceiptButton({ rows }: { rows: AiReceiptItem[] }) {
+  const params = useSearchParams();
+  const listId = params.get("list");
+  const groupId = params.get("group");
+  const [state, action, pending] = useActionState(importReceipt, undefined);
+  if (!listId || !groupId || rows.length === 0) return null;
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-3">
+      <input type="hidden" name="listId" value={listId} />
+      <input type="hidden" name="groupId" value={groupId} />
+      <input type="hidden" name="items" value={JSON.stringify(rows)} />
+      <button
+        type="submit"
+        disabled={pending}
+        className="rounded-lg bg-[#0B1020] px-4 py-2 font-semibold text-white disabled:cursor-wait disabled:opacity-60"
+      >
+        {pending ? "Adding to the list…" : "Add these items to the list"}
+      </button>
+      {state?.error ? <p className="text-sm text-red-700">{state.error}</p> : null}
+    </form>
+  );
+}
+
 export default function ReceiptScanner() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -185,6 +211,8 @@ export default function ReceiptScanner() {
   const [splitSuggestionsEnabled, setSplitSuggestionsEnabled] = useState(true);
   const [splitCursorPosition, setSplitCursorPosition] = useState(0);
   const [splitInputScrollTop, setSplitInputScrollTop] = useState(0);
+  const [dinerNames, setDinerNames] = useState<string[]>([]);
+  const [dinerNameInput, setDinerNameInput] = useState("");
   const [splitAssignments, setSplitAssignments] = useState<ReceiptAssignment[]>([]);
   const [splitParsing, setSplitParsing] = useState(false);
   const [splitError, setSplitError] = useState("");
@@ -383,6 +411,8 @@ export default function ReceiptScanner() {
       setSplitAssistantOpen(false);
       setSplitMessages([]);
       setSplitAssignments([]);
+      setDinerNames([]);
+      setDinerNameInput("");
       setSplitMessage("");
       setSplitError("");
       setFrameSize({ width: 0, height: 0 });
@@ -633,6 +663,8 @@ export default function ReceiptScanner() {
       setSplitAssistantOpen(false);
       setSplitMessages([]);
       setSplitAssignments([]);
+      setDinerNames([]);
+      setDinerNameInput("");
       setSplitMessage("");
       setSplitError("");
 
@@ -874,6 +906,8 @@ export default function ReceiptScanner() {
       setSplitAssistantOpen(false);
       setSplitMessages([]);
       setSplitAssignments([]);
+      setDinerNames([]);
+      setDinerNameInput("");
       setSplitMessage("");
       setSplitError("");
       setTipOptionsOpen(false);
@@ -961,6 +995,8 @@ export default function ReceiptScanner() {
       setAiParsed(true);
       setSplitMessages([]);
       setSplitAssignments([]);
+      setDinerNames([]);
+      setDinerNameInput("");
       setSplitMessage("");
       setSplitError("");
       setTipOptionsOpen(false);
@@ -999,6 +1035,47 @@ export default function ReceiptScanner() {
     requestAnimationFrame(() => {
       splitInputRef.current?.focus();
       splitInputRef.current?.setSelectionRange(nextCursor, nextCursor);
+    });
+  }
+
+  function addDiner(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = dinerNameInput.trim();
+    if (!name) return;
+    if (
+      dinerNames.some(
+        (existingName) => existingName.toLocaleLowerCase() === name.toLocaleLowerCase()
+      )
+    ) {
+      setDinerNameInput("");
+      return;
+    }
+    setDinerNames((names) => [...names, name]);
+    setDinerNameInput("");
+  }
+
+  function toggleItemAssignment(itemIndex: number, person: string) {
+    setSplitAssignments((assignments) => {
+      const existing = assignments.find(
+        (assignment) => assignment.itemIndex === itemIndex
+      );
+      const alreadyAssigned = existing?.people.some(
+        (name) => name.toLocaleLowerCase() === person.toLocaleLowerCase()
+      );
+      const people = alreadyAssigned
+        ? (existing?.people ?? []).filter(
+            (name) => name.toLocaleLowerCase() !== person.toLocaleLowerCase()
+          )
+        : [...(existing?.people ?? []), person];
+
+      return people.length === 0
+        ? assignments.filter((assignment) => assignment.itemIndex !== itemIndex)
+        : [
+            ...assignments.filter(
+              (assignment) => assignment.itemIndex !== itemIndex
+            ),
+            { itemIndex, people },
+          ].sort((left, right) => left.itemIndex - right.itemIndex);
     });
   }
 
@@ -1052,6 +1129,22 @@ export default function ReceiptScanner() {
         ? `${result.reply} ${result.clarification}`
         : result.reply;
       setSplitAssignments(result.assignments);
+      setDinerNames((existingNames) => {
+        const names = [...existingNames];
+        for (const person of result.assignments.flatMap(
+          (assignment) => assignment.people
+        )) {
+          if (
+            !names.some(
+              (name) =>
+                name.toLocaleLowerCase() === person.toLocaleLowerCase()
+            )
+          ) {
+            names.push(person);
+          }
+        }
+        return names;
+      });
       setSplitMessages([
         ...messages,
         { role: "assistant", content: assistantReply },
@@ -1085,6 +1178,8 @@ export default function ReceiptScanner() {
     setSplitAssistantOpen(false);
     setSplitMessages([]);
     setSplitAssignments([]);
+    setDinerNames([]);
+    setDinerNameInput("");
     setSplitMessage("");
     setSplitError("");
     setProgress(0);
@@ -1467,6 +1562,193 @@ export default function ReceiptScanner() {
                   </tbody>
                 </table>
               </div>
+              <section className="space-y-4 rounded-xl border border-blue-200 bg-blue-50/60 p-3 sm:p-4">
+                <div>
+                  <h3 className="font-semibold">Assign receipt items</h3>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Add diners, then select everyone who shared each item. You
+                    can also describe assignments in the split chat below.
+                  </p>
+                </div>
+                <form onSubmit={addDiner} className="flex flex-wrap gap-2">
+                  <label htmlFor="diner-name" className="sr-only">
+                    Diner name
+                  </label>
+                  <input
+                    id="diner-name"
+                    value={dinerNameInput}
+                    onChange={(event) => setDinerNameInput(event.target.value)}
+                    maxLength={40}
+                    placeholder="Add a diner"
+                    className="min-h-11 min-w-0 flex-1 rounded-lg border bg-white px-3 py-2 text-base"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!dinerNameInput.trim()}
+                    className="min-h-11 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Add diner
+                  </button>
+                </form>
+                <div className="space-y-3">
+                  {receiptRows.map((row, index) => {
+                    const assignment = splitAssignments.find(
+                      (entry) => entry.itemIndex === index
+                    );
+                    const line = splitCalculation.lines[index];
+                    return (
+                      <article
+                        key={`assignment-${index}`}
+                        className="rounded-lg border bg-white p-3 transition-shadow"
+                      >
+                        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                          <h4 className="font-medium">
+                            {row.quantity.trim()
+                              ? `${row.quantity.trim()} × `
+                              : ""}
+                            {row.description || `Receipt item ${index + 1}`}
+                          </h4>
+                          <span className="text-sm font-semibold">
+                            {row.amount.trim() || "Amount needs review"}
+                          </span>
+                        </div>
+                        {dinerNames.length > 0 ? (
+                          <div
+                            className="mt-3 flex flex-wrap gap-2"
+                            role="group"
+                            aria-label={`Assign ${row.description || `item ${index + 1}`} to diners`}
+                          >
+                            {dinerNames.map((person) => {
+                              const selected = assignment?.people.some(
+                                (name) =>
+                                  name.toLocaleLowerCase() ===
+                                  person.toLocaleLowerCase()
+                              ) ?? false;
+                              return (
+                                <button
+                                  key={person}
+                                  type="button"
+                                  aria-pressed={selected}
+                                  onClick={() =>
+                                    toggleItemAssignment(index, person)
+                                  }
+                                  className={`min-h-10 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                                    selected
+                                      ? "border-blue-700 bg-blue-700 text-white"
+                                      : "border-gray-300 bg-white text-gray-800 hover:bg-gray-100"
+                                  }`}
+                                >
+                                  {selected ? "✓ " : ""}
+                                  {person}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-sm text-gray-600">
+                            Add diners here or name them in the split chat to
+                            assign this item.
+                          </p>
+                        )}
+                        <p
+                          className="mt-2 text-sm text-gray-600 transition-all"
+                          aria-live="polite"
+                        >
+                          {line.amountCents === null
+                            ? "Check this item's amount before splitting."
+                            : line.shares.length > 0
+                              ? line.shares
+                                  .map(
+                                    (share) =>
+                                      `${share.person}: ${formatCents(share.amountCents)}`
+                                  )
+                                  .join(" · ")
+                              : "Unassigned"}
+                        </p>
+                      </article>
+                    );
+                  })}
+                </div>
+                <div className="space-y-3 border-t border-blue-200 pt-4">
+                  <h3 className="font-semibold">Each person&apos;s share</h3>
+                  {splitCalculation.people.length > 0 ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {splitCalculation.people.map((person) => {
+                        const personKey = person.person.toLocaleLowerCase();
+                        const personItems = splitCalculation.lines.flatMap(
+                          (line) =>
+                            line.shares
+                              .filter(
+                                (share) =>
+                                  share.person.toLocaleLowerCase() === personKey
+                              )
+                              .map((share) => ({
+                                description: line.description,
+                                amountCents: share.amountCents,
+                              }))
+                        );
+                        const totalCents =
+                          person.itemsCents + person.taxCents + person.tipCents;
+                        return (
+                          <article
+                            key={personKey}
+                            className="rounded-lg border bg-white p-3 transition-all"
+                          >
+                            <div className="flex items-baseline justify-between gap-2">
+                              <h4 className="font-semibold">{person.person}</h4>
+                              <span className="text-lg font-bold">
+                                {formatCents(totalCents)}
+                              </span>
+                            </div>
+                            <ul className="mt-2 space-y-1 text-sm text-gray-700">
+                              {personItems.map((item, itemIndex) => (
+                                <li
+                                  key={`${item.description}-${itemIndex}`}
+                                  className="flex justify-between gap-2"
+                                >
+                                  <span className="min-w-0 break-words">
+                                    {item.description}
+                                  </span>
+                                  <span className="shrink-0">
+                                    {formatCents(item.amountCents)}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                            <p className="mt-2 border-t pt-2 text-xs text-gray-600">
+                              Items {formatCents(person.itemsCents)} · Tax{" "}
+                              {formatCents(person.taxCents)} · Tip{" "}
+                              {formatCents(person.tipCents)}
+                            </p>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-600">
+                      Add diners and assign items to see everyone&apos;s
+                      calculated share.
+                    </p>
+                  )}
+                  {splitCalculation.unassignedCents > 0 && (
+                    <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                      Unassigned items:{" "}
+                      {formatCents(
+                        splitCalculation.unassignedCents +
+                          splitCalculation.unassignedTaxCents +
+                          splitCalculation.unassignedTipCents
+                      )}
+                      . Their share of tax and tip stays unassigned too.
+                    </p>
+                  )}
+                  {!splitCalculation.canAllocateTaxAndTip && (
+                    <p className="text-xs text-amber-800">
+                      Enter a valid, non-negative amount for every item to
+                      allocate tax and tip proportionally.
+                    </p>
+                  )}
+                </div>
+              </section>
               <div className="space-y-2">
                 <h3 className="font-semibold">Receipt totals</h3>
                 <div className="grid grid-cols-2 gap-3">
@@ -1510,6 +1792,9 @@ export default function ReceiptScanner() {
                   Total updates from subtotal, tax, and tip when you edit them.
                 </p>
               </div>
+              <Suspense fallback={null}>
+                <SaveReceiptButton rows={receiptRows} />
+              </Suspense>
             </>
           )}
           {aiParsed && receiptRows.length > 0 && (
@@ -1726,37 +2011,6 @@ export default function ReceiptScanner() {
                     </p>
                   )}
 
-                  {splitAssignments.length > 0 && (
-                    <div className="space-y-3 border-t pt-3">
-                      <h4 className="font-semibold">Current split</h4>
-                      <ul className="space-y-2 text-sm">
-                        {splitCalculation.lines
-                          .map((line) => (
-                            <li
-                              key={line.itemIndex}
-                              className="flex flex-col gap-1 border-b pb-2 sm:flex-row sm:justify-between"
-                            >
-                              <span className="break-words">
-                                {line.description}
-                              </span>
-                              <span className="sm:text-right">
-                                {line.amountCents === null
-                                  ? "Amount needs review"
-                                  : line.shares.length > 0
-                                    ? line.shares
-                                        .map(
-                                          (share) =>
-                                            `${share.person}: ${formatCents(share.amountCents)}`
-                                        )
-                                        .join(" · ")
-                                    : "Unassigned"}
-                              </span>
-                            </li>
-                          ))}
-                      </ul>
-                    </div>
-                  )}
-
                   <div className="space-y-3 border-t pt-3">
                         <button
                           type="button"
@@ -1811,8 +2065,8 @@ export default function ReceiptScanner() {
                                 <div className="grid gap-2 sm:grid-cols-2">
                                   {splitCalculation.people.length === 0 && (
                                     <p className="text-sm text-gray-600 sm:col-span-2">
-                                      Assign receipt items in the chat to set
-                                      each person’s tip.
+                                      Assign receipt items above to set each
+                                      person’s tip.
                                     </p>
                                   )}
                                   {splitCalculation.people.map((person) => {
