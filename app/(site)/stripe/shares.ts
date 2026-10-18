@@ -34,8 +34,8 @@ export function isShareId(value: string) {
   return /^sh_[A-Za-z0-9]{22}$/.test(value);
 }
 
-// Supabase in production. A local JSON file only when running on your own machine:
-// on Vercel the filesystem is read-only and the webhook runs in a different instance.
+// Supabase whenever the service role key is set. A local JSON file is only the fallback
+// for a machine that has no database configured.
 function backend(): "supabase" | "file" {
   if (supabaseAdminConfigured()) return "supabase";
   if (process.env.VERCEL) {

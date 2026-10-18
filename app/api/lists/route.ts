@@ -1,6 +1,7 @@
 import { connection } from "next/server";
 import { creatorMember, currentListViewer } from "@/lib/list-viewer";
 import { createList, listSummaries } from "@/lib/live-lists";
+import { chargeIdOf } from "@/app/(site)/plaid/charge-lists";
 import { memberOnList } from "@/lib/store";
 import { supabaseConfigured } from "@/lib/supabase/env";
 
@@ -43,7 +44,8 @@ export async function POST(req: Request) {
   if (name.length > 80) return Response.json({ error: "List names must be 80 characters or fewer." }, { status: 400 });
   try {
     const viewer = await currentListViewer();
-    const list = await createList(name, viewer?.userId ?? null, viewer ? creatorMember(viewer) : undefined);
+    const chargeId = chargeIdOf("chargeId" in body ? body.chargeId : "");
+    const list = await createList(name, viewer?.userId ?? null, viewer ? creatorMember(viewer) : undefined, chargeId);
     return Response.json({ id: list.id, name: list.name, createdAt: list.createdAt, itemCount: 0 }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "The list could not be created.";

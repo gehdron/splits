@@ -4,6 +4,7 @@ import { createAdminClient, supabaseAdminConfigured } from "@/lib/supabase/admin
 import { supabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
 import { calculateListAmounts } from "@/lib/list-totals";
+import { attachCharge, chargeIdOf } from "@/app/(site)/plaid/charge-lists";
 import {
   addItems as fileAddItems,
   addListMember as fileAddListMember,
@@ -27,7 +28,7 @@ import {
 } from "@/lib/store";
 
 const SETUP =
-  "Lists need NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY on Vercel. Run supabase/shared-lists.sql once in the Supabase SQL editor.";
+  "Lists need NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. Run supabase/shared-lists.sql once in the Supabase SQL editor.";
 
 type DbError = { message: string } | null;
 
@@ -54,9 +55,9 @@ type ItemRow = {
 };
 
 function isRemoteEnabled(): boolean {
-  if (!process.env.VERCEL) return false;
-  if (!supabaseAdminConfigured()) throw new Error(SETUP);
-  return true;
+  if (supabaseAdminConfigured()) return true;
+  if (process.env.VERCEL) throw new Error(SETUP);
+  return false;
 }
 
 function db() {
@@ -153,7 +154,7 @@ async function listRow(id: string): Promise<ListRow | null> {
   return (data as unknown as ListRow | null) ?? null;
 }
 
-export async function createList(name: string, ownerId: string | null = null, member?: ListMember): Promise<List> {
+export async function createList(name: string, ownerId: string | null = null, member?: ListMember, chargeId?: string): Promise<List> {
   if (!isRemoteEnabled()) return fileCreateList(name, ownerId, member);
   const id = crypto.randomUUID();
   const { data, error } = await db()
@@ -163,6 +164,7 @@ export async function createList(name: string, ownerId: string | null = null, me
     .single();
   raise(error);
   const row = data as ListRow;
+  if (chargeIdOf(chargeId)) await attachCharge("bill_lists", id, chargeIdOf(chargeId));
   if (!member?.name.trim()) return toList(row, []);
   const saved: MemberRow = {
     list_id: id,

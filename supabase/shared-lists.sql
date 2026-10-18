@@ -1,5 +1,5 @@
 -- Shared lists opened at /list. Run once in the Supabase SQL editor, after schema.sql.
--- On Vercel the app writes these with SUPABASE_SERVICE_ROLE_KEY. A local run keeps using data/store.json.
+-- The app writes these with SUPABASE_SERVICE_ROLE_KEY, locally and on Vercel.
 -- These are separate from public.lists, which are bills inside a group.
 
 create table if not exists public.bill_lists (
@@ -52,3 +52,9 @@ alter table public.bill_items enable row level security;
 
 -- No policies for signed-in users. The service role bypasses row level security, and the
 -- browser only reaches these rows through the app's API, which strips phone numbers and emails.
+
+-- The Plaid transaction a list was made from, so that charge can't be split again.
+alter table public.bill_lists add column if not exists plaid_transaction_id text;
+alter table public.lists add column if not exists plaid_transaction_id text;
+create unique index if not exists bill_lists_one_charge on public.bill_lists (plaid_transaction_id) where plaid_transaction_id is not null;
+create unique index if not exists lists_one_charge on public.lists (plaid_transaction_id) where plaid_transaction_id is not null;

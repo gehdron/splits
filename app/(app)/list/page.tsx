@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { normalizePhone } from "@/lib/phone";
+import { releaseListCharge } from "@/lib/split-charges";
 import { createClient } from "@/lib/supabase/client";
 import { calculateListAmounts } from "@/lib/list-totals";
 import type {
@@ -13,10 +14,9 @@ import type {
 } from "@/app/split-types";
 import "./list.css";
 
-// TODO: lists have no group yet. This mirrors the dashboard's sample group until groups come from Supabase.
-const GROUP_NAME = "Apartment 4B";
-const OTHER_GROUPS = ["Lisbon trip"];
 const ME = "You";
+
+type SideGroup = { id: string; name: string; count: number };
 
 type Person = { id: string; name: string; detail: string };
 type PayLink = { id: string; personName: string; amountCents: number; status: "unpaid" | "sent" | "paid" | "void"; url: string };
@@ -216,11 +216,15 @@ const LogoMark = () => (
 function Sidebar({
   me,
   people,
+  groups,
+  activeGroupId,
   onAdd,
   allowContacts,
 }: {
   me: string;
   people: string[];
+  groups: SideGroup[];
+  activeGroupId: string | null;
   onAdd: (person: { name: string; phone?: string; email?: string }) => Promise<string>;
   allowContacts: boolean;
 }) {
@@ -250,11 +254,6 @@ function Sidebar({
     setAddError(error);
     if (!error) setContact("");
   }
-  const groups = [
-    { name: GROUP_NAME, count: people.length + (me ? 1 : 0), active: true },
-    ...OTHER_GROUPS.map((name) => ({ name, count: null, active: false })),
-  ];
-
   return (
     <aside className="side">
       <div className="brand">
@@ -266,16 +265,24 @@ function Sidebar({
         <h2 className="sh" id="g-h">
           Your groups
         </h2>
-        <ul className="groups">
-          {groups.map((g) => (
-            <li key={g.name}>
-              <button className={`gbtn${g.active ? " on" : ""}`} type="button" aria-current={g.active ? "page" : undefined}>
-                <span>{g.name}</span>
-                <span className="cnt">{g.count ?? ""}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        {groups.length === 0 ? (
+          <p className="sub note">No group yet.</p>
+        ) : (
+          <ul className="groups">
+            {groups.map((group) => (
+              <li key={group.id}>
+                <Link
+                  className={`gbtn${group.id === activeGroupId ? " on" : ""}`}
+                  href={`/dashboard?group=${encodeURIComponent(group.id)}`}
+                  aria-current={group.id === activeGroupId ? "page" : undefined}
+                >
+                  <span>{group.name}</span>
+                  <span className="cnt">{group.count}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
         <label className="lbl" htmlFor="ng">
           New group
         </label>
@@ -398,6 +405,7 @@ function ListPageContent() {
   const listLoading = Boolean(listId && data?.list.id !== listId && !listLoadError);
   const listLoadRun = useRef(0);
   const [friends, setFriends] = useState<Person[]>([]);
+  const [groups, setGroups] = useState<SideGroup[]>([]);
   const [added, setAdded] = useState<Person[]>([]);
   const [meId, setMeId] = useState<string | null>(null);
   const me =
@@ -456,6 +464,28 @@ function ListPageContent() {
         const supabase = createClient();
         const { data: userData } = await supabase.auth.getUser();
         if (!cancel) setMeId(userData.user?.id ?? null);
+        if (userData.user) {
+          const { data: memberships } = await supabase
+            .from("group_members")
+            .select("group_id, groups(id, name)")
+            .eq("user_id", userData.user.id);
+          const embedded = (memberships ?? []) as { group_id: string; groups: { id: string; name: string } | { id: string; name: string }[] | null }[];
+          const found = embedded.flatMap((row) => {
+            const group = Array.isArray(row.groups) ? row.groups[0] : row.groups;
+            return group ? [group] : [];
+          });
+          const ids = found.map((group) => group.id);
+          const memberResult = ids.length
+            ? await supabase.from("group_members").select("group_id").in("group_id", ids)
+            : { data: [] as { group_id: string }[] };
+          const counts = new Map<string, number>();
+          for (const row of memberResult.data ?? []) {
+            counts.set(row.group_id, (counts.get(row.group_id) ?? 0) + 1);
+          }
+          if (!cancel) {
+            setGroups(found.map((group) => ({ id: group.id, name: group.name, count: counts.get(group.id) ?? 0 })));
+          }
+        }
         const { data: rows, error } = await supabase.rpc("list_friends");
         if (cancel || error || !rows) return;
         setFriends(
@@ -807,6 +837,11 @@ function ListPageContent() {
             : "The list could not be deleted. Please try again.";
         throw new Error(message);
       }
+      const chargeId =
+        typeof result === "object" && result !== null && "chargeId" in result && typeof result.chargeId === "string"
+          ? result.chargeId
+          : null;
+      releaseListCharge(listId, chargeId);
       router.push("/dashboard");
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : "The list could not be deleted.");
@@ -1431,13 +1466,20 @@ function ListPageContent() {
 
   return (
     <div className="db">
-      <Sidebar me={me} people={people} onAdd={addPerson} allowContacts={!data?.list.groupId} />
+      <Sidebar
+        me={me}
+        people={people}
+        groups={groups}
+        activeGroupId={data?.list.groupId ?? null}
+        onAdd={addPerson}
+        allowContacts={!data?.list.groupId}
+      />
 
       <main className="main">
         <div className="wrap">
           <Link className="back" href="/dashboard">
             <BackIcon />
-            {GROUP_NAME}
+            {groups.find((group) => group.id === data?.list.groupId)?.name ?? "Dashboard"}
           </Link>
 
           <header className="top">

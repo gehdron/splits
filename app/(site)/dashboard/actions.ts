@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { normalizePhone } from "@/lib/phone";
 import { createClient } from "@/lib/supabase/server";
 import { reconcileList } from "@/app/(site)/stripe/settle";
+import { attachCharge, chargeIdOf } from "@/app/(site)/plaid/charge-lists";
 
 export type DashState = { error?: string } | undefined;
 
@@ -228,11 +229,12 @@ export async function changeItem(_state: DashState, formData: FormData): Promise
   redirect(listHref(groupId, listId, formData.get("setup") === "1", false));
 }
 
-function listHref(groupId: string, listId: string, setup: boolean, duplicate: boolean) {
+function listHref(groupId: string, listId: string, setup: boolean, duplicate: boolean, chargeId = "") {
   const query = new URLSearchParams({ group: groupId });
   if (listId) query.set("list", listId);
   if (setup) query.set("setup", "1");
   if (duplicate) query.set("note", "already");
+  if (chargeId) query.set("charge", chargeId);
   return `/dashboard?${query}`;
 }
 
@@ -390,9 +392,11 @@ export async function importReceipt(_state: DashState, formData: FormData): Prom
     if (receiptId) await supabase.from("receipts").delete().eq("id", receiptId);
     return { error: error.message };
   }
+  const chargeId = chargeIdOf(formData.get("chargeId"));
+  await attachCharge("lists", listId, chargeId);
   await reconcileList(listId);
   updateTag(`dashboard-${user.id}`);
-  redirect(listHref(groupId, listId, false, false));
+  redirect(listHref(groupId, listId, false, false, chargeId));
 }
 
 // Item-by-item split: the scanned receipt becomes a new list in the chosen group.
@@ -415,6 +419,8 @@ export async function createListFromReceipt(_state: DashState, formData: FormDat
   const { supabase, user } = await requireUser();
   const { error: listError } = await supabase.from("lists").insert({ id: listId, group_id: groupId, created_by: user.id, name });
   if (listError) return { error: listError.message };
+  const chargeId = chargeIdOf(formData.get("chargeId"));
+  await attachCharge("lists", listId, chargeId);
 
   let receiptId: string | null;
   try {
@@ -431,5 +437,5 @@ export async function createListFromReceipt(_state: DashState, formData: FormDat
     return { error: error.message };
   }
   updateTag(`dashboard-${user.id}`);
-  redirect(listHref(groupId, listId, false, false));
+  redirect(listHref(groupId, listId, false, false, chargeId));
 }

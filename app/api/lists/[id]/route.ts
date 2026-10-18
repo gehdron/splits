@@ -4,6 +4,7 @@ import { deleteList, getList, updateList } from "@/lib/live-lists";
 import { reconcileList } from "@/app/(site)/stripe/settle";
 import { listShares } from "@/app/(site)/stripe/shares";
 import { retireShare } from "@/app/(site)/stripe/checkout";
+import { chargeIdForList } from "@/app/(site)/plaid/charge-lists";
 
 export async function GET(_req: Request, ctx: RouteContext<"/api/lists/[id]">) {
   await connection(); // always run at request time, never prerendered
@@ -106,6 +107,7 @@ export async function DELETE(_req: Request, ctx: RouteContext<"/api/lists/[id]">
       return Response.json({ error: "Only the list owner can delete this list." }, { status: 403 });
     }
 
+    const chargeId = await chargeIdForList(id);
     const shares = await listShares("list", id);
     for (const share of shares) {
       if (share.status === "unpaid" || share.status === "sent") {
@@ -120,7 +122,7 @@ export async function DELETE(_req: Request, ctx: RouteContext<"/api/lists/[id]">
     if (result === "forbidden") {
       return Response.json({ error: "Only the list owner can delete this list." }, { status: 403 });
     }
-    return Response.json({ ok: true });
+    return Response.json({ ok: true, chargeId });
   } catch (error) {
     console.error(`Could not delete list ${id}.`, error);
     return Response.json(

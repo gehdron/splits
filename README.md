@@ -115,8 +115,8 @@ tables used by the `/list` experience are created by
 `supabase/shared-lists.sql`. Rerun that script on an existing installation to
 add receipt-total columns.
 
-For local development, shared lists use `data/store.json` when the production
-Supabase storage path is not enabled.
+Shared lists are stored in Supabase whenever `SUPABASE_SERVICE_ROLE_KEY` is set,
+including on a local dev server. `data/store.json` is only used when that key is absent.
 
 Profile editing needs the `bio` and `avatar_url` profile fields and a public
 `profile-photos` storage bucket. On an existing Supabase database, apply

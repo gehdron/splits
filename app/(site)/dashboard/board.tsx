@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { rememberedChargeIds, releaseListCharge, rememberListCharge, replaceRememberedChargeIds } from "@/lib/split-charges";
 import { exitGroup } from "./actions";
 import { DashSidebar } from "./sidebar";
 import type { DashboardData } from "./types";
@@ -44,6 +45,11 @@ const Icon = ({ d }: { d: string }) => (
   </svg>
 );
 const PlusIcon = () => <Icon d="M12 5v14M5 12h14" />;
+const TrashIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M4 7h16M9 7V5h6v2M8 7l1 12h6l1-12" />
+  </svg>
+);
 
 function money(cents: number): string {
   return new Intl.NumberFormat("en-US", {
@@ -73,7 +79,11 @@ export function Board({ data }: { data: DashboardData }) {
   const [creatingList, setCreatingList] = useState(false);
   const [suggestingName, setSuggestingName] = useState(false);
   const [sharedLists, setSharedLists] = useState<{ id: string; name: string; itemCount: number }[] | null>(null);
+  const [removedIds, setRemovedIds] = useState<string[]>([]);
+  const [deletingListId, setDeletingListId] = useState<string | null>(null);
+  const [deleteListError, setDeleteListError] = useState("");
   const [charges, setCharges] = useState<Charge[] | null>(null);
+  const [remembered, setRemembered] = useState<Set<string>>(new Set());
   const [chargesNote, setChargesNote] = useState("");
   const [bankLinked, setBankLinked] = useState<boolean | null>(null);
   const listNameInput = useRef<HTMLInputElement>(null);
@@ -196,12 +206,34 @@ export function Board({ data }: { data: DashboardData }) {
 
   useEffect(() => {
     let cancel = false;
+    const params = new URLSearchParams(window.location.search);
+    const linkedList = params.get("list");
+    const linkedCharge = params.get("charge");
+    if (linkedList && linkedCharge) {
+      rememberListCharge(linkedList, linkedCharge);
+      params.delete("charge");
+      const query = params.toString();
+      window.history.replaceState(null, "", query ? `${window.location.pathname}?${query}` : window.location.pathname);
+    }
     (async () => {
       const res = await fetch("/api/plaid/transactions");
-      const body = (await res.json().catch(() => null)) as { charges?: Charge[]; linked?: boolean; error?: string } | null;
+      const body = (await res.json().catch(() => null)) as {
+        charges?: Charge[];
+        linked?: boolean;
+        error?: string;
+        chargeSplitsReady?: boolean;
+      } | null;
       if (cancel) return;
+      const loaded = Array.isArray(body?.charges) ? body.charges : [];
+      if (body?.chargeSplitsReady) {
+        const ids = loaded.filter((charge) => charge.status !== "none").map((charge) => charge.id);
+        replaceRememberedChargeIds(ids);
+        setRemembered(new Set(ids));
+      } else {
+        setRemembered(new Set(rememberedChargeIds()));
+      }
       setBankLinked(body?.linked !== false);
-      setCharges(Array.isArray(body?.charges) ? body.charges : []);
+      setCharges(loaded);
       setChargesNote(body?.error ?? "");
     })();
     return () => {
@@ -222,6 +254,48 @@ export function Board({ data }: { data: DashboardData }) {
     };
   }, []);
 
+  async function removeDashList(listId: string, name: string) {
+    if (deletingListId) return;
+    if (!window.confirm(`Delete ${name}? A bank charge attached to it can be split again.`)) return;
+    setDeletingListId(listId);
+    setDeleteListError("");
+    try {
+      const response = await fetch(`/api/lists/${encodeURIComponent(listId)}`, { method: "DELETE" });
+      const result: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message =
+          typeof result === "object" && result !== null && "error" in result && typeof result.error === "string"
+            ? result.error
+            : "The list could not be deleted.";
+        throw new Error(message);
+      }
+      const serverCharge =
+        typeof result === "object" && result !== null && "chargeId" in result && typeof result.chargeId === "string"
+          ? result.chargeId
+          : null;
+      const chargeId = releaseListCharge(listId, serverCharge);
+      if (chargeId) {
+        setRemembered((current) => {
+          const next = new Set(current);
+          next.delete(chargeId);
+          return next;
+        });
+        setCharges((current) =>
+          current?.map((charge) =>
+            charge.id === chargeId && charge.status === "split" ? { ...charge, status: "none" } : charge,
+          ) ?? current,
+        );
+      }
+      setRemovedIds((current) => [...current, listId]);
+      setSharedLists((current) => current?.filter((list) => list.id !== listId) ?? current);
+      router.refresh();
+    } catch (error) {
+      setDeleteListError(error instanceof Error ? error.message : "The list could not be deleted.");
+    } finally {
+      setDeletingListId(null);
+    }
+  }
+
   function openSplit(charge: Charge) {
     setSplitGroupId(null);
     setSplitTarget(charge);
@@ -233,6 +307,7 @@ export function Board({ data }: { data: DashboardData }) {
     splitQuery.set("merchant", splitTarget.merchant);
     splitQuery.set("amount", splitTarget.amount);
     splitQuery.set("date", splitTarget.date);
+    splitQuery.set("charge", splitTarget.id);
   }
   const splitQueryString = splitQuery.toString();
   const splitSuffix = splitQueryString ? `?${splitQueryString}` : "";
@@ -245,7 +320,10 @@ export function Board({ data }: { data: DashboardData }) {
     dialog.showModal();
   }, [splitTarget]);
 
-  const visibleCharges = (charges ?? []).filter((charge) => {
+  const markedCharges = (charges ?? []).map((charge) =>
+    charge.status === "none" && remembered.has(charge.id) ? { ...charge, status: "split" as const } : charge,
+  );
+  const visibleCharges = markedCharges.filter((charge) => {
     if (chargeFilter === "all") return true;
     if (chargeFilter === "none") return charge.status === "none";
     return charge.status !== "none";
@@ -308,6 +386,10 @@ export function Board({ data }: { data: DashboardData }) {
                         <>
                           Link your bank to see recent charges. <Link href="/account">Go to account</Link>
                         </>
+                      ) : bankLinked ? (
+                        <>
+                          From your linked bank. Choose item by item or an even split. <Link href="/account">Relink bank</Link>
+                        </>
                       ) : (
                         "From your linked bank. Choose item by item or an even split."
                       )}
@@ -357,7 +439,9 @@ export function Board({ data }: { data: DashboardData }) {
                             Split this charge
                           </button>
                         ) : (
-                          <span className={`pill ${charge.status === "settled" ? "pn" : "pg"}`}>{charge.label}</span>
+                          <button className="btn" type="button" disabled>
+                            Already split
+                          </button>
                         )}
                       </div>
                     </li>
@@ -377,25 +461,37 @@ export function Board({ data }: { data: DashboardData }) {
                     New list
                   </button>
                 </div>
+                {deleteListError ? <p className="err">{deleteListError}</p> : null}
                 {sharedLists && sharedLists.length > 0 ? (
                   <ul className="rows">
                     {sharedLists.map((list) => (
                       <li key={list.id}>
-                        <Link className="lrow slist" href={`/list?id=${encodeURIComponent(list.id)}`}>
-                          <span className="lic" aria-hidden="true">
-                            {(list.name.trim().charAt(0) || "S").toUpperCase()}
-                          </span>
-                          <span className="lmain">
-                            <b>{list.name}</b>
-                            <small>{list.itemCount === 1 ? "1 item" : `${list.itemCount} items`}</small>
-                            {list.itemCount === 0 ? (
-                              <small className="list-empty-hint">No items yet. Open this list to add items.</small>
-                            ) : null}
-                          </span>
-                          <span className="chev">
-                            <Icon d="M9 6l6 6-6 6" />
-                          </span>
-                        </Link>
+                        <div className="list-line">
+                          <Link className="lrow slist" href={`/list?id=${encodeURIComponent(list.id)}`}>
+                            <span className="lic" aria-hidden="true">
+                              {(list.name.trim().charAt(0) || "S").toUpperCase()}
+                            </span>
+                            <span className="lmain">
+                              <b>{list.name}</b>
+                              <small>{list.itemCount === 1 ? "1 item" : `${list.itemCount} items`}</small>
+                              {list.itemCount === 0 ? (
+                                <small className="list-empty-hint">No items yet. Open this list to add items.</small>
+                              ) : null}
+                            </span>
+                            <span className="chev">
+                              <Icon d="M9 6l6 6-6 6" />
+                            </span>
+                          </Link>
+                          <button
+                            className="xb xlist"
+                            type="button"
+                            aria-label={`Delete ${list.name}`}
+                            disabled={deletingListId === list.id}
+                            onClick={() => void removeDashList(list.id, list.name)}
+                          >
+                            <TrashIcon />
+                          </button>
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -408,30 +504,41 @@ export function Board({ data }: { data: DashboardData }) {
                       : "Loading lists…"}
                   </p>
                 )}
-                {visibleLists.length > 0 ? (
+                {visibleLists.some((list) => !removedIds.includes(list.id)) ? (
                   <ul className="rows">
-                    {visibleLists.map((list) => {
+                    {visibleLists.filter((list) => !removedIds.includes(list.id)).map((list) => {
                       return (
                         <li key={list.id}>
-                          <Link className="lrow slist" href={`/list?id=${encodeURIComponent(list.id)}`}>
-                            <span className="lic" aria-hidden="true">
-                              {list.name.trim().charAt(0).toUpperCase() || "L"}
-                            </span>
-                            <span className="lmain">
-                              <b>{list.name}</b>
-                              <small>
-                                {list.itemCount} {list.itemCount === 1 ? "item" : "items"}
-                                {" · "}
-                                {money(list.totalCents)}
-                              </small>
-                              {list.itemCount === 0 ? (
-                                <small className="list-empty-hint">No items yet. Open this list to add items.</small>
-                              ) : null}
-                            </span>
-                            <span className="chev">
-                              <Icon d="M9 6l6 6-6 6" />
-                            </span>
-                          </Link>
+                          <div className="list-line">
+                            <Link className="lrow slist" href={`/list?id=${encodeURIComponent(list.id)}`}>
+                              <span className="lic" aria-hidden="true">
+                                {list.name.trim().charAt(0).toUpperCase() || "L"}
+                              </span>
+                              <span className="lmain">
+                                <b>{list.name}</b>
+                                <small>
+                                  {list.itemCount} {list.itemCount === 1 ? "item" : "items"}
+                                  {" · "}
+                                  {money(list.totalCents)}
+                                </small>
+                                {list.itemCount === 0 ? (
+                                  <small className="list-empty-hint">No items yet. Open this list to add items.</small>
+                                ) : null}
+                              </span>
+                              <span className="chev">
+                                <Icon d="M9 6l6 6-6 6" />
+                              </span>
+                            </Link>
+                            <button
+                              className="xb xlist"
+                              type="button"
+                              aria-label={`Delete ${list.name}`}
+                              disabled={deletingListId === list.id}
+                              onClick={() => void removeDashList(list.id, list.name)}
+                            >
+                              <TrashIcon />
+                            </button>
+                          </div>
                         </li>
                       );
                     })}
