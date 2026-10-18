@@ -379,15 +379,16 @@ export default function ReceiptScanner() {
     setFrozenImage(imageUrl);
     setReceiptDocumentDataUrl(imageUrl);
     setReceiptDocumentName("Camera receipt");
-    setProcessingStage("extracting");
+    setProcessingStage("idle");
     setOcrCompleted(false);
+    setProgress(0);
+    setAiError("");
     setExtractedText("");
     setReceiptRows([]);
     setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
     setReceiptTotalEdited(false);
-    setStatus("Image frozen. Finding text and drawing its boxes...");
+    setStatus("Receipt captured. Select Extract text to start reading it.");
     stopCamera();
-    void readImage(imageUrl);
   }
 
   useEffect(() => {
@@ -754,9 +755,10 @@ export default function ReceiptScanner() {
       setReceiptDocumentDataUrl(dataUrl);
       setReceiptDocumentName(file.name);
       setProcessingStage(
-        file.type === "application/pdf" ? "parsing" : "extracting"
+        file.type === "application/pdf" ? "parsing" : "idle"
       );
       setOcrCompleted(false);
+      setProgress(0);
       setDetectedWords([]);
       setFrameSize({ width: 0, height: 0 });
       setAiError("");
@@ -780,8 +782,7 @@ export default function ReceiptScanner() {
         await parseWithAi("", dataUrl);
       } else {
         setFrozenImage(dataUrl);
-        setStatus("Receipt image uploaded. Reading its text...");
-        await readImage(dataUrl);
+        setStatus("Receipt image uploaded. Select Extract text to start reading it.");
       }
     } catch (error) {
       console.error(error);
@@ -947,7 +948,7 @@ export default function ReceiptScanner() {
       </h1>
       <p className="text-sm text-gray-600 sm:text-base">
         Fit the receipt inside the guide, keep it flat and well lit, then freeze
-        it. Text extraction and AI item parsing start automatically.
+        it. Select Extract text when you are ready to scan it.
       </p>
 
       <div className="relative w-full min-w-0 overflow-hidden rounded-xl bg-black">
@@ -1178,9 +1179,16 @@ export default function ReceiptScanner() {
           <>
             <button
               onClick={extractText}
-              className="min-h-12 min-w-0 rounded-lg bg-green-600 px-4 py-3 text-sm font-semibold text-white sm:text-base"
+              disabled={processingStage === "extracting" || processingStage === "parsing"}
+              className="min-h-12 min-w-0 rounded-lg bg-green-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-wait disabled:opacity-60 sm:text-base"
             >
-              Extract text
+              {processingStage === "extracting"
+                ? "Extracting text..."
+                : processingStage === "parsing"
+                  ? "Organizing receipt..."
+                  : extractedText
+                    ? "Extract text again"
+                    : "Extract text"}
             </button>
             <button
               onClick={retake}
@@ -1199,13 +1207,18 @@ export default function ReceiptScanner() {
           Upload receipt image or PDF
         </button>
       </div>
+      {!receiptDocumentDataUrl && aiError && (
+        <p role="alert" className="break-words text-sm text-red-700">
+          {aiError}
+        </p>
+      )}
       {receiptDocumentDataUrl && (
         <section className="min-w-0 space-y-3 rounded-xl border p-3 sm:p-4">
           <h2 className="text-xl font-semibold">Receipt text</h2>
           <p className="text-sm text-gray-600">
             {isPdfReceipt
               ? "The PDF is sent to Gemini for item and total extraction."
-              : "Receipt text is extracted automatically and sent with the image to Gemini for item and total extraction."}{" "}
+              : "Select Extract text to read the receipt. Its image and extracted text are then sent to Gemini for item and total extraction."}{" "}
             AI parsing sends the receipt to Gemini and may use your project’s API
             quota.{" "}
             Review the results against the original receipt.
@@ -1664,9 +1677,13 @@ export default function ReceiptScanner() {
             <p className="text-sm text-gray-600">
               {isPdfReceipt
                 ? "The PDF will be read directly by the AI parser."
-                : aiParsing
-                  ? "Reading text and organizing receipt items..."
-                  : "No text was extracted from the image. The AI parser will try reading the original image."}
+                : processingStage === "idle"
+                  ? "Select Extract text to run OCR. When it finishes, AI parsing starts automatically."
+                  : aiParsing
+                    ? "Reading text and organizing receipt items..."
+                    : ocrCompleted
+                      ? "No text was extracted. The AI parser will try reading the original image."
+                      : "Text extraction has not started."}
             </p>
           )}
         </section>

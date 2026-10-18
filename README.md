@@ -15,13 +15,12 @@ Use **Switch camera** to change cameras. For better live recognition, place the
 receipt inside the on-screen guide, fill as much of it as possible, keep it
 flat, hold the camera steady, and use bright even lighting. The live scanner
 focuses on the guided area, enlarges it, and boosts image contrast before OCR.
-After you select **Freeze frame**, the app prepares a higher-resolution,
-contrast-enhanced OCR image and shows the word boxes over the original. OCR
-first uses a small internal preview to estimate the text's horizontal bounds,
-then may crop the image internally for a higher-resolution pass; the full
-original photo remains visible, and the crop preserves the full image height.
-Select **Extract text** to run OCR again and review or edit the result; AI
-parsing runs automatically after extraction completes.
+After you select **Freeze frame**, the full original photo remains visible.
+Select **Extract text** to prepare a higher-resolution, contrast-enhanced OCR
+image and show recognized word boxes over the photo. OCR first uses a small
+internal preview to estimate the text's horizontal bounds, then may crop the
+image internally for a higher-resolution pass; the crop preserves the full
+image height. AI parsing starts automatically after text extraction completes.
 Camera access requires a secure context: use `localhost` for local development
 and HTTPS when accessing the app from another device.
 
@@ -36,10 +35,11 @@ For optional AI parsing, create `.env.local` in the project root and add:
 GEMINI_API_KEY=your_gemini_api_key
 ```
 
-Restart the development server and freeze a receipt. The app sends the frozen
-photo and extracted text to Gemini 3.8 Flash automatically. You can also use
-**Upload receipt image or PDF** instead of the camera. JPEG, PNG, and WebP
-images go through OCR before automatic AI parsing; PDFs are parsed directly.
+Restart the development server, freeze a receipt, and select **Extract text**.
+The app sends the frozen photo and extracted text to Gemini 3.8 Flash after OCR
+completes. You can also use **Upload receipt image or PDF** instead of the
+camera. Select **Extract text** after uploading a JPEG, PNG, or WebP image to
+run OCR and start automatic AI parsing; PDFs are parsed directly after upload.
 The scanner shows extraction, AI parsing, and review progress; if AI parsing
 fails, it displays the error and a retry option. Files must be 8 MB or smaller.
 AI parsing requires a Gemini API key and may incur API charges depending on
