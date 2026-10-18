@@ -116,6 +116,7 @@ export default function ReceiptScanner() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const receiptFileInputRef = useRef<HTMLInputElement>(null);
 
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraFacingMode, setCameraFacingMode] =
@@ -124,6 +125,10 @@ export default function ReceiptScanner() {
   const [activeDeviceId, setActiveDeviceId] = useState("");
   const [switchingCamera, setSwitchingCamera] = useState(false);
   const [frozenImage, setFrozenImage] = useState<string | null>(null);
+  const [receiptDocumentDataUrl, setReceiptDocumentDataUrl] = useState<
+    string | null
+  >(null);
+  const [receiptDocumentName, setReceiptDocumentName] = useState("");
   const [extractedText, setExtractedText] = useState("");
   const [status, setStatus] = useState("Start your camera to scan a receipt.");
   const [progress, setProgress] = useState(0);
@@ -152,6 +157,9 @@ export default function ReceiptScanner() {
     Record<string, string>
   >({});
   const [frameSize, setFrameSize] = useState({ width: 0, height: 0 });
+  const isPdfReceipt = receiptDocumentDataUrl?.startsWith(
+    "data:application/pdf;base64,"
+  ) ?? false;
 
   const proportionalTipCalculation = calculateReceiptSplits(
     receiptRows,
@@ -235,6 +243,8 @@ export default function ReceiptScanner() {
 
       setCameraOn(true);
       setFrozenImage(null);
+      setReceiptDocumentDataUrl(null);
+      setReceiptDocumentName("");
       setDetectedWords([]);
       setReceiptRows([]);
       setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
@@ -337,6 +347,8 @@ export default function ReceiptScanner() {
 
     const imageUrl = canvas.toDataURL("image/jpeg", 0.95);
     setFrozenImage(imageUrl);
+    setReceiptDocumentDataUrl(imageUrl);
+    setReceiptDocumentName("Camera receipt");
     setExtractedText("");
     setReceiptRows([]);
     setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
@@ -670,8 +682,78 @@ export default function ReceiptScanner() {
     await readImage(frozenImage);
   }
 
+  async function uploadReceipt(file: File) {
+    const supportedTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "application/pdf",
+    ];
+    if (!supportedTypes.includes(file.type)) {
+      setAiError("Choose a JPEG, PNG, WebP, or PDF receipt file.");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setAiError("Receipt files must be 8 MB or smaller.");
+      return;
+    }
+
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () =>
+          typeof reader.result === "string"
+            ? resolve(reader.result)
+            : reject(new Error("Could not read the selected receipt file."));
+        reader.onerror = () =>
+          reject(new Error("Could not read the selected receipt file."));
+        reader.readAsDataURL(file);
+      });
+
+      stopCamera();
+      setReceiptDocumentDataUrl(dataUrl);
+      setReceiptDocumentName(file.name);
+      setDetectedWords([]);
+      setFrameSize({ width: 0, height: 0 });
+      setAiError("");
+      setAiParsed(false);
+      setReceiptRows([]);
+      setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
+      setReceiptTotalEdited(false);
+      setSplitAssistantOpen(false);
+      setSplitMessages([]);
+      setSplitAssignments([]);
+      setSplitMessage("");
+      setSplitError("");
+      setTipOptionsOpen(false);
+      setTipSplitMode("proportional");
+      setManualTipAmounts({});
+
+      if (file.type === "application/pdf") {
+        setFrozenImage(null);
+        setExtractedText("");
+        setStatus("PDF uploaded. Select Parse receipt with AI to read it.");
+      } else {
+        setFrozenImage(dataUrl);
+        setStatus("Receipt image uploaded. Reading its text...");
+        await readImage(dataUrl);
+      }
+    } catch (error) {
+      console.error(error);
+      setAiError(
+        error instanceof Error
+          ? error.message
+          : "Could not read the selected receipt file."
+      );
+    }
+  }
+
   async function parseWithAi() {
-    if (!extractedText.trim() || !frozenImage || aiParsing) return;
+    if (!receiptDocumentDataUrl || aiParsing) return;
+    if (!extractedText.trim() && !isPdfReceipt) {
+      setAiError("Receipt text could not be read. Extract text and try again.");
+      return;
+    }
 
     setAiParsing(true);
     setAiError("");
@@ -681,7 +763,7 @@ export default function ReceiptScanner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           receiptText: extractedText,
-          imageDataUrl: frozenImage,
+          imageDataUrl: receiptDocumentDataUrl,
         }),
       });
       const result: unknown = await response.json();
@@ -784,6 +866,8 @@ export default function ReceiptScanner() {
 
   function retake() {
     setFrozenImage(null);
+    setReceiptDocumentDataUrl(null);
+    setReceiptDocumentName("");
     setExtractedText("");
     setReceiptRows([]);
     setReceiptTotals({ subtotal: "", tax: "", tip: "", total: "" });
@@ -816,10 +900,19 @@ export default function ReceiptScanner() {
       </p>
 
       <div className="relative w-full min-w-0 overflow-hidden rounded-xl bg-black">
-        {frozenImage ? (
+        {isPdfReceipt ? (
+          <div className="flex min-h-48 flex-col items-center justify-center gap-2 bg-white px-4 text-center sm:min-h-64">
+            <span className="text-4xl font-bold text-red-700" aria-hidden="true">
+              PDF
+            </span>
+            <span className="max-w-full break-all text-sm text-gray-700">
+              {receiptDocumentName}
+            </span>
+          </div>
+        ) : frozenImage ? (
           <img
             src={frozenImage}
-            alt="Frozen receipt"
+            alt="Uploaded or captured receipt"
             className="block max-h-[65dvh] min-h-48 w-full object-contain sm:max-h-[70vh] sm:min-h-64"
           />
         ) : (
@@ -895,6 +988,18 @@ export default function ReceiptScanner() {
         {status}
       </p>
 
+      <input
+        ref={receiptFileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,application/pdf"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) void uploadReceipt(file);
+        }}
+      />
+
       <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
         {!cameraOn && !frozenImage && (
           <button
@@ -948,7 +1053,20 @@ export default function ReceiptScanner() {
             </button>
           </>
         )}
+
+        <button
+          type="button"
+          onClick={() => receiptFileInputRef.current?.click()}
+          className="col-span-2 min-h-12 min-w-0 rounded-lg border bg-white px-4 py-3 text-sm font-semibold sm:col-span-1 sm:text-base"
+        >
+          Upload receipt image or PDF
+        </button>
       </div>
+      {aiError && (
+        <p role="alert" className="break-words text-sm text-red-700">
+          {aiError}
+        </p>
+      )}
 
       {progress > 0 && progress < 100 && (
         <div>
@@ -957,13 +1075,14 @@ export default function ReceiptScanner() {
         </div>
       )}
 
-      {extractedText && (
+      {(extractedText || isPdfReceipt) && (
         <section className="min-w-0 space-y-3 rounded-xl border p-3 sm:p-4">
           <h2 className="text-xl font-semibold">Receipt text</h2>
           <p className="text-sm text-gray-600">
-            OCR extracts the printed text. Select <strong>Parse with AI</strong>
-            to send the photo and extracted text to Gemini for organizing into
-            items and totals. Review the results against the original receipt.
+            {isPdfReceipt
+              ? "Select Parse receipt with AI to send this PDF to Gemini for item and total extraction."
+              : "OCR extracts the printed text. Select Parse receipt with AI to send the receipt image and text to Gemini for item and total extraction."}{" "}
+            Review the results against the original receipt.
           </p>
           {aiParsed && (
             <>
@@ -1385,33 +1504,36 @@ export default function ReceiptScanner() {
           <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={parseWithAi}
-              disabled={aiParsing}
+              disabled={aiParsing || !receiptDocumentDataUrl}
               className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white disabled:cursor-wait disabled:opacity-60"
             >
-              {aiParsing ? "Parsing photo with AI..." : "Parse photo with AI"}
+              {aiParsing ? "Parsing receipt..." : "Parse receipt with AI"}
             </button>
-            <button
-              onClick={() => navigator.clipboard.writeText(extractedText)}
-              className="rounded-lg border px-4 py-2"
-            >
-              Copy text
-            </button>
+            {extractedText && (
+              <button
+                onClick={() => navigator.clipboard.writeText(extractedText)}
+                className="rounded-lg border px-4 py-2"
+              >
+                Copy text
+              </button>
+            )}
           </div>
-          {aiError && (
-            <p role="alert" className="text-sm text-red-700">
-              {aiError}
+          {extractedText ? (
+            <textarea
+              value={extractedText}
+              onChange={(event) => {
+                setExtractedText(event.target.value);
+                setAiParsed(false);
+              }}
+              rows={12}
+              className="w-full min-w-0 rounded-lg border p-3 font-mono text-base sm:text-sm"
+              aria-label="Edit extracted receipt text"
+            />
+          ) : (
+            <p className="text-sm text-gray-600">
+              This PDF will be read directly by the AI parser.
             </p>
           )}
-          <textarea
-            value={extractedText}
-            onChange={(event) => {
-              setExtractedText(event.target.value);
-              setAiParsed(false);
-            }}
-            rows={12}
-            className="w-full min-w-0 rounded-lg border p-3 font-mono text-base sm:text-sm"
-            aria-label="Edit extracted receipt text"
-          />
         </section>
       )}
     </main>

@@ -41,6 +41,9 @@ extracted text to Gemini 3.8 Flash; the photo is sent only when you select this
 button and must be 8 MB or smaller. AI parsing requires a Gemini API key and
 may incur API charges depending on your account and usage. OCR extraction and
 the raw text remain available without an API key.
+You can also use **Upload receipt image or PDF** instead of the camera. JPEG,
+PNG, and WebP images go through OCR before AI parsing; PDFs are sent directly
+to the AI parser. Files must be 8 MB or smaller.
 
 After AI parsing, select **Split items with chat** to assign receipt items
 using natural-language instructions. Shared items are split equally; parsed
