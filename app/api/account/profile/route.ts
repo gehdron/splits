@@ -56,6 +56,15 @@ export async function PATCH(request: Request) {
         upsert: true,
       });
     if (uploadError) {
+      const bucketMissing =
+        uploadError.message.toLowerCase().includes("bucket not found") ||
+        uploadError.message.toLowerCase().includes("not found");
+      if (bucketMissing) {
+        return NextResponse.json(
+          { error: "Profile photo storage is not set up yet. Run supabase/profile-fields.sql in the Supabase SQL Editor, then try again." },
+          { status: 503 },
+        );
+      }
       return NextResponse.json({ error: `Photo upload failed: ${uploadError.message}` }, { status: 500 });
     }
 

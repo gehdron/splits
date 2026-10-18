@@ -43,3 +43,5 @@ create policy "Users manage their own profile photos"
     bucket_id = 'profile-photos'
     and (storage.foldername(name))[1] = auth.uid()::text
   );
+
+notify pgrst, 'reload schema';

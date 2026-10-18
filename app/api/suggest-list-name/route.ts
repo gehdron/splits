@@ -1,6 +1,6 @@
 import { connection } from "next/server";
 
-const MODEL = "gemini-2.5-flash-lite";
+const MODEL = "gemini-3.1-flash-lite";
 
 const SYSTEM_PROMPT = `You are a concise bill and shopping list naming assistant.
 Generate a short, natural, 2-4 word title for a shared list based on the provided items, merchant name, or receipt text.
