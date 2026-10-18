@@ -1035,7 +1035,7 @@ export default function ListPage() {
                   <span className="r">{money(item.cents)}</span>
                   <div className="asg">
                     <button
-                      className={`asg-btn${openItem === item.id ? " is-open" : ""}`}
+                      className={`asg-btn${item.who ? " assigned" : ""}${openItem === item.id ? " is-open" : ""}`}
                       type="button"
                       aria-expanded={openItem === item.id}
                       aria-haspopup="menu"

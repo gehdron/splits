@@ -112,12 +112,14 @@
 .db .iname small{display:block;font-size:13px;font-weight:700}
 .db .qty{color:var(--mut);font-weight:500}
 .db .asg{position:relative}
-.db .asg-btn{display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:0 10px;border:0;border-radius:10px;background:transparent;text-align:left;cursor:pointer;transition:background-color .2s ease}
-.db .asg-btn:hover,.db .asg-btn.is-open{background:var(--soft)}
+.db .asg-btn{display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:0 10px;border:1.5px solid var(--vio);border-radius:10px;background:#fff;color:var(--vio);text-align:left;cursor:pointer;transition:background-color .2s ease,color .2s ease}
+.db .asg-btn:hover,.db .asg-btn.is-open{background:#ECE8FF}
+.db .asg-btn.assigned{background:var(--vio);color:#fff}
+.db .asg-btn.assigned:hover,.db .asg-btn.assigned.is-open{background:var(--vtx)}
 .db .ph-ic{display:flex;align-items:center;justify-content:center;flex:none;width:32px;height:32px;border:1.5px dashed #8E98BC;border-radius:50%;color:var(--ph)}
-.db .asg-btn:hover .ph-ic{border-color:var(--ink);color:var(--ink)}
+.db .asg-btn:not(.assigned):hover .ph-ic{border-color:var(--vio);color:var(--vio)}
 .db .asg-name{min-width:0;overflow:hidden;font-weight:600;text-overflow:ellipsis;white-space:nowrap}
-.db .asg-name.muted{color:var(--mut);font-weight:500}
+.db .asg-name.muted{color:var(--vio);font-weight:500}
 .db .menu{position:absolute;right:0;top:calc(100% + 6px);z-index:20;width:280px;padding:8px;border-radius:14px;background:#fff;box-shadow:0 0 0 1px var(--line),0 20px 40px -14px rgba(11,16,32,.35);animation:pop .18s var(--ease)}
 .db .menu .on{display:grid;min-width:0}
 .db .menu .on small{font-size:12px;font-weight:500;color:var(--mut)}
