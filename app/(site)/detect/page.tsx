@@ -264,17 +264,23 @@ export default function ReceiptScanner() {
               ? [1 + distance + Math.abs(word.length - splitSuggestionQuery.length) / 100]
               : [];
           });
+          const matchedWord = words
+            .filter((word) => word !== splitSuggestionQuery)
+            .find(
+              (word) =>
+                word.startsWith(splitSuggestionQuery) ||
+                getEditDistance(splitSuggestionQuery, word) <=
+                  (splitSuggestionQuery.length <= 4 ? 1 : 2)
+            );
           return {
             description,
             score: Math.min(...scores),
-            matchedWord: words
-              .filter((word) => word !== splitSuggestionQuery)
-              .find(
-                (word) =>
-                  word.startsWith(splitSuggestionQuery) ||
-                  getEditDistance(splitSuggestionQuery, word) <=
-                    (splitSuggestionQuery.length <= 4 ? 1 : 2)
-              ),
+            matchedWord,
+            matchedWordStart: matchedWord
+              ? description
+                  .toLocaleLowerCase()
+                  .indexOf(matchedWord.toLocaleLowerCase())
+              : -1,
           };
         })
         .filter((suggestion) => Number.isFinite(suggestion.score))
@@ -1564,15 +1570,17 @@ export default function ReceiptScanner() {
                               </span>
                               {splitInlineSuggestion.matchedWord?.startsWith(
                                 splitSuggestionQuery
-                              ) ? (
+                              ) && splitInlineSuggestion.matchedWordStart ===
+                                0 ? (
                                 <>
                                   <span>
                                     {splitTokenBeforeCursor +
                                       splitTokenAfterCursor}
                                   </span>
                                   <span className="text-gray-400">
-                                    {splitInlineSuggestion.matchedWord.slice(
-                                      splitSuggestionQuery.length
+                                    {splitInlineSuggestion.description.slice(
+                                      splitInlineSuggestion.matchedWordStart +
+                                        splitSuggestionQuery.length
                                     )}
                                   </span>
                                 </>
@@ -1583,7 +1591,7 @@ export default function ReceiptScanner() {
                                       splitTokenAfterCursor}
                                   </span>
                                   <span className="font-semibold text-blue-700">
-                                    {splitInlineSuggestion.matchedWord}
+                                    {splitInlineSuggestion.description}
                                   </span>
                                 </>
                               )}
