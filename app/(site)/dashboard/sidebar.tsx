@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { signOut } from "../auth/actions";
 import { addGroupMember, addSavedFriend, createGroup, removeFriend } from "./actions";
@@ -64,10 +65,10 @@ export function DashSidebar({ data }: { data: DashboardData }) {
 
   return (
     <aside className="side">
-      <div className="brand">
+      <Link className="brand" href="/" aria-label="Splits home">
         <LogoMark />
         <span>Splits</span>
-      </div>
+      </Link>
 
       <section aria-labelledby="g-h">
         <h2 className="sh" id="g-h">
