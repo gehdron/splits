@@ -49,6 +49,8 @@ an API key.
 After AI parsing, select **Split items with chat** to assign receipt items
 using natural-language instructions. Shared items are split equally; parsed
 tax is allocated proportionally to each person's share of the item amounts.
+While typing split instructions, item-name suggestions are based on the
+AI-parsed receipt items and can be toggled on or off.
 Open **Tip options** to split the receipt tip proportionally, set a custom tip
 amount for each person, or leave the tip out of split totals. Any unassigned
 items keep their associated tax and tip under **Unassigned** until they are

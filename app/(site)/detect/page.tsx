@@ -123,6 +123,7 @@ export default function ReceiptScanner() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const receiptFileInputRef = useRef<HTMLInputElement>(null);
+  const splitInputRef = useRef<HTMLTextAreaElement>(null);
 
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraFacingMode, setCameraFacingMode] =
@@ -156,6 +157,8 @@ export default function ReceiptScanner() {
   const [splitAssistantOpen, setSplitAssistantOpen] = useState(false);
   const [splitMessages, setSplitMessages] = useState<SplitInstructionMessage[]>([]);
   const [splitMessage, setSplitMessage] = useState("");
+  const [splitSuggestionsEnabled, setSplitSuggestionsEnabled] = useState(true);
+  const [splitCursorPosition, setSplitCursorPosition] = useState(0);
   const [splitAssignments, setSplitAssignments] = useState<ReceiptAssignment[]>([]);
   const [splitParsing, setSplitParsing] = useState(false);
   const [splitError, setSplitError] = useState("");
@@ -203,6 +206,21 @@ export default function ReceiptScanner() {
         : processingStage === "error"
           ? "Failed · retry available"
           : "Waiting";
+  const splitTextBeforeCursor = splitMessage.slice(0, splitCursorPosition);
+  const splitSuggestionQuery =
+    splitTextBeforeCursor.match(/[^\s;,\n]+$/)?.[0].toLocaleLowerCase() ?? "";
+  const splitItemSuggestions = splitSuggestionsEnabled && splitSuggestionQuery
+    ? [...new Set(
+        receiptRows
+          .map((item) => item.description.trim())
+          .filter((description) =>
+            description
+              .toLocaleLowerCase()
+              .split(/[^\p{L}\p{N}]+/u)
+              .some((word) => word.startsWith(splitSuggestionQuery))
+          )
+      )].slice(0, 5)
+    : [];
 
   function selectTipSplitMode(mode: TipSplitMode) {
     if (mode === "manual" && tipSplitMode !== "manual") {
@@ -856,6 +874,31 @@ export default function ReceiptScanner() {
     }
   }
 
+  function selectSplitItemSuggestion(description: string) {
+    const input = splitInputRef.current;
+    const cursorPosition = input?.selectionStart ?? splitCursorPosition;
+    const prefix = splitMessage.slice(0, cursorPosition);
+    const suffix = splitMessage.slice(cursorPosition);
+    const token = prefix.match(/[^\s;,\n]+$/)?.[0] ?? "";
+    const replacementStart = cursorPosition - token.length;
+    const needsSpace =
+      suffix.length === 0 && !/[;,\s]$/.test(description);
+    const updatedMessage =
+      prefix.slice(0, replacementStart) +
+      description +
+      (needsSpace ? " " : "") +
+      suffix;
+    const nextCursor =
+      replacementStart + description.length + (needsSpace ? 1 : 0);
+
+    setSplitMessage(updatedMessage);
+    setSplitCursorPosition(nextCursor);
+    requestAnimationFrame(() => {
+      splitInputRef.current?.focus();
+      splitInputRef.current?.setSelectionRange(nextCursor, nextCursor);
+    });
+  }
+
   async function sendSplitMessage(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const content = splitMessage.trim();
@@ -932,7 +975,6 @@ export default function ReceiptScanner() {
     setSplitMessage("");
     setSplitError("");
     setProgress(0);
-    void startCamera();
   }
 
   useEffect(() => {
@@ -1413,18 +1455,76 @@ export default function ReceiptScanner() {
                   </div>
 
                   <form onSubmit={sendSplitMessage} className="space-y-2">
-                    <label htmlFor="split-instruction" className="sr-only">
-                      Describe how to split the receipt items
-                    </label>
-                    <textarea
-                      id="split-instruction"
-                      value={splitMessage}
-                      onChange={(event) => setSplitMessage(event.target.value)}
-                      placeholder="e.g. Sandy gets the burger; Bob and Joe split the pizza"
-                      rows={3}
-                      maxLength={1000}
-                      className="w-full min-w-0 rounded-lg border p-3 text-base"
-                    />
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <label htmlFor="split-instruction" className="text-sm font-medium">
+                        Describe how to split the receipt items
+                      </label>
+                      <button
+                        type="button"
+                        aria-pressed={splitSuggestionsEnabled}
+                        onClick={() =>
+                          setSplitSuggestionsEnabled((enabled) => !enabled)
+                        }
+                        className="min-h-10 rounded-lg border px-3 py-2 text-sm font-medium"
+                      >
+                        Receipt item suggestions:{" "}
+                        {splitSuggestionsEnabled ? "On" : "Off"}
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      <textarea
+                        ref={splitInputRef}
+                        id="split-instruction"
+                        value={splitMessage}
+                        onChange={(event) => {
+                          setSplitMessage(event.target.value);
+                          setSplitCursorPosition(
+                            event.currentTarget.selectionStart
+                          );
+                        }}
+                        onClick={(event) =>
+                          setSplitCursorPosition(
+                            event.currentTarget.selectionStart
+                          )
+                        }
+                        onKeyUp={(event) =>
+                          setSplitCursorPosition(
+                            event.currentTarget.selectionStart
+                          )
+                        }
+                        placeholder="e.g. Sandy gets the burger; Bob and Joe split the pizza"
+                        rows={3}
+                        maxLength={1000}
+                        aria-autocomplete="list"
+                        aria-controls="split-item-suggestions"
+                        className="w-full min-w-0 rounded-lg border p-3 text-base"
+                      />
+                      {splitItemSuggestions.length > 0 && (
+                        <ul
+                          id="split-item-suggestions"
+                          role="listbox"
+                          aria-label="Receipt item suggestions"
+                          className="overflow-hidden rounded-lg border bg-white"
+                        >
+                          {splitItemSuggestions.map((description) => (
+                            <li key={description} role="presentation">
+                              <button
+                                type="button"
+                                role="option"
+                                aria-selected="false"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() =>
+                                  selectSplitItemSuggestion(description)
+                                }
+                                className="min-h-11 w-full px-3 py-2 text-left text-sm hover:bg-blue-50 focus:bg-blue-50"
+                              >
+                                {description}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                     <button
                       type="submit"
                       disabled={!splitMessage.trim() || splitParsing}
