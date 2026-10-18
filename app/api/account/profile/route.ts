@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { normalizePhone } from "@/lib/phone";
 import { supabaseConfigured } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
 
@@ -28,24 +27,13 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "The profile form could not be read. Try submitting it again." }, { status: 400 });
   }
 
-  const displayName = String(form.get("display_name") ?? "").trim();
-  const rawPhone = String(form.get("phone") ?? "").trim();
   const bio = String(form.get("bio") ?? "").trim();
-  const phone = normalizePhone(rawPhone);
-  if (displayName.length < 2 || displayName.length > 80) {
-    return NextResponse.json({ error: "Name must be between 2 and 80 characters." }, { status: 400 });
-  }
-  if (!phone) {
-    return NextResponse.json({ error: "Enter a valid phone number." }, { status: 400 });
-  }
   if (bio.length > 280) {
     return NextResponse.json({ error: "Description must be 280 characters or fewer." }, { status: 400 });
   }
 
   const photo = form.get("photo");
-  const updates: { display_name: string; phone: string; bio: string; avatar_url?: string } = {
-    display_name: displayName,
-    phone,
+  const updates: { bio: string; avatar_url?: string } = {
     bio,
   };
   let uploadedPath: string | null = null;
@@ -84,9 +72,6 @@ export async function PATCH(request: Request) {
     .single();
 
   if (updateError) {
-    if (updateError.code === "23505") {
-      return NextResponse.json({ error: "That phone number is already connected to another account." }, { status: 409 });
-    }
     const missingProfileFields =
       updateError.code === "PGRST204" ||
       updateError.code === "42703" ||
@@ -97,26 +82,10 @@ export async function PATCH(request: Request) {
         const { error: cleanupError } = await supabase.storage.from("profile-photos").remove([uploadedPath]);
         if (cleanupError) cleanupWarning = ` The uploaded photo could not be cleaned up: ${cleanupError.message}`;
       }
-      const { data: basicProfile, error: basicUpdateError } = await supabase
-        .from("profiles")
-        .update({ display_name: displayName, phone })
-        .eq("id", auth.user.id)
-        .select("display_name, phone")
-        .single();
-      if (basicUpdateError) {
-        return NextResponse.json(
-          { error: `Profile could not be saved: ${basicUpdateError.message}. Apply supabase/profile-fields.sql in Supabase and try again.` },
-          { status: 500 },
-        );
-      }
-      return NextResponse.json({
-        profile: {
-          ...basicProfile,
-          bio: "",
-          avatar_url: null,
-        },
-        warning: `Name and phone were saved. To save the description and profile photo, apply supabase/profile-fields.sql in the Supabase SQL editor.${cleanupWarning}`,
-      });
+      return NextResponse.json(
+        { error: `Description and photo need the profile database update. Apply supabase/profile-fields.sql in Supabase.${cleanupWarning}` },
+        { status: 503 },
+      );
     }
     return NextResponse.json(
       { error: `Profile could not be saved: ${updateError.message}. Apply supabase/profile-fields.sql if the profile fields are missing.` },
