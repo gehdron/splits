@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { loadPrivateDashboard } from "../load";
+import { LoadingScreen } from "../../_components/loading-screen";
 import { ReceiptScanner, type ScannerCharge, type ScannerGroup } from "./scanner";
 
 export const metadata: Metadata = {
@@ -15,7 +16,7 @@ export default function ItemByItemPage({
   searchParams,
 }: PageProps<"/dashboard/item-by-item">) {
   return (
-    <Suspense fallback={<p className="dash-loading">Loading receipt scanner…</p>}>
+    <Suspense fallback={<LoadingScreen message="Loading receipt scanner…" />}>
       <ItemByItemContent searchParams={searchParams} />
     </Suspense>
   );

@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { Board } from "./board";
 import { loadPrivateDashboard } from "./load";
+import { LoadingScreen } from "../_components/loading-screen";
 import "./dashboard.css";
 
 export const metadata: Metadata = {
@@ -11,7 +12,7 @@ export const metadata: Metadata = {
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={<p className="dash-loading">Loading your dashboard…</p>}>
+    <Suspense fallback={<LoadingScreen message="Loading your dashboard…" />}>
       <DashboardGate />
     </Suspense>
   );
@@ -22,4 +23,3 @@ async function DashboardGate() {
   if (!dashboard) redirect("/login");
   return <Board data={dashboard} />;
 }
-
