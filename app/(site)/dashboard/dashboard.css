@@ -115,17 +115,13 @@
    .db .side form{margin:0}
    .db .pop{position:fixed;inset:0;width:min(420px,calc(100% - 32px));height:fit-content;max-height:calc(100dvh - 32px);margin:auto;padding:0;border:0;border-radius:24px;background:#fff;color:var(--ink);overflow:auto}
    .db .pop::backdrop{background:rgba(11,16,32,.45)}
-   .db .pop form{display:grid;gap:14px;margin:0;padding:28px}
+   .db .pop form,.db .pop .pop-body{display:grid;gap:14px;margin:0;padding:28px}
    .db .pop .lbl{margin-top:0}
    .db .pop h2{font-size:32px;letter-spacing:-0.03em}
    .db .pop p{margin:0;color:var(--mut)}
    .db .pop-acts{display:grid;gap:8px}
    .db .pop .btn.line{color:var(--ink)}
-   .db .split-groups{margin:0;padding:0;border:0;display:grid;gap:8px}
-   .db .split-groups .lbl{margin:0}
-   .db .gpick{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 12px;border-radius:12px;background:#fff;font-weight:700;cursor:pointer;box-shadow:inset 0 0 0 1.5px #B9C1DA}
-   .db .gpick.on{background:#ECE8FF;box-shadow:inset 0 0 0 1.5px var(--vio)}
-   .db .gpick input{width:18px;height:18px;margin:0;accent-color:var(--vio)}
+   .db select.field{appearance:none;padding-right:40px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230B1020' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;background-size:18px}
    .db .choice{display:grid;grid-template-columns:minmax(0,1fr) 20px;gap:12px;align-items:center;min-height:72px;padding:12px 14px;border-radius:12px;background:#fff;color:inherit;text-decoration:none;box-shadow:inset 0 0 0 1.5px #B9C1DA}
    .db .choice.off{opacity:.45;cursor:default}
    .db .choice:hover{box-shadow:inset 0 0 0 1.5px var(--ink)}

@@ -77,8 +77,17 @@ export function Board({ data }: { data: DashboardData }) {
     setCreatingList(false);
   }
 
-  async function createBlankList(event: React.FormEvent) {
-    event.preventDefault();
+  function chooseBlankList() {
+    setNamingList(true);
+    // Replacing the dialog's buttons can close it. Reopen on the name step.
+    requestAnimationFrame(() => {
+      const dialog = newListDialog.current;
+      if (dialog && !dialog.open) dialog.showModal();
+    });
+  }
+
+  async function createBlankList(event?: React.FormEvent) {
+    event?.preventDefault();
     if (creatingList) return;
     setCreatingList(true);
     setListError("");
@@ -94,8 +103,8 @@ export function Board({ data }: { data: DashboardData }) {
       return;
     }
     const list = (await res.json()) as { id: string };
-    newListDialog.current?.close();
     router.push(`/list?id=${encodeURIComponent(list.id)}`);
+    newListDialog.current?.close();
   }
 
   useEffect(() => {
@@ -253,25 +262,24 @@ export function Board({ data }: { data: DashboardData }) {
                     Assign a group if you want. You can also split it on its own.
                   </p>
                   {data.groups.length > 0 ? (
-                    <fieldset className="split-groups">
-                      <legend className="lbl">Group</legend>
-                      <label className={`gpick${splitGroupId === null ? " on" : ""}`}>
-                        <input type="radio" name="split-group" value="" checked={splitGroupId === null} onChange={() => setSplitGroupId(null)} />
-                        No group
+                    <div>
+                      <label className="lbl" htmlFor="split-group">
+                        Group
                       </label>
-                      {data.groups.map((entry) => (
-                        <label key={entry.id} className={`gpick${splitGroupId === entry.id ? " on" : ""}`}>
-                          <input
-                            type="radio"
-                            name="split-group"
-                            value={entry.id}
-                            checked={splitGroupId === entry.id}
-                            onChange={() => setSplitGroupId(entry.id)}
-                          />
-                          {entry.name}
-                        </label>
-                      ))}
-                    </fieldset>
+                      <select
+                        id="split-group"
+                        className="field"
+                        value={splitGroupId ?? ""}
+                        onChange={(event) => setSplitGroupId(event.target.value || null)}
+                      >
+                        <option value="">No group</option>
+                        {data.groups.map((entry) => (
+                          <option key={entry.id} value={entry.id}>
+                            {entry.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   ) : null}
                   <div className="pop-acts">
                     <Link className="choice" href={itemSplitHref}>
@@ -323,21 +331,21 @@ export function Board({ data }: { data: DashboardData }) {
                     </div>
                   </form>
                 ) : (
-                  <form method="dialog">
+                  <div className="pop-body">
                     <h2>New list</h2>
                     <p>Start a blank list, or scan a receipt onto a new one.</p>
                     <div className="pop-acts">
-                      <button className="btn" type="button" onClick={() => setNamingList(true)}>
+                      <button className="btn" type="button" onClick={chooseBlankList}>
                         Blank list
                       </button>
                       <button className="btn line" type="button" onClick={() => openList(true)}>
                         Scan a receipt
                       </button>
                     </div>
-                    <button className="btn txt" type="submit">
+                    <button className="btn txt" type="button" onClick={() => newListDialog.current?.close()}>
                       Cancel
                     </button>
-                  </form>
+                  </div>
                 )}
               </dialog>
         </div>
