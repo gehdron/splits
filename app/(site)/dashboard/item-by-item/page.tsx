@@ -7,9 +7,39 @@ import "./item-by-item.css";
 // Sample charge: Amazon $38.97. Shares are computed from the items.
 const ME = "Gordon Zeng";
 
-type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+function initials(name: string) {
+  const w = name.trim().split(/\s+/).filter((x) => /[a-z]/i.test(x));
+  const l = (x?: string) => (x?.match(/[a-z]/i)?.[0] ?? "").toUpperCase();
+  return w.length ? l(w[0]) + (w.length > 1 ? l(w[w.length - 1]) : "") : "#";
+}
+function colorClass(name: string) {
+  if (name === ME) return "p0";
+  let h = 0;
+  for (const ch of name.toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return `p${1 + (h % 3)}`;
+}
+const Avatar = ({ name, large = false }: { name: string; large?: boolean }) => (
+  <span className={`av ${large ? "lgav " : ""}${colorClass(name)}`} aria-hidden="true">{initials(name)}</span>
+);
 
-const one = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value) ?? "";
+const Svg = ({ children }: { children: ReactNode }) => (
+  <svg className="i" viewBox="0 0 24 24" aria-hidden="true">{children}</svg>
+);
+const PlusIcon = () => <Svg><path d="M12 5v14M5 12h14" /></Svg>;
+const CloseIcon = () => <Svg><path d="M6 6l12 12M18 6L6 18" /></Svg>;
+const BackIcon = () => <Svg><path d="M15 6l-6 6 6 6" /></Svg>;
+const SendIcon = () => <Svg><path d="M4 12l16-8-6 16-3-7-7-1z" /></Svg>;
+const PersonIcon = () => <Svg><circle cx="12" cy="9" r="3.5" /><path d="M5.5 19c.8-3.2 3.4-5 6.5-5s5.7 1.8 6.5 5" /></Svg>;
+const ReceiptIcon = () => <Svg><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" /><path d="M9 8h6M9 12h6M9 16h4" /></Svg>;
+const CameraIcon = () => <Svg><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></Svg>;
+const LogoMark = () => (
+  <svg width="32" height="32" viewBox="3 3 60 60" aria-hidden="true">
+    <g strokeWidth="6" strokeLinejoin="round">
+      <polygon points="10,10 48,10 10,48" fill="#0FB67F" stroke="#0FB67F" />
+      <polygon points="56,16 56,56 16,56" fill="#6C4DFF" stroke="#6C4DFF" />
+    </g>
+  </svg>
+);
 
 const friends = [
   { name: "Brayden", inGroup: true },
@@ -72,9 +102,48 @@ function allocate(total: number, weights: { key: string; weight: number }[]): Ma
 
 function Sidebar() {
   return (
-    <Suspense fallback={<p>Opening the receipt scanner…</p>}>
-      <ScannerGate searchParams={searchParams} />
-    </Suspense>
+    <aside className="side">
+      <div className="brand"><LogoMark /><span>Splits</span></div>
+      <section aria-labelledby="g-h">
+        <h2 className="sh" id="g-h">Your groups</h2>
+        <ul className="groups">
+          {["Apartment 4B", "Lisbon trip"].map((g) => (
+            <li key={g}><button className="gbtn" type="button"><span>{g}</span><span className="cnt" /></button></li>
+          ))}
+        </ul>
+        <label className="lbl" htmlFor="ng">New group</label>
+        <div className="inrow">
+          <input id="ng" className="field" type="text" placeholder="Group name" />
+          <button className="btn" type="button">Create</button>
+        </div>
+      </section>
+      <section aria-labelledby="f-h">
+        <h2 className="sh" id="f-h">People</h2>
+        <ul className="friends">
+          {friends.map((f) => (
+            <li key={f.name} className="fr">
+              <Avatar name={f.name} />
+              <div><b>{f.name}</b><small>{f.inGroup ? "In Apartment 4B" : "Not in this group"}</small></div>
+              <button className="mini" type="button" disabled={f.inGroup}>{f.inGroup ? "Added" : "Add"}</button>
+              <button className="xb" type="button" aria-label={`Remove ${f.name}`}><CloseIcon /></button>
+            </li>
+          ))}
+        </ul>
+        <p className="lbl">Add someone to Apartment 4B</p>
+        <div className="seg" role="group" aria-label="Add by">
+          <button className="sg on" type="button" aria-pressed="true">Phone</button>
+          <button className="sg" type="button" aria-pressed="false">Email</button>
+        </div>
+        <label className="lbl" htmlFor="ct">Phone number</label>
+        <input id="ct" className="field" type="tel" placeholder="(555) 123-4567" />
+        <button className="btn full" type="button"><PlusIcon />Add to group</button>
+      </section>
+      <div className="me">
+        <span className="av lgav p0">GZ</span>
+        <div><b>Gordon Zeng</b><small>gordon@example.com</small></div>
+        <button className="btn txt" type="button">Sign out</button>
+      </div>
+    </aside>
   );
 }
 
@@ -337,18 +406,4 @@ export default function ItemByItemPage() {
       </main>
     </div>
   );
-}
-
-async function loadPrivateDashboard() {
-  "use cache: private";
-  cacheLife("seconds");
-
-  if (!supabaseConfigured()) return null;
-
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) return null;
-
-  cacheTag(`dashboard-${data.user.id}`);
-  return loadDashboard(data.user.id, data.user.email ?? "");
 }

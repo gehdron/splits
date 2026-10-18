@@ -14,13 +14,12 @@ const FUTURE =
   "i'll|i will|i'm going to|im going to|i am going to|i can";
 const ACTION = "buy|get|grab|pick up|pay for|cover";
 const ONGOING = "buying|getting|grabbing|picking up|paying for|covering";
+const WHO = "[A-Za-z][A-Za-z.'-]{0,40}(?:\\s+[A-Za-z][A-Za-z.'-]{0,40}){0,3}";
 
 const selfFuture = new RegExp(`^(?:${FUTURE})\\s+(${ACTION})\\s+(.+)$`, "i");
 const selfOngoing = new RegExp(`^(?:i'm|im|i am)\\s+(${ONGOING})\\s+(.+)$`, "i");
-const otherFuture = new RegExp(
-  `^([A-Za-z][A-Za-z.'-]{0,40})\\s+(?:will|is going to|'ll)\\s+(${ACTION})\\s+(.+)$`,
-  "i",
-);
+const otherFuture = new RegExp(`^(${WHO})\\s+(?:will|is going to|'ll)\\s+(${ACTION})\\s+(.+)$`, "i");
+const otherOngoing = new RegExp(`^(${WHO})\\s+is\\s+(${ONGOING})\\s+(.+)$`, "i");
 
 const summaryRequest =
   /^(?:summary|commitments|what(?:'s| is| are) (?:the )?(?:plan|list|commitments)|what did (?:i|we) (?:say|agree))[?.!]*$/i;
@@ -41,7 +40,7 @@ function normalize(text: string): string {
 function clauses(text: string): string[] {
   return normalize(text)
     .split(/\n+|(?<=[.!?])\s+/)
-    .map((clause) => clause.trim())
+    .map((clause) => clause.replace(/^(?:(?:oh|hey|yo|so|yeah|yea|btw|ok|okay|well|um|uh|and)[, ]+)+/i, "").trim())
     .filter((clause) => clause.length > 0 && !clause.endsWith("?"));
 }
 
@@ -82,7 +81,7 @@ export function parseCommitments(text: string, senderHandle: string): ParsedComm
   const seen = new Set<string>();
   for (const clause of clauses(text)) {
     const self = clause.match(selfFuture) ?? clause.match(selfOngoing);
-    const other = self ? null : clause.match(otherFuture);
+    const other = self ? null : clause.match(otherFuture) ?? clause.match(otherOngoing);
     const match = self ?? other;
     if (!match) continue;
     const who = self ? senderHandle : match[1];
@@ -118,7 +117,53 @@ export function renderSummary(commitments: Commitment[], senderHandle: string): 
   return [heading, ...lines].join("\n");
 }
 
-export function renderConfirmation(parsed: ParsedCommitment[], senderHandle: string): string {
+export function renderConfirmation(parsed: ParsedCommitment[], senderHandle: string, listName?: string): string {
   const lines = parsed.map((commitment) => describe(commitment, senderHandle));
-  return lines.length === 1 ? `Noted. ${lines[0]}` : `Noted.\n${lines.map((line) => `- ${line}`).join("\n")}`;
+  const where = listName ? ` On ${listName}.` : "";
+  return lines.length === 1 ? `Noted. ${lines[0]}${where}` : `Noted on ${listName ?? "the list"}.\n${lines.map((line) => `- ${line}`).join("\n")}`;
+}
+
+export type ListTarget = { id: string; name: string };
+
+function listKey(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\blist\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function mentionsList(text: string, name: string): boolean {
+  const needle = listKey(name);
+  if (needle.length < 2) return false;
+  return ` ${listKey(text)} `.includes(` ${needle} `);
+}
+
+export function textWithoutList(text: string, listName: string): string {
+  const escaped = listName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return normalize(text)
+    .replace(new RegExp(`\\b${escaped}\\b`, "ig"), " ")
+    .replace(/^(?:(?:add|put)\s+)?(?:on|for|in|to)\s+(?:the\s+)?/i, "")
+    .replace(/^[:.,\s]+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function chooseList(text: string, lists: ListTarget[]): { ok: true; list: ListTarget } | { ok: false; reply: string } {
+  const named = lists.filter((list) => mentionsList(text, list.name));
+  const longest =
+    named.length === 0
+      ? undefined
+      : named.reduce((best, list) => (listKey(list.name).length > listKey(best.name).length ? list : best));
+  const winners = longest ? named.filter((list) => listKey(list.name).length === listKey(longest.name).length) : [];
+  if (winners.length === 1 && longest) return { ok: true, list: longest };
+  if (lists.length === 1 && lists[0]) return { ok: true, list: lists[0] };
+  const names = (winners.length > 1 ? winners : lists).map((list) => list.name);
+  const sample = names[0] ?? "House supplies";
+  const lead = winners.length > 1 ? "That name matches more than one list." : "Which list should this go on?";
+  return {
+    ok: false,
+    reply: `${lead} Name it in the same text, like: on ${sample}, Maya is buying chips. Lists: ${names.join(", ")}.`,
+  };
 }
