@@ -3,7 +3,7 @@ import { Hero } from "./_components/hero";
 import { LogoMark } from "./_components/logo";
 import "./_styles/home.css";
 
-const title = "Splits: settle up without the stress";
+const title = "Splits: split bills without the stress";
 const description =
   "Snap the receipt, pick who had what, and everyone pays their share from a link.";
 
@@ -16,9 +16,9 @@ export const metadata: Metadata = {
 const APP_URL = "/signup";
 
 const steps = [
-  { title: "Snap the receipt", body: "Splits reads every item and price for you." },
-  { title: "Pick who had what", body: "Assign each item to someone in your group." },
-  { title: "Send the links", body: "Everyone pays their own share. No app needed." },
+  { title: "Snap the receipt", body: "Splits reads every item and price for you.", image: "/assets/screens/step-scan.png", alt: "A receipt inside the camera frame while Splits reads it" },
+  { title: "Pick who had what", body: "Assign each item to someone in your group.", image: "/assets/screens/step-assign.png", alt: "Receipt items with a name button for each person, and each person's total" },
+  { title: "Send the links", body: "Everyone pays their own share. No app needed.", image: "/assets/screens/step-pay.png", alt: "A text message with a payment link and a checkout page with Apple Pay" },
 ];
 
 export default function Home() {
@@ -47,8 +47,8 @@ export default function Home() {
           <div className="hero-in">
             <div>
               <h1>
-                <span className="ln"><span className="ri" style={{ animationDelay: "80ms" }}>Settle up</span></span>
-                <span className="ln"><span className="ri" style={{ animationDelay: "180ms" }}>without the stress.</span></span>
+                <span className="ln"><span className="ri" style={{ animationDelay: "80ms" }}>Splitting made</span></span>
+                <span className="ln"><span className="ri" style={{ animationDelay: "180ms" }}>simple.</span></span>
               </h1>
               <p className="sub fade" style={{ animationDelay: "420ms" }}>
                 Snap the receipt, pick who had what, and everyone pays their share from a link.
@@ -58,22 +58,6 @@ export default function Home() {
                 style={{ animationDelay: "520ms", flexDirection: "column", alignItems: "flex-start", gap: 18 }}
               >
                 <a className="btn btn-a" href={APP_URL}>Start splitting</a>
-              </div>
-            </div>
-            <div className="device">
-              <div className="tri a" aria-hidden="true"><i /></div>
-              <div className="tri b" aria-hidden="true"><i /></div>
-              <div className="phone-in">
-                <div className="phone">
-                  <div className="screen">
-                    <span className="sk" style={{ top: 84, width: "46%" }} />
-                    <span className="sk" style={{ top: 116 }} />
-                    <span className="sk" style={{ top: 144, right: 90 }} />
-                    <span className="sk" style={{ bottom: 96 }} />
-                    <span className="sk" style={{ bottom: 68, right: 120 }} />
-                    App screen placeholder
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -97,7 +81,11 @@ export default function Home() {
             <div className="panels">
               {steps.map((step) => (
                 <div key={step.title} className="panel">
-                  <div className="ph">Step image placeholder</div>
+                  <img
+                    src={step.image}
+                    alt={step.alt}
+                    style={{ width: "100%", height: "auto", display: "block", borderRadius: 20, border: "1px solid #e3e7f1" }}
+                  />
                   <div><h3>{step.title}</h3><p>{step.body}</p></div>
                 </div>
               ))}

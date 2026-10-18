@@ -2,9 +2,16 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useActionState, useEffect, useRef, useState } from "react";
+import {
+  Suspense,
+  useActionState,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { ReactNode } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signOut } from "../../auth/actions";
 import { createListFromReceipt, importReceipt } from "../actions";
 import Tesseract from "tesseract.js";
@@ -36,6 +43,7 @@ type ReceiptProcessingStage =
   | "error";
 
 const MAX_PDF_BYTES = 4 * 1024 * 1024;
+const RECEIPT_HANDOFF_KEY = "splits:receipt-handoff:v1";
 
 function isAiParsedReceipt(value: unknown): value is AiParsedReceipt {
   if (
@@ -164,6 +172,7 @@ type ScannerProps = {
   people: string[];
   charge: ScannerCharge | null;
   loadError: string | null;
+  startCameraOnLoad?: boolean;
 };
 
 // The AI returns amounts as text ("36.97" or "$36.97"); show them with one leading "$". Display only.
@@ -177,6 +186,63 @@ function initials(name: string): string {
   const first = (parts[0] ?? "?").charAt(0);
   const last = parts.length > 1 ? (parts[parts.length - 1] ?? "").charAt(0) : "";
   return (first + last).toUpperCase();
+}
+
+function ReceiptImage({
+  src,
+  width,
+  height,
+  words,
+  alt,
+}: {
+  src: string;
+  width: number;
+  height: number;
+  words: DetectedWord[];
+  alt: string;
+}) {
+  return (
+    <div
+      className="receipt-image"
+      style={width > 0 && height > 0 ? { aspectRatio: `${width} / ${height}` } : undefined}
+    >
+      <img src={src} alt={alt} draggable={false} />
+      {width > 0 && height > 0 && words.length > 0 && (
+        <svg
+          aria-hidden="true"
+          className="receipt-image-words"
+          viewBox={`0 0 ${width} ${height}`}
+          preserveAspectRatio="xMidYMid meet"
+        >
+          {words.map(({ text, bbox }, index) => (
+            <g key={`${bbox.x0}-${bbox.y0}-${index}`}>
+              <rect
+                x={bbox.x0}
+                y={bbox.y0}
+                width={bbox.x1 - bbox.x0}
+                height={bbox.y1 - bbox.y0}
+                fill="rgba(46, 242, 166, 0.12)"
+                stroke="#2EF2A6"
+                strokeWidth={Math.max(2, width / 500)}
+              />
+              <text
+                x={bbox.x0 + 2}
+                y={Math.max(bbox.y0 - 4, 12)}
+                fill="#86efac"
+                fontSize={Math.max(8, Math.min(24, (bbox.y1 - bbox.y0) * 0.55))}
+                fontWeight="600"
+                paintOrder="stroke"
+                stroke="#14532d"
+                strokeWidth={1.5}
+              >
+                {text}
+              </text>
+            </g>
+          ))}
+        </svg>
+      )}
+    </div>
+  );
 }
 
 function colorClass(name: string): string {
@@ -268,11 +334,22 @@ function SaveReceiptButton({ rows, group, listName }: { rows: AiReceiptItem[]; g
   );
 }
 
-export function ReceiptScanner({ me, groups, group, people, charge, loadError }: ScannerProps) {
+export function ReceiptScanner({
+  me,
+  groups,
+  group,
+  people,
+  charge,
+  loadError,
+  startCameraOnLoad = false,
+}: ScannerProps) {
+  const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const receiptFileInputRef = useRef<HTMLInputElement>(null);
+  const autoCameraStarted = useRef(false);
+  const [enlargedImageOpen, setEnlargedImageOpen] = useState(false);
 
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraFacingMode, setCameraFacingMode] =
@@ -381,10 +458,10 @@ export function ReceiptScanner({ me, groups, group, people, charge, loadError }:
     setTipSplitMode(mode);
   }
 
-  async function startCamera(
+  const startCamera = useCallback(async (
     facingMode: CameraFacingMode = cameraFacingMode,
     deviceId?: string
-  ) {
+  ) => {
     let stream: MediaStream | null = null;
     readRun.current += 1;
 
@@ -468,7 +545,7 @@ export function ReceiptScanner({ me, groups, group, people, charge, loadError }:
       setStatus(message);
       setCameraError(message);
     }
-  }
+  }, [cameraFacingMode, people]);
 
   function stopCamera() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -696,6 +773,7 @@ export function ReceiptScanner({ me, groups, group, people, charge, loadError }:
       const image = new Image();
       image.src = imageUrl;
       await image.decode();
+      setFrameSize({ width: image.naturalWidth, height: image.naturalHeight });
 
       let progressStage: "locating" | "reading" = "locating";
       worker = await Tesseract.createWorker("eng", undefined, {
@@ -1111,6 +1189,15 @@ export function ReceiptScanner({ me, groups, group, people, charge, loadError }:
     };
   }, []);
 
+  useEffect(() => {
+    if (!startCameraOnLoad || autoCameraStarted.current) return;
+    const timeoutId = window.setTimeout(() => {
+      autoCameraStarted.current = true;
+      void startCamera();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [startCamera, startCameraOnLoad]);
+
   const step: 1 | 2 | 3 =
     aiParsed && receiptRows.length > 0 ? 3 : receiptDocumentDataUrl ? 2 : 1;
   const isProcessing =
@@ -1193,6 +1280,19 @@ export function ReceiptScanner({ me, groups, group, people, charge, loadError }:
     receiptFileInputRef.current?.click();
   }
 
+  function continueToSplitChat() {
+    try {
+      window.sessionStorage.setItem(
+        RECEIPT_HANDOFF_KEY,
+        JSON.stringify({ items: receiptRows, totals: receiptTotals })
+      );
+      router.push("/detect?receiptImported=1");
+    } catch (error) {
+      console.error(error);
+      setAiError("Could not return these items to the split chat. Try again.");
+    }
+  }
+
   // PDFs skip OCR, and a failed AI pass after good OCR only needs the AI step again.
   function readReceipt() {
     if (isPdfReceipt || (processingStage === "error" && ocrCompleted)) {
@@ -1248,7 +1348,23 @@ export function ReceiptScanner({ me, groups, group, people, charge, loadError }:
             <small>{receiptDocumentName}</small>
           </div>
         ) : (
-          frozenImage && <img src={frozenImage} alt="Your receipt" />
+          frozenImage && (
+            <button
+              className="receipt-image-button"
+              type="button"
+              onClick={() => setEnlargedImageOpen(true)}
+              aria-label="Enlarge receipt image"
+            >
+              <ReceiptImage
+                src={frozenImage}
+                width={frameSize.width}
+                height={frameSize.height}
+                words={detectedWords}
+                alt="Your receipt"
+              />
+              <span>Enlarge image</span>
+            </button>
+          )
         )}
       </div>
       <div className="acts2">
@@ -1270,10 +1386,55 @@ export function ReceiptScanner({ me, groups, group, people, charge, loadError }:
     </section>
   );
 
+  useEffect(() => {
+    if (!enlargedImageOpen) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setEnlargedImageOpen(false);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [enlargedImageOpen]);
+
   return (
     <div className="db">
       <Sidebar me={me} groups={groups} group={group} people={people} loadError={loadError} />
       <main className="main">
+        {enlargedImageOpen && frozenImage && (
+          <div
+            className="receipt-lightbox"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Enlarged receipt image"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) {
+                setEnlargedImageOpen(false);
+              }
+            }}
+          >
+            <button
+              className="receipt-lightbox-close"
+              type="button"
+              onClick={() => setEnlargedImageOpen(false)}
+              aria-label="Close enlarged receipt image"
+            >
+              <CloseIcon />
+            </button>
+            <div className="receipt-lightbox-content">
+              <ReceiptImage
+                src={frozenImage}
+                width={frameSize.width}
+                height={frameSize.height}
+                words={detectedWords}
+                alt="Enlarged receipt with detected text"
+              />
+              <p>
+                {detectedWords.length > 0
+                  ? "Green outlines show text detected on the receipt."
+                  : "Text outlines appear after you extract text."}
+              </p>
+            </div>
+          </div>
+        )}
         <div className="wrap">
           <Link className="back" href={group ? `/dashboard?group=${encodeURIComponent(group.id)}` : "/dashboard"}>
             <BackIcon />
@@ -1578,6 +1739,13 @@ export function ReceiptScanner({ me, groups, group, people, charge, loadError }:
                   <Suspense fallback={null}>
                     <SaveReceiptButton rows={receiptRows} group={group} listName={charge?.merchant ?? "Receipt"} />
                   </Suspense>
+                  <button
+                    className="btn lg"
+                    type="button"
+                    onClick={continueToSplitChat}
+                  >
+                    Continue to split chat
+                  </button>
                 </section>
                 <aside className="col" aria-label="Your receipt">
                   {photoCard}

@@ -59,8 +59,16 @@ items keep their associated tax and tip under **Unassigned** until they are
 assigned.
 After editing the receipt subtotal, tax, or tip, the displayed receipt total
 updates automatically as their sum.
-The scanner currently performs OCR and displays editable text; it does not yet
-identify structured fields such as the merchant, line items, or total.
+
+From the dashboard, choose **New list → Scan a receipt** to open the dedicated
+camera and upload screen. After reviewing the parsed items, choose **Continue
+to split chat** to return the receipt items and totals to `/detect`, where the
+chat and manual assignment controls are available.
+
+On `/list`, choose **Split with chat** to assign general list items with
+natural-language instructions, or keep using the per-item controls. Each list
+item has one assignee; chat assignments are saved through the same controls
+and update the list totals.
 
 ## Pay links (live Stripe)
 
@@ -112,7 +120,9 @@ try the flow locally. That fallback never runs on Vercel.
 | `/dashboard/item-by-item` | Receipt scanner, opened from "Split this charge" |
 | `/account` | Account, payouts (Stripe Connect) and bank (Plaid) |
 | `/scan` | Receipt scanner (moved from `/`) |
-| `/list` | Shared list |
+| `/dashboard/item-by-item` | Dedicated receipt camera and upload screen (requires sign-in) |
+| `/detect` | Receipt review, manual assignment, and split chat |
+| `/list` | Shared list with manual and chat-based item assignment |
 | any other URL | 404 page (`app/global-not-found.tsx`) |
 
 The marketing pages live in `app/(site)` with their own layout and CSS, separate from the scanner's Tailwind layout in `app/(app)`.

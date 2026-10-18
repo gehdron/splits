@@ -246,3 +246,30 @@ body{margin:0}
 .p2 .pane.on{opacity:1;transform:none;pointer-events:auto}
 .p2 .fq .fq-p{grid-template-rows:0fr}
 .p2 .fq.open .fq-p{grid-template-rows:1fr}
+
+/* How it works: no purple highlight on the steps */
+.p2 .sl::after { content: none; }
+.p2 .dot {
+  border-color: #C5CCE0;
+  background: #fff;
+  color: var(--ink2);
+}
+.p2 .si1 .dot,
+.p2 .si2 .dot,
+.p2 .si3 .dot { animation: none; }
+
+/* step images */
+.p2 .panel .shot {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+}
+@supports (animation-timeline: view()) {
+  .p2 .panel .shot {
+    animation: reveal linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 75%;
+  }
+}

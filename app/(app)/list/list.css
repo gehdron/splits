@@ -77,6 +77,17 @@
 .db .pill{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;font-size:13px;font-weight:700;white-space:nowrap}
 .db .pg{background:#E4F8EF;color:var(--gtx)}.db .pn{background:var(--soft);color:var(--mut)}.db .pv{background:#E8E3FF;color:var(--vtx)}
 .db .empty{padding:20px 0;color:var(--mut)}
+.db .list-chat{display:grid;gap:12px;margin:0 0 22px;padding:16px;border:1px solid var(--line);border-radius:16px;background:#F9FAFD}
+.db .list-chat[hidden]{display:none}
+.db .list-chat-messages{display:grid;gap:8px;max-height:280px;overflow:auto}
+.db .list-chat-message,.db .list-chat-welcome,.db .list-chat-pending{width:fit-content;max-width:min(90%,620px);margin:0;padding:10px 13px;border-radius:14px;background:#E9EDF6;color:var(--ink2);overflow-wrap:anywhere}
+.db .list-chat-message.user{justify-self:end;background:#E8E3FF;color:#2F2380}
+.db .list-chat-pending{font-size:13px;color:var(--mut)}
+.db .list-chat-error{margin:0;padding:10px 12px;border-radius:10px;background:#FDE8E8;color:#8A2525;font-size:14px;font-weight:600}
+.db .list-chat-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}
+.db .list-chat-form textarea{width:100%;min-height:54px;max-height:140px;padding:12px;border:1.5px solid #B9C1DA;border-radius:12px;background:#fff;font:inherit;resize:vertical}
+.db .list-chat-form textarea:focus{outline:none;border-color:var(--vio);box-shadow:0 0 0 3px rgba(108,77,255,.18)}
+.db .list-chat-form .btn{min-height:48px}
 
 .db .bal{font-family:var(--font-outfit),"Outfit",system-ui,sans-serif;font-weight:600;font-size:36px;line-height:1.05;letter-spacing:-0.035em}
 .db .bar{display:flex;gap:4px;height:12px;margin-top:16px;border-radius:3px;background:#E3E7F3}
@@ -155,3 +166,4 @@
 .db .req .msg{margin:0;overflow-wrap:anywhere}
 .db .req .btn[disabled]{background:#E3E7F3;color:#5A6385;cursor:not-allowed}
 @media (max-width:640px){.db .main{padding:28px 16px 56px}.db .sec{padding:22px 18px}.db h1{font-size:42px}.db .addrow{grid-template-columns:minmax(0,1fr) 110px}.db .addrow .btn{grid-column:1/-1}}
+@media (max-width:640px){.db .main{padding:28px 16px 56px}.db .sec{padding:22px 18px}.db h1{font-size:42px}.db .addrow{grid-template-columns:minmax(0,1fr) 110px}.db .addrow .btn{grid-column:1/-1}.db .list-chat-form{grid-template-columns:1fr}.db .list-chat-form .btn{width:100%}}
